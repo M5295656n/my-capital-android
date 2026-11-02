@@ -18,6 +18,12 @@ interface PortfolioDao {
     @Delete
     suspend fun deleteAsset(asset: AssetEntity)
 
+    @androidx.room.Update
+    suspend fun updateAsset(asset: AssetEntity)
+
+    @Query("SELECT * FROM assets WHERE id = :assetId LIMIT 1")
+    suspend fun getAsset(assetId: Long): AssetEntity?
+
     @Query("SELECT * FROM operations ORDER BY operationDate DESC")
     fun observeOperations(): Flow<List<OperationEntity>>
 
