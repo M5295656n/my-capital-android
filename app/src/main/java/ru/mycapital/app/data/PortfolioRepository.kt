@@ -9,6 +9,49 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
 
     data class BrokerHistoryImportResult(val imported: Int, val duplicates: Int, val unsettledSkipped: Int)
 
+
+    data class BrokerSnapshotReconciliationResult(
+        val matchedAssets: Int,
+        val unmatchedReportAssets: Int,
+        val previousCash: Double,
+        val reportCash: Double
+    )
+
+    suspend fun reconcileBrokerReportSnapshot(report: SberBrokerReport): BrokerSnapshotReconciliationResult {
+        var matched = 0
+        var unmatched = 0
+        var previousCash = 0.0
+        database.withTransaction {
+            dao.ensureCashBalance(CashBalanceEntity())
+            previousCash = dao.getCashBalance() ?: 0.0
+            report.assets.forEach { row ->
+                val ticker = row.ticker.trim().uppercase()
+                val asset = ticker.takeIf { it.isNotBlank() }?.let { dao.getAssetByTicker(it) }
+                if (asset == null) {
+                    unmatched++
+                } else {
+                    dao.updateAsset(
+                        asset.copy(
+                            quantity = row.closingQuantity,
+                            currentPrice = row.closingPrice.takeIf { it > 0.0 } ?: asset.currentPrice,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                    matched++
+                }
+            }
+            // Statement closing cash is an absolute balance, not a cash flow.
+            // Set it directly; never add it to the app's existing balance.
+            dao.updateCashBalance(report.closingCash)
+        }
+        return BrokerSnapshotReconciliationResult(
+            matchedAssets = matched,
+            unmatchedReportAssets = unmatched,
+            previousCash = previousCash,
+            reportCash = report.closingCash
+        )
+    }
+
     suspend fun importBrokerReportHistory(report: SberBrokerReport): BrokerHistoryImportResult {
         var imported = 0
         var duplicates = 0
