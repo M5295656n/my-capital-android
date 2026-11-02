@@ -74,7 +74,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets.size, total, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
@@ -113,7 +113,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assetCount: Int, total: Double, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: Modifier = Modifier) {\n    val assetCount = assets.size\n    val invested = assets.sumOf { it.quantity * it.averagePrice }\n    val unrealized = total - invested\n    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -135,14 +135,14 @@ private fun OverviewScreen(assetCount: Int, total: Double, modifier: Modifier = 
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Вложено", "— ₽", Modifier.weight(1f))
-                MetricCard("Прибыль", "— ₽", Modifier.weight(1f))
+                MetricCard("Себестоимость остатков", money(invested) + " ₽", Modifier.weight(1f))
+                MetricCard("Нереализованный результат", (if (unrealized > 0) "+" else "") + money(unrealized) + " ₽", Modifier.weight(1f))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Доходность", "— %", Modifier.weight(1f))
-                MetricCard("Свободные деньги", "— ₽", Modifier.weight(1f))
+                MetricCard("Результат к себестоимости", String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent), Modifier.weight(1f))
+                MetricCard("Свободные деньги", "Не учитываются", Modifier.weight(1f))
             }
         }
         item {
