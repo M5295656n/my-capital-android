@@ -19,6 +19,7 @@ class QuoteRefreshWorker(
         val client = MoexIssClient()
         var updated = 0
         var attempted = 0
+        var failed = 0
         for (asset in assets) {
             if (asset.ticker.isBlank()) continue
             attempted++
@@ -27,12 +28,15 @@ class QuoteRefreshWorker(
                 if (quote != null) {
                     dao.updateAssetPrice(asset.id, quote.price, System.currentTimeMillis())
                     updated++
+                } else {
+                    failed++
                 }
             } catch (_: Exception) {
                 // A single unsupported instrument must not block updates for the rest.
+                failed++
             }
         }
-        if (updated == 0 && attempted > 0 && runAttemptCount < 3) Result.retry()
+        if (failed > 0 && attempted > 0 && runAttemptCount < 3) Result.retry()
         else Result.success()
     }
 }
