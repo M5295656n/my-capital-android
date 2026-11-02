@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -12,10 +13,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import ru.mycapital.app.data.AssetEntity
+import ru.mycapital.app.data.PortfolioDatabase
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -24,9 +28,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen(val title: String, val icon: ImageVector) {
+private enum class Screen(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Overview("Обзор", Icons.Default.Home),
-    Assets("Активы", Icons.Default.PieChart),
+    Assets("Активы", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Operations("Операции", Icons.Default.SwapHoriz),
     Analytics("Аналитика", Icons.Default.ShowChart)
@@ -34,9 +38,23 @@ private enum class Screen(val title: String, val icon: ImageVector) {
 
 @Composable
 private fun MyCapitalApp() {
+    val context = LocalContext.current
+    val dao = remember { PortfolioDatabase.getInstance(context).portfolioDao() }
+    val assets by dao.observeAssets().collectAsState(initial = emptyList())
+    val total by dao.observePortfolioValue().collectAsState(initial = 0.0)
+    val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
+    var showAddAsset by remember { mutableStateOf(false) }
+
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
         Scaffold(
+            floatingActionButton = {
+                if (selected == Screen.Assets) {
+                    FloatingActionButton(onClick = { showAddAsset = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Добавить актив")
+                    }
+                }
+            },
             bottomBar = {
                 NavigationBar {
                     Screen.entries.forEach { screen ->
@@ -51,15 +69,37 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets.size, total, Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
     }
+
+    if (showAddAsset) {
+        AddAssetDialog(
+            onDismiss = { showAddAsset = false },
+            onSave = { ticker, name, type, quantity, average, current ->
+                scope.launch {
+                    dao.insertAsset(
+                        AssetEntity(
+                            ticker = ticker.trim().uppercase(),
+                            name = name.trim(),
+                            assetType = type.trim().ifBlank { "Акция" },
+                            quantity = quantity,
+                            averagePrice = average,
+                            currentPrice = current
+                        )
+                    )
+                    showAddAsset = false
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun OverviewScreen(modifier: Modifier = Modifier) {
+private fun OverviewScreen(assetCount: Int, total: Double, modifier: Modifier = Modifier) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -72,10 +112,10 @@ private fun OverviewScreen(modifier: Modifier = Modifier) {
         item {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)) {
                 Column(Modifier.padding(22.dp)) {
-                    Text("Стоимость портфеля", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
+                    Text("Текущая стоимость активов", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
                     Spacer(Modifier.height(8.dp))
-                    Text("— ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                    Text("Добавьте активы или импортируйте отчёт брокера", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
+                    Text("${money(total)} ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                    Text("Активов в портфеле: $assetCount", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
                 }
             }
         }
@@ -92,15 +132,85 @@ private fun OverviewScreen(modifier: Modifier = Modifier) {
             }
         }
         item {
-            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Пока нет данных", fontWeight = FontWeight.Medium)
-                    Text("После добавления активов здесь появится распределение по классам: акции, облигации, фонды и золото.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Портфель", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (assetCount == 0) "Добавьте первый актив во вкладке «Активы»."
+                else "Стоимость рассчитана по количеству и последней сохранённой цене. Автоматические котировки подключим отдельно.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Spacer(Modifier.height(20.dp))
+        Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Локальный список вашего портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        if (assets.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Пока нет активов. Нажмите +, чтобы добавить первый.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
+                items(assets, key = { it.id }) { asset ->
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${asset.assetType} · ${asset.quantity} шт.")
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
+                                Text("Средняя ${money(asset.averagePrice)} ₽", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AddAssetDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, Double, Double, Double) -> Unit
+) {
+    var ticker by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("Акция") }
+    var quantity by remember { mutableStateOf("1") }
+    var average by remember { mutableStateOf("") }
+    var current by remember { mutableStateOf("") }
+    val valid = ticker.isNotBlank() && name.isNotBlank() &&
+        (quantity.toDoubleOrNull() ?: 0.0) > 0 &&
+        (average.toDoubleOrNull() ?: -1.0) >= 0 &&
+        (current.toDoubleOrNull() ?: -1.0) >= 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Новый актив") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(ticker, { ticker = it }, label = { Text("Тикер, например SBER") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(type, { type = it }, label = { Text("Тип: акция, облигация, фонд…") }, singleLine = true)
+                OutlinedTextField(quantity, { quantity = it }, label = { Text("Количество") }, singleLine = true)
+                OutlinedTextField(average, { average = it }, label = { Text("Средняя цена, ₽") }, singleLine = true)
+                OutlinedTextField(current, { current = it }, label = { Text("Текущая цена, ₽") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = {
+                onSave(ticker, name, type, quantity.toDouble(), average.toDouble(), current.toDouble())
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
 }
 
 @Composable
@@ -124,3 +234,5 @@ private fun PlaceholderScreen(screen: Screen, modifier: Modifier = Modifier) {
         }
     }
 }
+
+private fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
