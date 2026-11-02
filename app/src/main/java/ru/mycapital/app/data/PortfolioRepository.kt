@@ -18,16 +18,33 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         require(commission >= 0.0) { "Комиссия не может быть отрицательной" }
 
         database.withTransaction {
+            dao.ensureCashBalance(CashBalanceEntity())
+            val cash = dao.getCashBalance() ?: 0.0
+            val grossAmount = quantity * price
+
+            val nextCash = if (isBuy) {
+                val totalCost = grossAmount + commission
+                require(cash + 0.0000001 >= totalCost) {
+                    "Недостаточно свободных денег. Нужно ${"%.2f".format(java.util.Locale.US, totalCost)} ₽, доступно ${"%.2f".format(java.util.Locale.US, cash)} ₽"
+                }
+                (cash - totalCost).coerceAtLeast(0.0)
+            } else {
+                val proceeds = grossAmount - commission
+                require(proceeds >= 0.0) { "Комиссия не может превышать сумму продажи" }
+                cash + proceeds
+            }
+
             val asset = requireNotNull(dao.getAsset(assetId)) { "Актив не найден" }
             val nextQuantity = if (isBuy) asset.quantity + quantity else asset.quantity - quantity
             require(nextQuantity >= -0.0000001) { "Недостаточно бумаг для продажи" }
 
             val nextAverage = when {
                 nextQuantity <= 0.0000001 -> 0.0
-                isBuy -> ((asset.quantity * asset.averagePrice) + (quantity * price) + commission) / nextQuantity
+                isBuy -> ((asset.quantity * asset.averagePrice) + grossAmount + commission) / nextQuantity
                 else -> asset.averagePrice
             }
 
+            dao.updateCashBalance(nextCash)
             dao.updateAsset(
                 asset.copy(
                     quantity = nextQuantity.coerceAtLeast(0.0),
@@ -49,6 +66,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             )
         }
     }
+
     suspend fun recordCashFlow(isDeposit: Boolean, amount: Double, note: String = "") {
         require(amount > 0.0) { "Сумма должна быть больше нуля" }
         database.withTransaction {
@@ -70,5 +88,4 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             )
         }
     }
-
 }
