@@ -51,3 +51,12 @@ data class CashBalanceEntity(
     @PrimaryKey val id: Int = 1,
     val balance: Double = 0.0
 )
+
+@Entity(tableName = "portfolio_snapshots")
+data class PortfolioSnapshotEntity(
+    @PrimaryKey val dateKey: String,
+    val capturedAt: Long,
+    val assetsValue: Double,
+    val cashValue: Double,
+    val totalValue: Double
+)
