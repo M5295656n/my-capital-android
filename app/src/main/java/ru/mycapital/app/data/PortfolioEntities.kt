@@ -17,7 +17,7 @@ data class AssetEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "operations")
+@Entity(tableName = "operations", indices = [Index(value = ["sourceKey"], unique = true)])
 data class OperationEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val assetId: Long?,
@@ -27,7 +27,8 @@ data class OperationEntity(
     val price: Double,
     val commission: Double = 0.0,
     val operationDate: Long = System.currentTimeMillis(),
-    val note: String = ""
+    val note: String = "",
+    val sourceKey: String? = null
 )
 
 @Entity(tableName = "payouts", indices = [Index(value = ["sourceKey"], unique = true)])
