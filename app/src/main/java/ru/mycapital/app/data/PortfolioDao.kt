@@ -36,6 +36,9 @@ interface PortfolioDao {
     @Insert
     suspend fun insertPayout(payout: PayoutEntity): Long
 
+    @androidx.room.Update
+    suspend fun updatePayout(payout: PayoutEntity)
+
     @Query("SELECT COALESCE(SUM(quantity * currentPrice), 0) FROM assets")
     fun observePortfolioValue(): Flow<Double>
 
