@@ -3,8 +3,6 @@ package ru.mycapital.app.data
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import java.time.LocalDate
-import java.time.ZoneId
 
 class PortfolioSnapshotWorker(
     appContext: Context,
@@ -15,14 +13,12 @@ class PortfolioSnapshotWorker(
             val dao = PortfolioDatabase.getInstance(applicationContext).portfolioDao()
             dao.ensureCashBalance(CashBalanceEntity())
             val now = System.currentTimeMillis()
-            val dateKey = LocalDate.now(ZoneId.of("Europe/Moscow")).toString()
+            val dateKey = portfolioSnapshotDateKey(now)
             val previous = dao.getLatestPortfolioSnapshotBefore(dateKey)
             val assetsValue = dao.getAssets().sumOf { it.quantity * it.currentPrice }
             val cashValue = dao.getCashBalance() ?: 0.0
             val externalFlow = previous?.let { last ->
-                dao.getExternalFlowsSince(last.capturedAt).sumOf { op ->
-                    if (op.operationType == "Пополнение") op.price else -op.price
-                }
+                calculateExternalFlow(dao.getExternalFlowsSince(last.capturedAt))
             } ?: 0.0
             dao.insertPortfolioSnapshot(
                 PortfolioSnapshotEntity(
