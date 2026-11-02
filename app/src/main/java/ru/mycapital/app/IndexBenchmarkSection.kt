@@ -30,12 +30,14 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.mycapital.app.data.MoexIndexHistoryClient
+import ru.mycapital.app.data.IndexHistoryEntity
+import ru.mycapital.app.data.PortfolioDao
 import ru.mycapital.app.data.MoexIndexPoint
 import ru.mycapital.app.data.PortfolioSnapshotEntity
 import java.util.Locale
 
 @Composable
-fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>) {
+fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: PortfolioDao) {
     val ordered = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
@@ -51,19 +53,34 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>) {
             loading = true
             error = null
             try {
-                val result = withContext(Dispatchers.IO) {
-                    val client = MoexIndexHistoryClient()
-                    val price = client.getHistory("IMOEX", from, till)
-                    val totalReturn = client.getHistory("MCFTR", from, till)
-                    price to totalReturn
+                val cached = withContext(Dispatchers.IO) {
+                    dao.getIndexHistory("IMOEX", from, till) to dao.getIndexHistory("MCFTR", from, till)
                 }
-                imoex = result.first
-                mcftr = result.second
-                if (result.first.isEmpty() || result.second.isEmpty()) {
-                    error = "MOEX ISS не вернул исторические значения одного или обоих индексов за период."
+                imoex = cached.first.map { MoexIndexPoint(it.dateKey, it.close) }
+                mcftr = cached.second.map { MoexIndexPoint(it.dateKey, it.close) }
+                try {
+                    val fresh = withContext(Dispatchers.IO) {
+                        val client = MoexIndexHistoryClient()
+                        val price = client.getHistory("IMOEX", from, till)
+                        val totalReturn = client.getHistory("MCFTR", from, till)
+                        dao.upsertIndexHistory(
+                            price.map { IndexHistoryEntity("IMOEX", it.date, it.value) } +
+                            totalReturn.map { IndexHistoryEntity("MCFTR", it.date, it.value) }
+                        )
+                        price to totalReturn
+                    }
+                    if (fresh.first.isNotEmpty()) imoex = fresh.first
+                    if (fresh.second.isNotEmpty()) mcftr = fresh.second
+                    if (imoex.isEmpty() || mcftr.isEmpty()) {
+                        error = "MOEX ISS не вернул исторические значения одного или обоих индексов за период."
+                    }
+                } catch (networkError: Exception) {
+                    if (imoex.isEmpty() || mcftr.isEmpty()) throw networkError
+                    error = "Показана сохранённая история индексов. Обновление недоступно: " +
+                        (networkError.message ?: "ошибка сети")
                 }
             } catch (exception: Exception) {
-                error = exception.message ?: "Не удалось загрузить индексы Мосбиржи."
+                error = exception.message ?: "Не удалось загрузить историю индексов."
             } finally {
                 loading = false
             }
