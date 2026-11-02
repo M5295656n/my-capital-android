@@ -15,9 +15,15 @@ class PortfolioSnapshotWorker(
         return try {
             val dao = PortfolioDatabase.getInstance(applicationContext).portfolioDao()
             dao.ensureCashBalance(CashBalanceEntity())
+            val previous = dao.getLatestPortfolioSnapshot()
             val assetsValue = dao.getAssets().sumOf { it.quantity * it.currentPrice }
             val cashValue = dao.getCashBalance() ?: 0.0
             val now = System.currentTimeMillis()
+            val externalFlow = previous?.let { last ->
+                dao.getExternalFlowsSince(last.capturedAt).sumOf { op ->
+                    if (op.operationType == "Пополнение") op.price else -op.price
+                }
+            } ?: 0.0
             val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(now))
             dao.insertPortfolioSnapshot(
                 PortfolioSnapshotEntity(
@@ -25,7 +31,8 @@ class PortfolioSnapshotWorker(
                     capturedAt = now,
                     assetsValue = assetsValue,
                     cashValue = cashValue,
-                    totalValue = assetsValue + cashValue
+                    totalValue = assetsValue + cashValue,
+                    externalFlow = externalFlow
                 )
             )
             Result.success()
