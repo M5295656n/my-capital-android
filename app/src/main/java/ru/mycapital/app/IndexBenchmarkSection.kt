@@ -53,6 +53,7 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
         if (from != null && till != null && ordered.size >= 2) {
             loading = true
             error = null
+            val forceReload = reloadKey > 0
             try {
                 val cached = withContext(Dispatchers.IO) {
                     dao.getIndexHistory("IMOEX", from, till) to dao.getIndexHistory("MCFTR", from, till)
@@ -65,12 +66,12 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
                         val latestPriceDate = dao.getLatestIndexHistoryDate("IMOEX")
                         val latestTotalDate = dao.getLatestIndexHistoryDate("MCFTR")
                         fun startDate(latest: String?): String {
-                            if (reloadKey > 0 || latest == null) return from
+                            if (forceReload || latest == null) return from
                             if (latest >= till) return till
                             // Re-fetch a short overlap in case MOEX corrected recent sessions.
                             return maxOf(from, LocalDate.parse(latest).minusDays(5).toString())
                         }
-                        val price = if (latestPriceDate != null && latestPriceDate >= till && reloadKey == 0) {
+                        val price = if (latestPriceDate != null && latestPriceDate >= till && !forceReload) {
                             emptyList()
                         } else client.getHistory("IMOEX", startDate(latestPriceDate), till)
                         val totalReturn = if (latestTotalDate != null && latestTotalDate >= till && reloadKey == 0) {
