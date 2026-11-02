@@ -121,10 +121,10 @@ object SberBrokerReportParser {
                 name = row[0],
                 ticker = tickersByIsin[row[1]].orEmpty(),
                 isin = row[1],
-                openingQuantity = number(row[3]),
-                closingQuantity = number(row[8]),
-                closingPrice = number(row[10]),
-                closingValue = number(row[11])
+                openingQuantity = requiredNumber(row[3], "количество на начало по ${row[0]}"),
+                closingQuantity = requiredNumber(row[8], "количество на конец по ${row[0]}"),
+                closingPrice = requiredNumber(row[10], "цена на конец по ${row[0]}"),
+                closingValue = requiredNumber(row[11], "стоимость позиции ${row[0]}")
             )
         }
 
@@ -138,17 +138,20 @@ object SberBrokerReportParser {
                 name = row[3],
                 ticker = row[4],
                 side = row[6],
-                quantity = number(row[7]),
-                price = number(row[8]),
-                grossAmount = number(row[9]),
-                brokerFee = number(row[11]),
-                exchangeFee = number(row[12]),
+                quantity = requiredNumber(row[7], "количество в сделке"),
+                price = requiredNumber(row[8], "цена сделки"),
+                grossAmount = requiredNumber(row[9], "сумма сделки"),
+                brokerFee = requiredNumber(row[11], "комиссия брокера"),
+                exchangeFee = requiredNumber(row[12], "биржевая комиссия"),
                 dealNumber = row[13],
                 status = row[15]
             )
         }
 
         require(assets.isNotEmpty()) { "В отчёте не найдены позиции ценных бумаг." }
+        require(trades.all { it.quantity > 0.0 && it.price >= 0.0 && it.grossAmount >= 0.0 && it.brokerFee >= 0.0 && it.exchangeFee >= 0.0 }) {
+            "В отчёте обнаружены отрицательные или некорректные данные по сделкам."
+        }
         require(assets.all { it.openingQuantity >= 0.0 && it.closingQuantity >= 0.0 && it.closingPrice >= 0.0 && it.closingValue >= 0.0 }) {
             "В отчёте обнаружены отрицательные или некорректные данные по позициям."
         }
