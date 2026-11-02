@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,6 +13,10 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +39,7 @@ import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.PortfolioRepository
+import ru.mycapital.app.data.PortfolioSnapshotEntity
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +71,7 @@ private fun MyCapitalApp() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
     var showAddPayout by remember { mutableStateOf(false) }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
@@ -132,7 +139,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
@@ -548,6 +555,7 @@ private fun AnalyticsScreen(
     assets: List<AssetEntity>,
     marketValue: Double,
     cashBalance: Double,
+    snapshots: List<PortfolioSnapshotEntity>,
     modifier: Modifier = Modifier
 ) {
     val invested = assets.sumOf { it.quantity * it.averagePrice }
@@ -601,6 +609,17 @@ private fun AnalyticsScreen(
             }
         }
         item {
+            Text("История портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (snapshots.size >= 2) {
+                PortfolioHistoryChart(snapshots)
+                Text("Ежедневные снимки стоимости активов и свободных денег. История начинается с момента установки этой версии.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text("История только начинается. Приложение сохраняет ежедневную стоимость портфеля; график появится после второго дневного снимка.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item {
             Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         if (totalValue <= 0.0) {
@@ -636,6 +655,47 @@ private fun AnalyticsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+
+@Composable
+private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
+    val ordered = snapshots.sortedBy { it.dateKey }
+    val values = ordered.map { it.totalValue.toFloat() }
+    val minValue = values.minOrNull() ?: 0f
+    val maxValue = values.maxOrNull() ?: 1f
+    val range = (maxValue - minValue).takeIf { it > 0.0001f } ?: 1f
+    val lineColor = MaterialTheme.colorScheme.primary
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("₽ ${money(minValue.toDouble())}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("₽ ${money(maxValue.toDouble())}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Canvas(Modifier.fillMaxWidth().height(170.dp)) {
+            val left = 8f
+            val right = size.width - 8f
+            val top = 8f
+            val bottom = size.height - 8f
+            for (i in 0..3) {
+                val y = top + (bottom - top) * i / 3f
+                drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+            }
+            if (values.size >= 2) {
+                val path = Path()
+                values.forEachIndexed { index, value ->
+                    val x = left + (right - left) * index / (values.size - 1).toFloat()
+                    val y = bottom - ((value - minValue) / range) * (bottom - top)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(ordered.first().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(ordered.last().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
