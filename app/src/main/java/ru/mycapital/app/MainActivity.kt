@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PortfolioDatabase
+import ru.mycapital.app.data.OperationEntity
+import ru.mycapital.app.data.PortfolioRepository
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,12 +47,15 @@ private fun MyCapitalApp() {
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
     var showAddAsset by remember { mutableStateOf(false) }
+    var showAddOperation by remember { mutableStateOf(false) }
+    val operations by dao.observeOperations().collectAsState(initial = emptyList())
+    val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
         Scaffold(
             floatingActionButton = {
-                if (selected == Screen.Assets) {
-                    FloatingActionButton(onClick = { showAddAsset = true }) {
+                if (selected == Screen.Assets || selected == Screen.Operations) {
+                    FloatingActionButton(onClick = { if (selected == Screen.Assets) showAddAsset = true else showAddOperation = true }) {
                         Icon(Icons.Default.Add, contentDescription = "Добавить актив")
                     }
                 }
@@ -71,11 +76,20 @@ private fun MyCapitalApp() {
             when (selected) {
                 Screen.Overview -> OverviewScreen(assets.size, total, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
+                Screen.Operations -> OperationsScreen(operations, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
     }
 
+    if (showAddOperation) {
+        AddOperationDialog(assets, { showAddOperation = false }) { asset, isBuy, qty, price, fee ->
+            scope.launch {
+                repository.recordTrade(asset.id, isBuy, qty, price, fee)
+                showAddOperation = false
+            }
+        }
+    }
     if (showAddAsset) {
         AddAssetDialog(
             onDismiss = { showAddAsset = false },
@@ -175,6 +189,67 @@ private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifie
     }
 }
 
+@Composable
+private fun OperationsScreen(operations: List<OperationEntity>, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxSize().padding(20.dp)) {
+        Text("Операции", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("История покупок и продаж", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        if (operations.isEmpty()) Text("Пока нет операций. Нажмите +, чтобы добавить сделку.")
+        else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(operations, key = { it.id }) { op ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text((op.operationType) + " · " + (op.ticker ?: "—"), fontWeight = FontWeight.SemiBold)
+                            Text(op.quantity.toString() + " × " + money(op.price) + " ₽", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(money(op.quantity * op.price + op.commission) + " ₽", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddOperationDialog(assets: List<AssetEntity>, onDismiss: () -> Unit, onSave: (AssetEntity, Boolean, Double, Double, Double) -> Unit) {
+    var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
+    var isBuy by remember { mutableStateOf(true) }
+    var qtyText by remember { mutableStateOf("1") }
+    var priceText by remember { mutableStateOf("") }
+    var feeText by remember { mutableStateOf("0") }
+    val asset = assets.firstOrNull { it.id == assetId }
+    val qty = qtyText.toDoubleOrNull() ?: 0.0
+    val price = priceText.toDoubleOrNull() ?: -1.0
+    val fee = feeText.toDoubleOrNull() ?: -1.0
+    val valid = asset != null && qty > 0 && price >= 0 && fee >= 0 && (isBuy || qty <= asset.quantity)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Новая сделка") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                    OutlinedTextField(value = asset?.ticker ?: "Нет активов", onValueChange = {}, readOnly = true, label = { Text("Бумага") }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        assets.forEach { item -> DropdownMenuItem(text = { Text(item.ticker) }, onClick = { assetId = item.id; expanded = false }) }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = isBuy, onClick = { isBuy = true }, label = { Text("Покупка") })
+                    FilterChip(selected = !isBuy, onClick = { isBuy = false }, label = { Text("Продажа") })
+                }
+                OutlinedTextField(qtyText, { qtyText = it }, label = { Text("Количество") }, singleLine = true)
+                OutlinedTextField(priceText, { priceText = it }, label = { Text("Цена за единицу") }, singleLine = true)
+                OutlinedTextField(feeText, { feeText = it }, label = { Text("Комиссия") }, singleLine = true)
+                if (!isBuy && asset != null) Text("Доступно: " + asset.quantity)
+            }
+        },
+        confirmButton = { TextButton(enabled = valid, onClick = { asset?.let { onSave(it, isBuy, qty, price, fee) } }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
 @Composable
 private fun AddAssetDialog(
     onDismiss: () -> Unit,
