@@ -74,4 +74,10 @@ interface PortfolioDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPortfolioSnapshot(snapshot: PortfolioSnapshotEntity): Long
+
+    @Query("SELECT * FROM index_history WHERE indexCode = :indexCode AND dateKey BETWEEN :fromDate AND :tillDate ORDER BY dateKey ASC")
+    suspend fun getIndexHistory(indexCode: String, fromDate: String, tillDate: String): List<IndexHistoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertIndexHistory(points: List<IndexHistoryEntity>)
 }
