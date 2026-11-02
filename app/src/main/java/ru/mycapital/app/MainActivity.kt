@@ -315,6 +315,7 @@ private fun PayoutsScreen(payouts: List<PayoutEntity>, modifier: Modifier = Modi
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun AddPayoutDialog(
     assets: List<AssetEntity>,
