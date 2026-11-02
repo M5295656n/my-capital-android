@@ -26,6 +26,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import ru.mycapital.app.data.QuoteRefreshWorker
+import ru.mycapital.app.data.CorporateEventsWorker
 import java.util.concurrent.TimeUnit
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PortfolioDatabase
@@ -73,6 +74,11 @@ private fun MyCapitalApp() {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "moex_quote_refresh", ExistingPeriodicWorkPolicy.UPDATE, periodic
         )
+        val eventsPeriodic = PeriodicWorkRequestBuilder<CorporateEventsWorker>(24, TimeUnit.HOURS)
+            .setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "moex_corporate_events", ExistingPeriodicWorkPolicy.UPDATE, eventsPeriodic
+        )
     }
 
     val refreshQuotes: () -> Unit = {
@@ -80,6 +86,13 @@ private fun MyCapitalApp() {
         val request = OneTimeWorkRequestBuilder<QuoteRefreshWorker>().setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             "moex_quote_refresh_manual", ExistingWorkPolicy.KEEP, request
+        )
+    }
+    val refreshEvents: () -> Unit = {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<CorporateEventsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "moex_events_refresh_manual", ExistingWorkPolicy.KEEP, request
         )
     }
 
@@ -106,7 +119,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
@@ -189,7 +202,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
@@ -207,6 +220,11 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 Icon(Icons.Default.Refresh, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Обновить котировки MOEX")
+            }
+            OutlinedButton(onClick = onRefreshEvents) {
+                Icon(Icons.Default.Event, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Обновить дивиденды и купоны")
             }
         }
         item {
@@ -338,6 +356,7 @@ private fun PayoutsScreen(payouts: List<PayoutEntity>, modifier: Modifier = Modi
                             }
                             Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
                             Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
+                            payout.expectedDate?.let { Text("Дата события: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     }
                 }
