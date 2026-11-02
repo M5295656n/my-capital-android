@@ -168,7 +168,7 @@ private fun BenchmarkChart(
                 val y = top + (bottom - top) * i / 4f
                 drawLine(grid, androidx.compose.ui.geometry.Offset(left, y), androidx.compose.ui.geometry.Offset(right, y), 1f)
             }
-            fun drawLine(values: List<Float>, color: Color) {
+            fun drawSeries(values: List<Float>, color: Color) {
                 if (values.size < 2) return
                 val path = Path()
                 values.forEachIndexed { index, value ->
@@ -178,9 +178,9 @@ private fun BenchmarkChart(
                 }
                 drawPath(path, color, style = Stroke(width = 3.5f))
             }
-            drawLine(portfolio, portfolioColor)
-            drawLine(price, priceColor)
-            drawLine(total, totalColor)
+            drawSeries(portfolio, portfolioColor)
+            drawSeries(price, priceColor)
+            drawSeries(total, totalColor)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
