@@ -18,6 +18,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import ru.mycapital.app.data.QuoteRefreshWorker
+import java.util.concurrent.TimeUnit
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.OperationEntity
@@ -57,6 +66,23 @@ private fun MyCapitalApp() {
     var showAddPayout by remember { mutableStateOf(false) }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
+    LaunchedEffect(Unit) {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val periodic = PeriodicWorkRequestBuilder<QuoteRefreshWorker>(6, TimeUnit.HOURS)
+            .setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "moex_quote_refresh", ExistingPeriodicWorkPolicy.UPDATE, periodic
+        )
+    }
+
+    val refreshQuotes: () -> Unit = {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<QuoteRefreshWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "moex_quote_refresh_manual", ExistingWorkPolicy.KEEP, request
+        )
+    }
+
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
         Scaffold(
             floatingActionButton = {
@@ -80,7 +106,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
@@ -163,7 +189,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
@@ -177,6 +203,11 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
         item {
             Text("Мой капитал", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("Ваш инвестиционный портфель", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onRefreshQuotes) {
+                Icon(Icons.Default.Refresh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Обновить котировки MOEX")
+            }
         }
         item {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)) {
@@ -204,7 +235,7 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
             Text("Портфель", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 if (assetCount == 0) "Добавьте первый актив во вкладке «Активы»."
-                else "Стоимость рассчитана по количеству и последней сохранённой цене. Автоматические котировки подключим отдельно.",
+                else "Стоимость рассчитана по последней сохранённой цене. Котировки MOEX могут иметь задержку до 15 минут.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
