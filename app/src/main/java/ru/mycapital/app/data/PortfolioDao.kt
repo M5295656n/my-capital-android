@@ -69,6 +69,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM portfolio_snapshots ORDER BY dateKey DESC LIMIT 1")
     suspend fun getLatestPortfolioSnapshot(): PortfolioSnapshotEntity?
 
+    @Query("SELECT * FROM operations WHERE operationDate > :afterTimestamp AND (operationType = 'Пополнение' OR operationType = 'Вывод') ORDER BY operationDate ASC")
+    suspend fun getExternalFlowsSince(afterTimestamp: Long): List<OperationEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPortfolioSnapshot(snapshot: PortfolioSnapshotEntity): Long
 }
