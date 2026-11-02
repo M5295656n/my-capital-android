@@ -8,9 +8,12 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.time.LocalDate
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+
+internal fun isEventDateUpcoming(date: LocalDate, today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): Boolean =
+    !date.isBefore(today)
 
 data class ImportedPayoutEvent(
     val ticker: String,
@@ -63,8 +66,7 @@ class CorporateEventsClient {
                 isLenient = false
                 timeZone = TimeZone.getTimeZone("UTC")
             }
-            val today = LocalDate.now(ZoneOffset.UTC)
-            val events = mutableListOf<ImportedPayoutEvent>()
+                        val events = mutableListOf<ImportedPayoutEvent>()
             for (i in 0 until rows.length()) {
                 val row = rows.optJSONArray(i) ?: continue
                 if (dateIndex >= row.length() || amountIndex >= row.length()) continue
@@ -72,7 +74,7 @@ class CorporateEventsClient {
                 val localDate = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: continue
                 val date = runCatching { formatter.parse(dateText)?.time }.getOrNull() ?: continue
                 val amount = if (row.isNull(amountIndex)) Double.NaN else row.optDouble(amountIndex, Double.NaN)
-                if (!amount.isFinite() || amount <= 0.0 || localDate.isBefore(today)) continue
+                if (!amount.isFinite() || amount <= 0.0 || !isEventDateUpcoming(localDate)) continue
                 val type = if (isBond) "Купон" else "Дивиденд"
                 val normalizedTicker = ticker.trim().uppercase()
                 val key = "$normalizedTicker|$type|$dateText"
