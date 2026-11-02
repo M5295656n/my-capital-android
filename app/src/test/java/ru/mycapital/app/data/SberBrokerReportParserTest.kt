@@ -2,6 +2,7 @@ package ru.mycapital.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.Assert.fail
 
 class SberBrokerReportParserTest {
     @Test
