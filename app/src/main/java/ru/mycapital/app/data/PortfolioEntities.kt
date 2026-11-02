@@ -2,6 +2,7 @@ package ru.mycapital.app.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.Index
 
 @Entity(tableName = "assets")
 data class AssetEntity(
@@ -29,7 +30,7 @@ data class OperationEntity(
     val note: String = ""
 )
 
-@Entity(tableName = "payouts")
+@Entity(tableName = "payouts", indices = [Index(value = ["sourceKey"], unique = true)])
 data class PayoutEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val assetId: Long?,
@@ -41,7 +42,8 @@ data class PayoutEntity(
     val taxAmount: Double = 0.0,
     val expectedDate: Long? = null,
     val actualDate: Long? = null,
-    val status: String = "EXPECTED"
+    val status: String = "EXPECTED",
+    val sourceKey: String? = null
 )
 
 @Entity(tableName = "cash_balance")
