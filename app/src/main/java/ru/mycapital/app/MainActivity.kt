@@ -612,7 +612,7 @@ private fun AnalyticsScreen(
             Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             if (snapshots.size >= 2) {
                 PortfolioHistoryChart(snapshots)
-                Text("Стоимость показана в рублях. Пополнения и выводы пока влияют на график; это ещё не сравнение инвестиционной эффективности.",
+                Text("График показывает условную доходность (база 100) с исключением пополнений и выводов. Денежные потоки учитываются на конец дневного интервала; для точного TWR потребуется точное время каждого потока.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Text("История только начинается. Приложение сохраняет ежедневную стоимость капитала; график появится после второго дневного снимка.",
@@ -651,7 +651,7 @@ private fun AnalyticsScreen(
         }
         item {
             Text(
-                "График показывает изменение общей суммы в рублях, а не доходность инвестиций: пополнения и выводы влияют на его форму. Для сравнения с IMOEX и MCFTR будет использоваться доходность с поправкой на внешние денежные потоки.",
+                "Доходность рассчитана методом условной стоимости единицы с поправкой на внешние денежные потоки. Это дневное приближение; сравнение с IMOEX и MCFTR будет добавлено отдельно.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -663,16 +663,36 @@ private fun AnalyticsScreen(
 @Composable
 private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
     val ordered = snapshots.sortedBy { it.dateKey }
-    val values = ordered.map { it.totalValue.toFloat() }
-    val minValue = values.minOrNull() ?: 0f
-    val maxValue = values.maxOrNull() ?: 1f
+    // Unitized NAV excludes net external cash flows from each daily return factor.
+    // Approximation: cash flows are treated as if they occurred at the end of the day.
+    val navValues = mutableListOf<Double>()
+    var nav = 100.0
+    ordered.forEachIndexed { index, snapshot ->
+        if (index > 0) {
+            val previousValue = ordered[index - 1].totalValue
+            val adjustedBase = previousValue + snapshot.externalFlow
+            if (adjustedBase > 0.0 && previousValue > 0.0) {
+                nav *= snapshot.totalValue / adjustedBase
+            }
+        }
+        navValues += nav
+    }
+    val values = navValues.map { it.toFloat() }
+    val minValue = values.minOrNull() ?: 100f
+    val maxValue = values.maxOrNull() ?: 100f
     val range = (maxValue - minValue).takeIf { it > 0.0001f } ?: 1f
     val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val totalReturn = (navValues.lastOrNull() ?: 100.0) - 100.0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("₽ ${money(minValue.toDouble())}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("₽ ${money(maxValue.toDouble())}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Доходность с начала: ${if (totalReturn >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f%%", totalReturn)}",
+                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Text("База = 100", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(String.format(java.util.Locale("ru", "RU"), "%.2f", minValue), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(String.format(java.util.Locale("ru", "RU"), "%.2f", maxValue), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Canvas(Modifier.fillMaxWidth().height(170.dp)) {
             val left = 8f
@@ -699,7 +719,6 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
         }
     }
 }
-
 @Composable
 private fun PlaceholderScreen(screen: Screen, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
