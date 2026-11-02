@@ -123,6 +123,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
@@ -529,6 +530,103 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
             Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             Text(value, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsScreen(
+    assets: List<AssetEntity>,
+    marketValue: Double,
+    cashBalance: Double,
+    modifier: Modifier = Modifier
+) {
+    val invested = assets.sumOf { it.quantity * it.averagePrice }
+    val unrealized = marketValue - invested
+    val totalValue = marketValue + cashBalance
+    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
+    val groups = assets.groupBy { it.assetType.ifBlank { "Прочее" } }
+        .mapValues { (_, items) -> items.sumOf { it.quantity * it.currentPrice } }
+        .toList()
+        .sortedByDescending { it.second }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Text("Аналитика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Структура и текущий результат портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item {
+            Card(shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Стоимость капитала", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${money(totalValue)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    HorizontalDivider()
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Рыночная стоимость активов")
+                        Text("${money(marketValue)} ₽", fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Свободные деньги")
+                        Text("${money(cashBalance)} ₽", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Нереализованный результат", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        (if (unrealized > 0) "+" else "") + "${money(unrealized)} ₽",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (unrealized >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                    Text("К себестоимости остатков: ${String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent)}")
+                    Text("Расчёт не включает полученные дивиденды и купоны.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item {
+            Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        }
+        if (totalValue <= 0.0) {
+            item { Text("Добавьте активы или внесите свободные деньги, чтобы увидеть структуру портфеля.") }
+        } else {
+            items(groups) { (type, value) ->
+                val share = (value / totalValue).coerceIn(0.0, 1.0)
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(type, fontWeight = FontWeight.Medium)
+                        Text("${money(value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
+                    }
+                    LinearProgressIndicator(
+                        progress = { share.toFloat() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+            item {
+                val share = (cashBalance / totalValue).coerceIn(0.0, 1.0)
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Денежные средства", fontWeight = FontWeight.Medium)
+                        Text("${money(cashBalance)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
+                    }
+                    LinearProgressIndicator(progress = { share.toFloat() }, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+        item {
+            Text(
+                "Показатели рассчитаны по последним сохранённым котировкам и текущим остаткам. Историческая доходность и денежные потоки будут добавлены отдельно.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
