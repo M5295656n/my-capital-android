@@ -38,4 +38,13 @@ interface PortfolioDao {
 
     @Query("SELECT COALESCE(SUM(quantity * currentPrice), 0) FROM assets")
     fun observePortfolioValue(): Flow<Double>
+
+    @Query("SELECT balance FROM cash_balance WHERE id = 1")
+    fun observeCashBalance(): Flow<Double?>
+
+    @androidx.room.Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun ensureCashBalance(balance: CashBalanceEntity)
+
+    @Query("UPDATE cash_balance SET balance = :balance WHERE id = 1")
+    suspend fun updateCashBalance(balance: Double)
 }
