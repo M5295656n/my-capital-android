@@ -81,7 +81,7 @@ object SberBrokerReportParser {
 
         fun requiredNumber(value: String?, label: String): Double {
             require(!value.isNullOrBlank()) { "В отчёте отсутствует сумма: $label." }
-            val normalized = value.replace(" ", "").replace("\\u00a0", "").replace(",", ".")
+            val normalized = value.replace(" ", "").replace(",", ".")
             return normalized.toDoubleOrNull()
                 ?.takeIf { it.isFinite() }
                 ?: error("Не удалось прочитать сумму «$label» в брокерском отчёте.")
@@ -97,8 +97,9 @@ object SberBrokerReportParser {
 
         val cashFlows = cells(4).mapIndexedNotNull { index, row ->
             if (row.size < 6 || !row[0].matches(Regex("\\d{2}\\.\\d{2}\\.\\d{4}"))) return@mapIndexedNotNull null
-            val credit = number(row[4])
-            val debit = number(row[5])
+            val credit = requiredNumber(row[4], "поступление по денежной операции")
+            val debit = requiredNumber(row[5], "списание по денежной операции")
+            require(credit >= 0.0 && debit >= 0.0) { "В отчёте найдена отрицательная сумма денежной операции." }
             if (row[3] != "RUB" || (credit == 0.0 && debit == 0.0)) return@mapIndexedNotNull null
             BrokerReportCashFlow(
                 date = LocalDate.parse(row[0], dateFormat),
