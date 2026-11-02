@@ -27,6 +27,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import ru.mycapital.app.data.QuoteRefreshWorker
 import ru.mycapital.app.data.CorporateEventsWorker
+import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PortfolioDatabase
@@ -78,6 +79,14 @@ private fun MyCapitalApp() {
             .setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "moex_corporate_events", ExistingPeriodicWorkPolicy.UPDATE, eventsPeriodic
+        )
+        val snapshotPeriodic = PeriodicWorkRequestBuilder<PortfolioSnapshotWorker>(24, TimeUnit.HOURS).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "portfolio_daily_snapshots", ExistingPeriodicWorkPolicy.UPDATE, snapshotPeriodic
+        )
+        val firstSnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "portfolio_initial_snapshot", ExistingWorkPolicy.KEEP, firstSnapshot
         )
     }
 
