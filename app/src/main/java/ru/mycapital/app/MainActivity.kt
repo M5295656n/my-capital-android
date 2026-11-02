@@ -609,13 +609,13 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Text("История портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             if (snapshots.size >= 2) {
                 PortfolioHistoryChart(snapshots)
-                Text("Ежедневные снимки стоимости активов и свободных денег. История начинается с момента установки этой версии.",
+                Text("Стоимость показана в рублях. Пополнения и выводы пока влияют на график; это ещё не сравнение инвестиционной эффективности.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                Text("История только начинается. Приложение сохраняет ежедневную стоимость портфеля; график появится после второго дневного снимка.",
+                Text("История только начинается. Приложение сохраняет ежедневную стоимость капитала; график появится после второго дневного снимка.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -651,7 +651,7 @@ private fun AnalyticsScreen(
         }
         item {
             Text(
-                "Показатели рассчитаны по последним сохранённым котировкам и текущим остаткам. Историческая доходность и денежные потоки будут добавлены отдельно.",
+                "График показывает изменение общей суммы в рублях, а не доходность инвестиций: пополнения и выводы влияют на его форму. Для сравнения с IMOEX и MCFTR будет использоваться доходность с поправкой на внешние денежные потоки.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
