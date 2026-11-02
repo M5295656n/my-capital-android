@@ -673,9 +673,9 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
     ordered.forEachIndexed { index, snapshot ->
         if (index > 0) {
             val previousValue = ordered[index - 1].totalValue
-            val adjustedBase = previousValue + snapshot.externalFlow
-            if (adjustedBase > 0.0 && previousValue > 0.0) {
-                nav *= snapshot.totalValue / adjustedBase
+            val valueBeforeEndOfDayFlow = snapshot.totalValue - snapshot.externalFlow
+            if (valueBeforeEndOfDayFlow > 0.0 && previousValue > 0.0) {
+                nav *= valueBeforeEndOfDayFlow / previousValue
             }
         }
         navValues += nav
