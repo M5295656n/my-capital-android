@@ -49,4 +49,26 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             )
         }
     }
+    suspend fun recordCashFlow(isDeposit: Boolean, amount: Double, note: String = "") {
+        require(amount > 0.0) { "Сумма должна быть больше нуля" }
+        database.withTransaction {
+            dao.ensureCashBalance(CashBalanceEntity())
+            val current = dao.getCashBalance() ?: 0.0
+            val next = if (isDeposit) current + amount else current - amount
+            require(next >= -0.0000001) { "Недостаточно свободных денег" }
+            dao.updateCashBalance(next.coerceAtLeast(0.0))
+            dao.insertOperation(
+                OperationEntity(
+                    assetId = null,
+                    operationType = if (isDeposit) "Пополнение" else "Вывод",
+                    ticker = "RUB",
+                    quantity = 1.0,
+                    price = amount,
+                    commission = 0.0,
+                    note = note
+                )
+            )
+        }
+    }
+
 }
