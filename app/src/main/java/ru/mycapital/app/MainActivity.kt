@@ -114,7 +114,10 @@ private fun MyCapitalApp() {
 
 @Composable
 private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: Modifier = Modifier) {
-    val assetCount = assets.size\n    val invested = assets.sumOf { it.quantity * it.averagePrice }\n    val unrealized = total - invested\n    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
+    val assetCount = assets.size
+    val invested = assets.sumOf { it.quantity * it.averagePrice }
+    val unrealized = total - invested
+    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
