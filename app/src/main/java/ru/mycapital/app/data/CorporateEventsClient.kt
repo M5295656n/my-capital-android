@@ -7,6 +7,8 @@ import org.json.JSONObject
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
@@ -61,15 +63,16 @@ class CorporateEventsClient {
                 isLenient = false
                 timeZone = TimeZone.getTimeZone("UTC")
             }
-            val today = System.currentTimeMillis()
+            val today = LocalDate.now(ZoneOffset.UTC)
             val events = mutableListOf<ImportedPayoutEvent>()
             for (i in 0 until rows.length()) {
                 val row = rows.optJSONArray(i) ?: continue
                 if (dateIndex >= row.length() || amountIndex >= row.length()) continue
                 val dateText = row.optString(dateIndex).takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) } ?: continue
+                val localDate = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: continue
                 val date = runCatching { formatter.parse(dateText)?.time }.getOrNull() ?: continue
                 val amount = if (row.isNull(amountIndex)) Double.NaN else row.optDouble(amountIndex, Double.NaN)
-                if (!amount.isFinite() || amount <= 0.0 || date < today) continue
+                if (!amount.isFinite() || amount <= 0.0 || localDate.isBefore(today)) continue
                 val type = if (isBond) "Купон" else "Дивиденд"
                 val normalizedTicker = ticker.trim().uppercase()
                 val key = "$normalizedTicker|$type|$dateText"
