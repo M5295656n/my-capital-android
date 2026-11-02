@@ -50,6 +50,7 @@ private fun MyCapitalApp() {
     var showAddAsset by remember { mutableStateOf(false) }
     var showAddOperation by remember { mutableStateOf(false) }
     var showCashFlow by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
@@ -89,8 +90,12 @@ private fun MyCapitalApp() {
             onDismiss = { showCashFlow = false },
             onSave = { isDeposit, amount ->
                 scope.launch {
-                    repository.recordCashFlow(isDeposit, amount)
-                    showCashFlow = false
+                    try {
+                        repository.recordCashFlow(isDeposit, amount)
+                        showCashFlow = false
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "Не удалось сохранить движение денег"
+                    }
                 }
             }
         )
@@ -98,10 +103,22 @@ private fun MyCapitalApp() {
     if (showAddOperation) {
         AddOperationDialog(assets, { showAddOperation = false }) { asset, isBuy, qty, price, fee ->
             scope.launch {
-                repository.recordTrade(asset.id, isBuy, qty, price, fee)
-                showAddOperation = false
+                try {
+                    repository.recordTrade(asset.id, isBuy, qty, price, fee)
+                    showAddOperation = false
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось сохранить сделку"
+                }
             }
         }
+    }
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            title = { Text("Операция не выполнена") },
+            text = { Text(errorMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("Понятно") } }
+        )
     }
     if (showAddAsset) {
         AddAssetDialog(
@@ -180,6 +197,7 @@ private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifie
         Spacer(Modifier.height(20.dp))
         Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Локальный список вашего портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Добавление актива задаёт начальную позицию и не списывает деньги. Для новых покупок сначала внесите свободные деньги.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         if (assets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -223,7 +241,14 @@ private fun OperationsScreen(operations: List<OperationEntity>, onAddCashFlow: (
                             Text((op.operationType) + " · " + (op.ticker ?: "—"), fontWeight = FontWeight.SemiBold)
                             Text(op.quantity.toString() + " × " + money(op.price) + " ₽", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(money(op.quantity * op.price + op.commission) + " ₽", fontWeight = FontWeight.Bold)
+                        val amount = op.quantity * op.price
+                        val displayed = when (op.operationType) {
+                            "Покупка" -> amount + op.commission
+                            "Продажа" -> amount - op.commission
+                            "Пополнение", "Вывод" -> amount
+                            else -> amount
+                        }
+                        Text(money(displayed) + " ₽", fontWeight = FontWeight.Bold)
                     }
                 }
             }
