@@ -34,6 +34,9 @@ class SberBrokerReportParserTest {
         assertEquals(1, report.trades.size)
         assertEquals(0.42, report.trades.single().totalFee, 0.001)
         assertEquals("SBER:123456", report.trades.single().sourceKey)
+        val parsedAgain = SberBrokerReportParser.parse(sampleHtml())
+        assertEquals(report.cashFlows.map { it.rowKey }, parsedAgain.cashFlows.map { it.rowKey })
+        assertEquals(report.trades.map { it.sourceKey }, parsedAgain.trades.map { it.sourceKey })
     }
 
     @Test
