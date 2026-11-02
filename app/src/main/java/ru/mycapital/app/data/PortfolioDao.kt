@@ -78,6 +78,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM index_history WHERE indexCode = :indexCode AND dateKey BETWEEN :fromDate AND :tillDate ORDER BY dateKey ASC")
     suspend fun getIndexHistory(indexCode: String, fromDate: String, tillDate: String): List<IndexHistoryEntity>
 
+    @Query("SELECT MAX(dateKey) FROM index_history WHERE indexCode = :indexCode")
+    suspend fun getLatestIndexHistoryDate(indexCode: String): String?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertIndexHistory(points: List<IndexHistoryEntity>)
 }
