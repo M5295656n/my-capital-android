@@ -3,6 +3,8 @@ package ru.mycapital.app.data
 import androidx.room.withTransaction
 import java.time.ZoneOffset
 
+internal fun isFullyExecutedBrokerTrade(status: String): Boolean = status.trim() == "И"
+
 class PortfolioRepository(private val database: PortfolioDatabase) {
     private val dao = database.portfolioDao()
 
@@ -79,7 +81,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             report.trades.forEach { trade ->
                 // Only the explicit fully executed status is imported. Other codes may
                 // represent unsettled, partially settled or pending obligations.
-                if (trade.status.trim() != "И") {
+                if (!isFullyExecutedBrokerTrade(trade.status)) {
                     unsettledSkipped++
                     return@forEach
                 }
