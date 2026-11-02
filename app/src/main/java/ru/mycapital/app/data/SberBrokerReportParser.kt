@@ -61,7 +61,7 @@ object SberBrokerReportParser {
     fun parse(html: String): SberBrokerReport {
         val document = Jsoup.parse(html)
         val tables = document.select("table")
-        require(tables.size >= 6) { "Это не похоже на полный брокерский отчёт Сбербанка: не найдены основные таблицы." }
+        require(tables.size >= 10) { "Отчёт неполный или имеет неизвестный формат: не найдены все необходимые таблицы." }
 
         val reportText = document.text()
         val periodMatch = Regex("за период с (\\d{2}\\.\\d{2}\\.\\d{4}) по (\\d{2}\\.\\d{2}\\.\\d{4})")
@@ -148,6 +148,9 @@ object SberBrokerReportParser {
         }
 
         require(assets.isNotEmpty()) { "В отчёте не найдены позиции ценных бумаг." }
+        require(assets.all { it.openingQuantity >= 0.0 && it.closingQuantity >= 0.0 && it.closingPrice >= 0.0 && it.closingValue >= 0.0 }) {
+            "В отчёте обнаружены отрицательные или некорректные данные по позициям."
+        }
         val flowCredits = cashFlows.sumOf { it.credit }
         val flowDebits = cashFlows.sumOf { it.debit }
         return SberBrokerReport(
