@@ -139,7 +139,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, dao, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
@@ -556,6 +556,7 @@ private fun AnalyticsScreen(
     marketValue: Double,
     cashBalance: Double,
     snapshots: List<PortfolioSnapshotEntity>,
+    dao: ru.mycapital.app.data.PortfolioDao,
     modifier: Modifier = Modifier
 ) {
     val invested = assets.sumOf { it.quantity * it.averagePrice }
