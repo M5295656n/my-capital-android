@@ -68,6 +68,7 @@ object SberBrokerReportParser {
             .find(reportText) ?: error("Не удалось определить период отчёта.")
         val periodStart = LocalDate.parse(periodMatch.groupValues[1], dateFormat)
         val periodEnd = LocalDate.parse(periodMatch.groupValues[2], dateFormat)
+        require(!periodEnd.isBefore(periodStart)) { "В отчёте неверно указан период." }
 
         fun cells(tableIndex: Int): List<List<String>> = tables[tableIndex].select("tr").map { row ->
             row.select("th,td").map { it.text().replace('\u00a0', ' ').trim() }
@@ -78,11 +79,21 @@ object SberBrokerReportParser {
             return normalized.toDoubleOrNull() ?: 0.0
         }
 
+        fun requiredNumber(value: String?, label: String): Double {
+            require(!value.isNullOrBlank()) { "В отчёте отсутствует сумма: $label." }
+            val normalized = value.replace(" ", "").replace("\\u00a0", "").replace(",", ".")
+            return normalized.toDoubleOrNull()
+                ?.takeIf { it.isFinite() }
+                ?: error("Не удалось прочитать сумму «$label» в брокерском отчёте.")
+        }
+
         val cashRows = cells(3)
-        val openingCash = cashRows.firstOrNull { it.size >= 6 && it[0].contains("Торговый счет") && it[1] == "RUB" }
-            ?.getOrNull(3)?.let(::number) ?: 0.0
-        val closingCash = cashRows.firstOrNull { it.size >= 6 && it[0].contains("Торговый счет") && it[1] == "RUB" }
-            ?.getOrNull(5)?.let(::number) ?: 0.0
+        val cashAccountRow = cashRows.firstOrNull {
+            it.size >= 6 && it[0].contains("Торговый счет") && it[1] == "RUB"
+        } ?: error("В отчёте не найден рублёвый денежный остаток.")
+        val openingCash = requiredNumber(cashAccountRow.getOrNull(3), "остаток на начало")
+        val closingCash = requiredNumber(cashAccountRow.getOrNull(5), "остаток на конец")
+        require(openingCash >= 0.0 && closingCash >= 0.0) { "Денежный остаток в отчёте не может быть отрицательным." }
 
         val cashFlows = cells(4).mapIndexedNotNull { index, row ->
             if (row.size < 6 || !row[0].matches(Regex("\\d{2}\\.\\d{2}\\.\\d{4}"))) return@mapIndexedNotNull null
