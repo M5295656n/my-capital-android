@@ -62,4 +62,13 @@ interface PortfolioDao {
 
     @Query("UPDATE cash_balance SET balance = :balance WHERE id = 1")
     suspend fun updateCashBalance(balance: Double)
+
+    @Query("SELECT * FROM portfolio_snapshots ORDER BY dateKey ASC")
+    fun observePortfolioSnapshots(): Flow<List<PortfolioSnapshotEntity>>
+
+    @Query("SELECT * FROM portfolio_snapshots ORDER BY dateKey DESC LIMIT 1")
+    suspend fun getLatestPortfolioSnapshot(): PortfolioSnapshotEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertPortfolioSnapshot(snapshot: PortfolioSnapshotEntity): Long
 }
