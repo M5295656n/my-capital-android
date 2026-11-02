@@ -42,6 +42,9 @@ interface PortfolioDao {
     @Query("SELECT balance FROM cash_balance WHERE id = 1")
     fun observeCashBalance(): Flow<Double?>
 
+    @Query("SELECT balance FROM cash_balance WHERE id = 1")
+    suspend fun getCashBalance(): Double?
+
     @androidx.room.Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun ensureCashBalance(balance: CashBalanceEntity)
 
