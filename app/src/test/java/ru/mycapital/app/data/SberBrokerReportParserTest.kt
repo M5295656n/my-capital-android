@@ -5,11 +5,11 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class SberBrokerReportParserTest {
-    private fun sampleHtml(tradePrice: String = "47.34", cashCredit: String = "107.00"): String {
+    private fun sampleHtml(tradePrice: String = "47.34", cashCredit: String = "107.00", closingQuantity: String = "3"): String {
         val tables = listOf(
             "<tr><td>Обзор</td></tr>",
             "<tr><td>Описание</td></tr>",
-            "<tr><td>Площадка: Фондовый рынок</td></tr><tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td></td><td>10</td><td>20</td><td>0</td><td>3</td><td></td><td>11</td><td>33</td><td>0</td><td>0</td><td>13</td><td>0</td><td>0</td><td>3</td>",
+            "<tr><td>Площадка: Фондовый рынок</td></tr><tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td></td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td></td><td>11</td><td>33</td><td>0</td><td>0</td><td>13</td><td>0</td><td>0</td><td>3</td>",
             "<tr><td>Торговый счет, Основной рынок</td><td>RUB</td><td></td><td>428.73</td><td>207.00</td><td>635.73</td>",
             "<tr><td>30.10.2026</td><td>Основной рынок</td><td>Зачисление д/с</td><td>RUB</td><td>$cashCredit</td><td>0.00</td></tr><tr><td>30.10.2026</td><td>Основной рынок</td><td>Зачисление д/с</td><td>RUB</td><td>100.00</td><td>0.00</td>",
             "<tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>TEST</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>123456</td><td></td><td>О</td>",
