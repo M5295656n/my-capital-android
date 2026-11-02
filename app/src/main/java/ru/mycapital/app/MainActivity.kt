@@ -44,10 +44,12 @@ private fun MyCapitalApp() {
     val dao = remember { PortfolioDatabase.getInstance(context).portfolioDao() }
     val assets by dao.observeAssets().collectAsState(initial = emptyList())
     val total by dao.observePortfolioValue().collectAsState(initial = 0.0)
+    val cashBalance by dao.observeCashBalance().collectAsState(initial = 0.0)
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
     var showAddAsset by remember { mutableStateOf(false) }
     var showAddOperation by remember { mutableStateOf(false) }
+    var showCashFlow by remember { mutableStateOf(false) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
@@ -74,14 +76,25 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
-                Screen.Operations -> OperationsScreen(operations, Modifier.padding(padding))
+                Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
     }
 
+    if (showCashFlow) {
+        CashFlowDialog(
+            onDismiss = { showCashFlow = false },
+            onSave = { isDeposit, amount ->
+                scope.launch {
+                    repository.recordCashFlow(isDeposit, amount)
+                    showCashFlow = false
+                }
+            }
+        )
+    }
     if (showAddOperation) {
         AddOperationDialog(assets, { showAddOperation = false }) { asset, isBuy, qty, price, fee ->
             scope.launch {
@@ -113,8 +126,9 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, modifier: Modifier = Modifier) {
     val assetCount = assets.size
+    val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = total - invested
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
@@ -130,9 +144,9 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: M
         item {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)) {
                 Column(Modifier.padding(22.dp)) {
-                    Text("Текущая стоимость активов", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
+                    Text("Общая стоимость портфеля", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
                     Spacer(Modifier.height(8.dp))
-                    Text("${money(total)} ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                    Text("${money(portfolioTotal)} ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.Bold)
                     Text("Активов в портфеле: $assetCount", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
                 }
             }
@@ -146,7 +160,7 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: M
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard("Результат к себестоимости", String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent), Modifier.weight(1f))
-                MetricCard("Свободные деньги", "Не учитываются", Modifier.weight(1f))
+                MetricCard("Свободные деньги", money(cashBalance) + " ₽", Modifier.weight(1f))
             }
         }
         item {
@@ -194,10 +208,11 @@ private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun OperationsScreen(operations: List<OperationEntity>, modifier: Modifier = Modifier) {
+private fun OperationsScreen(operations: List<OperationEntity>, onAddCashFlow: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Операции", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("История покупок и продаж", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("История сделок и движения денег", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = onAddCashFlow) { Text("Пополнить / вывести деньги") }
         Spacer(Modifier.height(12.dp))
         if (operations.isEmpty()) Text("Пока нет операций. Нажмите +, чтобы добавить сделку.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -214,6 +229,31 @@ private fun OperationsScreen(operations: List<OperationEntity>, modifier: Modifi
             }
         }
     }
+}
+
+
+@Composable
+private fun CashFlowDialog(onDismiss: () -> Unit, onSave: (Boolean, Double) -> Unit) {
+    var isDeposit by remember { mutableStateOf(true) }
+    var amountText by remember { mutableStateOf("") }
+    val amount = amountText.toDoubleOrNull() ?: 0.0
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Движение денег") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = isDeposit, onClick = { isDeposit = true }, label = { Text("Пополнение") })
+                    FilterChip(selected = !isDeposit, onClick = { isDeposit = false }, label = { Text("Вывод") })
+                }
+                OutlinedTextField(amountText, { amountText = it }, label = { Text("Сумма, ₽") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = amount > 0.0, onClick = { onSave(isDeposit, amount) }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
