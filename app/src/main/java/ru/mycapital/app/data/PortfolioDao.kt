@@ -12,6 +12,12 @@ interface PortfolioDao {
     @Query("SELECT * FROM assets ORDER BY assetType, ticker")
     fun observeAssets(): Flow<List<AssetEntity>>
 
+    @Query("SELECT * FROM assets ORDER BY assetType, ticker")
+    suspend fun getAssets(): List<AssetEntity>
+
+    @Query("UPDATE assets SET currentPrice = :price, updatedAt = :updatedAt WHERE id = :assetId")
+    suspend fun updateAssetPrice(assetId: Long, price: Double, updatedAt: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAsset(asset: AssetEntity): Long
 
