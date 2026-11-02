@@ -174,7 +174,6 @@ private fun MyCapitalApp() {
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, dao, Modifier.padding(padding))
-                else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
     }
@@ -818,17 +817,6 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
         }
     }
 }
-@Composable
-private fun PlaceholderScreen(screen: Screen, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(screen.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(42.dp))
-            Text(screen.title, style = MaterialTheme.typography.headlineSmall)
-            Text("Раздел будет реализован следующим этапом", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
 private fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
 
 
