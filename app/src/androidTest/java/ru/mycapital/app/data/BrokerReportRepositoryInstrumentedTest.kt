@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -62,7 +63,7 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(1, second.unsettledSkipped)
         assertEquals(100.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(3.0, dao.getAsset(assetId)!!.quantity, 0.000001)
-        assertEquals(2, dao.observeOperationsForTestCount())
+        assertEquals(2, dao.observeOperations().first().size)
         assertNotNull(dao.getOperationBySourceKey("CASH:1"))
         assertNotNull(dao.getOperationBySourceKey("SBER:101"))
     }
@@ -129,7 +130,3 @@ class BrokerReportRepositoryInstrumentedTest {
     )
 }
 
-private suspend fun PortfolioDao.observeOperationsForTestCount(): Int =
-    observeOperations().let { flow ->
-        kotlinx.coroutines.flow.first(flow).size
-    }
