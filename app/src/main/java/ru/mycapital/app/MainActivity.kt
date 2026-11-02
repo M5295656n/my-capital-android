@@ -925,6 +925,16 @@ private fun BrokerReportPreviewDialog(
             TextButton(onClick = onDismiss, enabled = !isImporting && !isReconciling) { Text("Отмена") }
         }
     )
+    if (showReconcileConfirmation) {
+        BrokerReportReconciliationConfirmation(
+            report = report,
+            onConfirm = {
+                showReconcileConfirmation = false
+                onReconcile()
+            },
+            onDismiss = { showReconcileConfirmation = false }
+        )
+    }
 }
 
 @Composable
