@@ -81,7 +81,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
             assertEquals(true, firstId > 0)
             assertEquals(-1L, duplicateId)
             assertNotNull(dao.getOperationBySourceKey("SBER:IMPORT:1"))
-            assertEquals(2, dao.observeOperationsForMigrationTest().size)
+            assertEquals(2, dao.observeOperations().first().size)
         } finally {
             database.close()
             context.deleteDatabase(databaseName)
