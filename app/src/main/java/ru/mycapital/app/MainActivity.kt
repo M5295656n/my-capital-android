@@ -621,7 +621,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            IndexBenchmarkSection(snapshots)
+            IndexBenchmarkSection(snapshots, dao)
         }
         item {
             Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
