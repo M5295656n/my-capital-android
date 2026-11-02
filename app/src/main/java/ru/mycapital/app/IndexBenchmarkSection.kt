@@ -35,6 +35,7 @@ import ru.mycapital.app.data.PortfolioDao
 import ru.mycapital.app.data.MoexIndexPoint
 import ru.mycapital.app.data.PortfolioSnapshotEntity
 import java.util.Locale
+import java.time.LocalDate
 
 @Composable
 fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: PortfolioDao) {
@@ -61,13 +62,27 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
                 try {
                     val fresh = withContext(Dispatchers.IO) {
                         val client = MoexIndexHistoryClient()
-                        val price = client.getHistory("IMOEX", from, till)
-                        val totalReturn = client.getHistory("MCFTR", from, till)
+                        val latestPriceDate = dao.getLatestIndexHistoryDate("IMOEX")
+                        val latestTotalDate = dao.getLatestIndexHistoryDate("MCFTR")
+                        fun startDate(latest: String?): String {
+                            if (reloadKey > 0 || latest == null) return from
+                            if (latest >= till) return till
+                            // Re-fetch a short overlap in case MOEX corrected recent sessions.
+                            return maxOf(from, LocalDate.parse(latest).minusDays(5).toString())
+                        }
+                        val price = if (latestPriceDate != null && latestPriceDate >= till && reloadKey == 0) {
+                            emptyList()
+                        } else client.getHistory("IMOEX", startDate(latestPriceDate), till)
+                        val totalReturn = if (latestTotalDate != null && latestTotalDate >= till && reloadKey == 0) {
+                            emptyList()
+                        } else client.getHistory("MCFTR", startDate(latestTotalDate), till)
                         dao.upsertIndexHistory(
                             price.map { IndexHistoryEntity("IMOEX", it.date, it.value) } +
                             totalReturn.map { IndexHistoryEntity("MCFTR", it.date, it.value) }
                         )
-                        price to totalReturn
+                        val allPrice = dao.getIndexHistory("IMOEX", from, till).map { MoexIndexPoint(it.dateKey, it.close) }
+                        val allTotal = dao.getIndexHistory("MCFTR", from, till).map { MoexIndexPoint(it.dateKey, it.close) }
+                        allPrice to allTotal
                     }
                     if (fresh.first.isNotEmpty()) imoex = fresh.first
                     if (fresh.second.isNotEmpty()) mcftr = fresh.second
