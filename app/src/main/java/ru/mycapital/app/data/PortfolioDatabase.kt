@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class PortfolioDatabase : RoomDatabase() {
@@ -46,6 +46,13 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE operations ADD COLUMN sourceKey TEXT")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_operations_sourceKey ON operations(sourceKey)")
+            }
+        }
+
         @Volatile private var INSTANCE: PortfolioDatabase? = null
 
         fun getInstance(context: Context): PortfolioDatabase =
@@ -54,7 +61,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     context.applicationContext,
                     PortfolioDatabase::class.java,
                     "my_capital.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { INSTANCE = it }
             }
     }
 }
