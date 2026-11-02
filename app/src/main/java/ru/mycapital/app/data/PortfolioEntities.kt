@@ -43,3 +43,9 @@ data class PayoutEntity(
     val actualDate: Long? = null,
     val status: String = "EXPECTED"
 )
+
+@Entity(tableName = "cash_balance")
+data class CashBalanceEntity(
+    @PrimaryKey val id: Int = 1,
+    val balance: Double = 0.0
+)
