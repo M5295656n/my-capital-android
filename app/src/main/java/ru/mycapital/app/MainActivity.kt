@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -83,6 +84,8 @@ private fun MyCapitalApp() {
     var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
     var isParsingReport by remember { mutableStateOf(false) }
+    var isImportingReport by remember { mutableStateOf(false) }
+    var importResultMessage by remember { mutableStateOf<String?>(null) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -176,7 +179,34 @@ private fun MyCapitalApp() {
     }
 
     if (importedReport != null) {
-        BrokerReportPreviewDialog(importedReport!!, onDismiss = { importedReport = null })
+        BrokerReportPreviewDialog(
+            report = importedReport!!,
+            isImporting = isImportingReport,
+            onDismiss = { if (!isImportingReport) importedReport = null },
+            onImportHistory = {
+                val reportToImport = importedReport!!
+                isImportingReport = true
+                scope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) { repository.importBrokerReportHistory(reportToImport) }
+                        importResultMessage = "Добавлено операций: ${result.imported}. Дубликатов пропущено: ${result.duplicates}. Неисполненных или непроверенных сделок пропущено: ${result.unsettledSkipped}. Денежный остаток и позиции не менялись."
+                        importedReport = null
+                    } catch (error: Exception) {
+                        importError = error.message ?: "Не удалось импортировать операции."
+                    } finally {
+                        isImportingReport = false
+                    }
+                }
+            }
+        )
+    }
+    if (importResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { importResultMessage = null },
+            title = { Text("Импорт завершён") },
+            text = { Text(importResultMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { importResultMessage = null }) { Text("Готово") } }
+        )
     }
     if (importError != null) {
         AlertDialog(
@@ -784,14 +814,22 @@ private fun money(value: Double): String = String.format(java.util.Locale("ru", 
 
 
 @Composable
-private fun BrokerReportPreviewDialog(report: SberBrokerReport, onDismiss: () -> Unit) {
-    val pendingTrades = report.trades.filter { !it.status.contains("И") }
+private fun BrokerReportPreviewDialog(
+    report: SberBrokerReport,
+    isImporting: Boolean,
+    onDismiss: () -> Unit,
+    onImportHistory: () -> Unit
+) {
+    val pendingTrades = report.trades.filter { it.status.trim() != "И" }
     val completedTrades = report.trades.size - pendingTrades.size
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Предварительный просмотр отчёта") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 460.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text("Период: ${report.periodStart} — ${report.periodEnd}", fontWeight = FontWeight.SemiBold)
                 Text("Денежные средства")
                 Text("На начало: ${money(report.openingCash)} ₽")
@@ -800,23 +838,34 @@ private fun BrokerReportPreviewDialog(report: SberBrokerReport, onDismiss: () ->
                 Text("На конец: ${money(report.closingCash)} ₽")
                 HorizontalDivider()
                 Text("Позиций в отчёте: ${report.assets.size}")
-                Text("Сделок: ${report.trades.size} (предварительно исполнено: $completedTrades)")
-                Text("Комиссии по сделкам: ${money(report.trades.sumOf { it.totalFee })} ₽")
+                Text("Сделок: ${report.trades.size} (статус «И»: $completedTrades)")
+                Text("Комиссии по всем сделкам: ${money(report.trades.sumOf { it.totalFee })} ₽")
                 if (pendingTrades.isNotEmpty()) {
-                    Text("Неисполненные / требующие проверки сделки: ${pendingTrades.size}", color = MaterialTheme.colorScheme.error)
-                    pendingTrades.take(3).forEach { trade ->
+                    Text("Сделки, не включаемые в историю как исполненные: ${pendingTrades.size}", color = MaterialTheme.colorScheme.error)
+                    pendingTrades.take(4).forEach { trade ->
                         Text("${trade.ticker}: ${trade.side}, ${trade.quantity} шт. · статус «${trade.status}»", fontSize = 12.sp)
                     }
                 }
                 HorizontalDivider()
-                Text("Позиции", fontWeight = FontWeight.SemiBold)
+                Text("Позиции (только справочно)", fontWeight = FontWeight.SemiBold)
                 report.assets.take(8).forEach { asset ->
                     Text("${asset.ticker.ifBlank { asset.name }} · ${asset.closingQuantity} шт. · ${money(asset.closingValue)} ₽", fontSize = 12.sp)
                 }
                 if (report.assets.size > 8) Text("И ещё ${report.assets.size - 8} позиций…", fontSize = 12.sp)
-                Text("Это только просмотр: портфель и денежный остаток пока не изменены.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(
+                    "Импорт добавит только историю денежных движений и сделок со статусом «И». Текущие позиции и остаток денег не изменятся. Повторный импорт тех же строк не создаст дубликаты.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+        confirmButton = {
+            TextButton(onClick = onImportHistory, enabled = !isImporting && (report.cashFlows.isNotEmpty() || completedTrades > 0)) {
+                Text(if (isImporting) "Импортирую…" else "Импортировать историю")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isImporting) { Text("Отмена") }
+        }
     )
 }
