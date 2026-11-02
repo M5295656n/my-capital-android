@@ -1,9 +1,68 @@
 package ru.mycapital.app.data
 
 import androidx.room.withTransaction
+import java.time.ZoneOffset
 
 class PortfolioRepository(private val database: PortfolioDatabase) {
     private val dao = database.portfolioDao()
+
+
+    data class BrokerHistoryImportResult(val imported: Int, val duplicates: Int, val unsettledSkipped: Int)
+
+    suspend fun importBrokerReportHistory(report: SberBrokerReport): BrokerHistoryImportResult {
+        var imported = 0
+        var duplicates = 0
+        var unsettledSkipped = 0
+        database.withTransaction {
+            val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
+            report.cashFlows.forEach { flow ->
+                val amount = flow.credit.takeIf { it > 0.0 } ?: flow.debit
+                if (amount <= 0.0) return@forEach
+                val isDeposit = flow.credit > 0.0
+                val row = OperationEntity(
+                    assetId = null,
+                    operationType = if (isDeposit) "Пополнение" else "Вывод",
+                    ticker = "RUB",
+                    quantity = 1.0,
+                    price = amount,
+                    commission = 0.0,
+                    operationDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    note = "Импорт из брокерского отчёта: ${flow.description}",
+                    sourceKey = flow.rowKey
+                )
+                val id = dao.insertImportedOperation(row)
+                if (id == -1L) duplicates++ else imported++
+            }
+            report.trades.forEach { trade ->
+                // Only the explicit fully executed status is imported. Other codes may
+                // represent unsettled, partially settled or pending obligations.
+                if (trade.status.trim() != "И") {
+                    unsettledSkipped++
+                    return@forEach
+                }
+                val isBuy = trade.side.contains("Покуп", ignoreCase = true)
+                val isSell = trade.side.contains("Прод", ignoreCase = true)
+                if (!isBuy && !isSell) {
+                    unsettledSkipped++
+                    return@forEach
+                }
+                val row = OperationEntity(
+                    assetId = assetsByTicker[trade.ticker.uppercase()]?.id,
+                    operationType = if (isBuy) "Покупка" else "Продажа",
+                    ticker = trade.ticker.uppercase(),
+                    quantity = trade.quantity,
+                    price = trade.price,
+                    commission = trade.totalFee,
+                    operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
+                    sourceKey = trade.sourceKey
+                )
+                val id = dao.insertImportedOperation(row)
+                if (id == -1L) duplicates++ else imported++
+            }
+        }
+        return BrokerHistoryImportResult(imported, duplicates, unsettledSkipped)
+    }
 
     suspend fun recordTrade(
         assetId: Long,
