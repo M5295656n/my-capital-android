@@ -43,9 +43,10 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>) {
     var mcftr by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var reloadKey by remember { mutableStateOf(0) }
     val uriHandler = LocalUriHandler.current
 
-    LaunchedEffect(from, till) {
+    LaunchedEffect(from, till, reloadKey) {
         if (from != null && till != null && ordered.size >= 2) {
             loading = true
             error = null
@@ -96,10 +97,14 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>) {
             modifier = Modifier.padding(top = 2.dp)
         )
         androidx.compose.foundation.text.ClickableText(
-            text = androidx.compose.ui.text.AnnotatedString("Открыть страницу индексов MOEX"),
+            text = androidx.compose.ui.text.AnnotatedString("Методология и значения MCFTR на сайте MOEX"),
             style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.primary),
-            onClick = { uriHandler.openUri("https://www.moex.com/ru/indices") }
+            onClick = { uriHandler.openUri("https://www.moex.com/ru/index/totalreturn/MCFTR") }
         )
+        androidx.compose.material3.TextButton(
+            onClick = { reloadKey++ },
+            enabled = !loading && ordered.size >= 2
+        ) { Text("Обновить индексы") }
     }
 }
 
