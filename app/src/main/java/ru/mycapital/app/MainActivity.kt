@@ -23,6 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import ru.mycapital.app.data.SberBrokerReport
+import ru.mycapital.app.data.SberBrokerReportParser
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -73,6 +80,29 @@ private fun MyCapitalApp() {
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
     var showAddPayout by remember { mutableStateOf(false) }
+    var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    var isParsingReport by remember { mutableStateOf(false) }
+    val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            isParsingReport = true
+            scope.launch {
+                try {
+                    val parsed = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                            SberBrokerReportParser.parse(reader.readText())
+                        } ?: error("Не удалось открыть выбранный файл.")
+                    }
+                    importedReport = parsed
+                    importError = null
+                } catch (error: Exception) {
+                    importError = error.message ?: "Не удалось прочитать брокерский отчёт."
+                } finally {
+                    isParsingReport = false
+                }
+            }
+        }
+    }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
     LaunchedEffect(Unit) {
@@ -135,7 +165,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
@@ -145,6 +175,17 @@ private fun MyCapitalApp() {
         }
     }
 
+    if (importedReport != null) {
+        BrokerReportPreviewDialog(importedReport!!, onDismiss = { importedReport = null })
+    }
+    if (importError != null) {
+        AlertDialog(
+            onDismissRequest = { importError = null },
+            title = { Text("Не удалось прочитать отчёт") },
+            text = { Text(importError.orEmpty()) },
+            confirmButton = { TextButton(onClick = { importError = null }) { Text("Понятно") } }
+        )
+    }
     if (showAddPayout) {
         AddPayoutDialog(
             assets = assets,
@@ -219,7 +260,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
@@ -242,6 +283,11 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 Icon(Icons.Default.Event, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Обновить дивиденды и купоны")
+            }
+            OutlinedButton(onClick = onImportReport, enabled = !isParsingReport) {
+                Icon(Icons.Default.FileOpen, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
             }
         }
         item {
@@ -735,3 +781,42 @@ private fun PlaceholderScreen(screen: Screen, modifier: Modifier = Modifier) {
 }
 
 private fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
+
+
+@Composable
+private fun BrokerReportPreviewDialog(report: SberBrokerReport, onDismiss: () -> Unit) {
+    val pendingTrades = report.trades.filter { !it.status.contains("И") }
+    val completedTrades = report.trades.size - pendingTrades.size
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Предварительный просмотр отчёта") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Период: ${report.periodStart} — ${report.periodEnd}", fontWeight = FontWeight.SemiBold)
+                Text("Денежные средства")
+                Text("На начало: ${money(report.openingCash)} ₽")
+                Text("Пополнения: +${money(report.cashCredits)} ₽")
+                Text("Списания: −${money(report.cashDebits)} ₽")
+                Text("На конец: ${money(report.closingCash)} ₽")
+                HorizontalDivider()
+                Text("Позиций в отчёте: ${report.assets.size}")
+                Text("Сделок: ${report.trades.size} (предварительно исполнено: $completedTrades)")
+                Text("Комиссии по сделкам: ${money(report.trades.sumOf { it.totalFee })} ₽")
+                if (pendingTrades.isNotEmpty()) {
+                    Text("Неисполненные / требующие проверки сделки: ${pendingTrades.size}", color = MaterialTheme.colorScheme.error)
+                    pendingTrades.take(3).forEach { trade ->
+                        Text("${trade.ticker}: ${trade.side}, ${trade.quantity} шт. · статус «${trade.status}»", fontSize = 12.sp)
+                    }
+                }
+                HorizontalDivider()
+                Text("Позиции", fontWeight = FontWeight.SemiBold)
+                report.assets.take(8).forEach { asset ->
+                    Text("${asset.ticker.ifBlank { asset.name }} · ${asset.closingQuantity} шт. · ${money(asset.closingValue)} ₽", fontSize = 12.sp)
+                }
+                if (report.assets.size > 8) Text("И ещё ${report.assets.size - 8} позиций…", fontSize = 12.sp)
+                Text("Это только просмотр: портфель и денежный остаток пока не изменены.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+}
