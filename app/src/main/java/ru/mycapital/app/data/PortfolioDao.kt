@@ -30,6 +30,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM assets WHERE id = :assetId LIMIT 1")
     suspend fun getAsset(assetId: Long): AssetEntity?
 
+    @Query("SELECT * FROM assets WHERE UPPER(ticker) = UPPER(:ticker) LIMIT 1")
+    suspend fun getAssetByTicker(ticker: String): AssetEntity?
+
     @Query("SELECT * FROM operations ORDER BY operationDate DESC")
     fun observeOperations(): Flow<List<OperationEntity>>
 
