@@ -46,6 +46,11 @@ class SberBrokerReportParserTest {
         assertParseFails(sampleHtml(cashCredit = "не число"))
     }
 
+    @Test
+    fun rejectsMalformedPositionQuantityInsteadOfTreatingItAsZero() {
+        assertParseFails(sampleHtml(closingQuantity = "не число"))
+    }
+
     private fun assertParseFails(html: String) {
         try {
             SberBrokerReportParser.parse(html)
