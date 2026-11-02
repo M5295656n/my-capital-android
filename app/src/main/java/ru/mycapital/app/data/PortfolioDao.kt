@@ -39,7 +39,7 @@ interface PortfolioDao {
     @Query("SELECT * FROM payouts ORDER BY COALESCE(expectedDate, actualDate) ASC")
     fun observePayouts(): Flow<List<PayoutEntity>>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPayout(payout: PayoutEntity): Long
 
     @androidx.room.Update
