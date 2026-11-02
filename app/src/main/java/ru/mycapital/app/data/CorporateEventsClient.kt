@@ -63,7 +63,7 @@ class CorporateEventsClient {
                 if (!amount.isFinite() || amount <= 0.0 || date < today) continue
                 val type = if (isBond) "Купон" else "Дивиденд"
                 val normalizedTicker = ticker.trim().uppercase()
-                val key = "$normalizedTicker|$type|$dateText|$amount"
+                val key = "$normalizedTicker|$type|$dateText"
                 events += ImportedPayoutEvent(normalizedTicker, type, amount, date, key)
             }
             return events.distinctBy { it.sourceKey }
