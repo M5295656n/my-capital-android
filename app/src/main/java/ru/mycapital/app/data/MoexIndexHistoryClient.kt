@@ -30,7 +30,7 @@ class MoexIndexHistoryClient {
         require(tillDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")))
 
         val encodedCode = URLEncoder.encode(indexCode, StandardCharsets.UTF_8.name())
-        val baseUrl = "https://iss.moex.com/iss/history/engines/stock/markets/index/securities/$encodedCode.json"
+        val baseUrl = "https://iss.moex.com/iss/history/engines/stock/markets/index/boards/SNDX/securities/$encodedCode.json"
         val result = mutableListOf<MoexIndexPoint>()
         var start = 0
 
