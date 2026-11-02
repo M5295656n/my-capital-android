@@ -620,6 +620,9 @@ private fun AnalyticsScreen(
             }
         }
         item {
+            IndexBenchmarkSection(snapshots)
+        }
+        item {
             Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         if (totalValue <= 0.0) {
