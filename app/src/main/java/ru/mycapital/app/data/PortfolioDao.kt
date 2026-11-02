@@ -39,6 +39,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM payouts ORDER BY COALESCE(expectedDate, actualDate) ASC")
     fun observePayouts(): Flow<List<PayoutEntity>>
 
+    @Query("SELECT * FROM payouts WHERE sourceKey = :sourceKey LIMIT 1")
+    suspend fun getPayoutBySourceKey(sourceKey: String): PayoutEntity?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPayout(payout: PayoutEntity): Long
 
