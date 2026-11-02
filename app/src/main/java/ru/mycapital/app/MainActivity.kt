@@ -182,6 +182,8 @@ private fun MyCapitalApp() {
     if (importedReport != null) {
         BrokerReportPreviewDialog(
             report = importedReport!!,
+            currentAssets = assets,
+            currentCash = cashBalance ?: 0.0,
             isImporting = isImportingReport,
             isReconciling = isReconcilingReport,
             onDismiss = { if (!isImportingReport && !isReconcilingReport) importedReport = null },
@@ -833,6 +835,8 @@ private fun money(value: Double): String = String.format(java.util.Locale("ru", 
 @Composable
 private fun BrokerReportPreviewDialog(
     report: SberBrokerReport,
+    currentAssets: List<AssetEntity>,
+    currentCash: Double,
     isImporting: Boolean,
     isReconciling: Boolean,
     onDismiss: () -> Unit,
@@ -841,6 +845,12 @@ private fun BrokerReportPreviewDialog(
 ) {
     val pendingTrades = report.trades.filter { it.status.trim() != "И" }
     val completedTrades = report.trades.size - pendingTrades.size
+    val currentByTicker = currentAssets.associateBy { it.ticker.uppercase() }
+    val knownRows = report.assets.mapNotNull { row ->
+        row.ticker.takeIf { it.isNotBlank() }?.let { ticker -> row to currentByTicker[ticker.uppercase()] }
+    }
+    val unknownRows = report.assets.filter { it.ticker.isBlank() || currentByTicker[it.ticker.uppercase()] == null }
+    var showReconcileConfirmation by remember(report.periodEnd) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Предварительный просмотр отчёта") },
@@ -867,13 +877,27 @@ private fun BrokerReportPreviewDialog(
                     }
                 }
                 HorizontalDivider()
-                Text("Позиции (только справочно)", fontWeight = FontWeight.SemiBold)
-                report.assets.take(8).forEach { asset ->
-                    Text("${asset.ticker.ifBlank { asset.name }} · ${asset.closingQuantity} шт. · ${money(asset.closingValue)} ₽", fontSize = 12.sp)
+                Text("Сверка позиций", fontWeight = FontWeight.SemiBold)
+                Text("Будет изменено количество и текущая цена только у уже известных приложению бумаг. Средняя цена покупки останется прежней.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                knownRows.take(20).forEach { (row, current) ->
+                    val difference = row.closingQuantity - current!!.quantity
+                    val sign = if (difference > 0.000001) "+" else ""
+                    Text("${row.ticker}: ${current.quantity} → ${row.closingQuantity} шт. (${sign}${money(difference)})", fontSize = 12.sp)
                 }
-                if (report.assets.size > 8) Text("И ещё ${report.assets.size - 8} позиций…", fontSize = 12.sp)
+                if (knownRows.size > 20) Text("И ещё ${knownRows.size - 20} сопоставленных позиций…", fontSize = 12.sp)
+                if (unknownRows.isNotEmpty()) {
+                    Text("Не будут изменены: ${unknownRows.size} поз. без совпадения тикера в приложении.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    unknownRows.take(5).forEach { Text("• ${it.ticker.ifBlank { it.name }}", fontSize = 12.sp) }
+                }
+                HorizontalDivider()
+                Text("Деньги: ${money(currentCash)} ₽ → ${money(report.closingCash)} ₽ (изменение ${if (report.closingCash - currentCash >= 0) "+" else ""}${money(report.closingCash - currentCash)} ₽)", fontWeight = FontWeight.SemiBold)
+                val cashCheck = report.openingCash + report.cashCredits - report.cashDebits
+                Text("Контроль отчёта: начальный остаток + поступления − списания = ${money(cashCheck)} ₽. Конечный остаток: ${money(report.closingCash)} ₽.")
+                if (kotlin.math.abs(cashCheck - report.closingCash) > 0.02) {
+                    Text("Внимание: денежный баланс отчёта не сходится. Сверка заблокирована.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
                 Text(
-                    "Импорт добавит только историю денежных движений и сделок со статусом «И». Текущие позиции и остаток денег не изменятся. Повторный импорт тех же строк не создаст дубликаты.",
+                    "Импорт истории и сверка остатков — разные действия. Сверка не импортирует сделки, не меняет среднюю цену и не удаляет активы, которых нет в отчёте.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
@@ -882,8 +906,10 @@ private fun BrokerReportPreviewDialog(
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
                 TextButton(
-                    onClick = onReconcile,
-                    enabled = !isImporting && !isReconciling && report.closingCash >= 0.0 && report.assets.any { it.ticker.isNotBlank() }
+                    onClick = { showReconcileConfirmation = true },
+                    enabled = !isImporting && !isReconciling && report.closingCash >= 0.0 &&
+                        report.assets.any { it.ticker.isNotBlank() } &&
+                        kotlin.math.abs(report.openingCash + report.cashCredits - report.cashDebits - report.closingCash) <= 0.02
                 ) {
                     Text(if (isReconciling) "Сверяю…" else "Сверить остатки и позиции")
                 }
@@ -898,5 +924,24 @@ private fun BrokerReportPreviewDialog(
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !isImporting && !isReconciling) { Text("Отмена") }
         }
+    )
+}
+
+@Composable
+private fun BrokerReportReconciliationConfirmation(
+    report: SberBrokerReport,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Подтвердить сверку портфеля?") },
+        text = {
+            Text(
+                "Приложение установит денежный остаток ${money(report.closingCash)} ₽ и обновит количество/текущую цену только у совпавших позиций из отчёта. Средняя цена покупки не изменится. Неизвестные и отсутствующие в отчёте активы останутся без изменений."
+            )
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Подтвердить сверку") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Назад") } }
     )
 }
