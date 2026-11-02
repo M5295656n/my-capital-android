@@ -4,6 +4,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -36,12 +37,20 @@ class CorporateEventsClient {
         val request = Request.Builder().url(url).header("Accept", "application/json")
             .header("User-Agent", "MyCapital-Android/0.1").build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            val root = JSONObject(response.body?.string() ?: return emptyList())
+            if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
+            val body = response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS")
+            val root = try {
+                JSONObject(body)
+            } catch (error: Exception) {
+                throw IOException("Некорректный JSON от MOEX ISS", error)
+            }
             val blockName = if (isBond) "coupons" else "dividends"
-            val table = root.optJSONObject(blockName) ?: return emptyList()
-            val columns = table.optJSONArray("columns") ?: return emptyList()
-            val rows = table.optJSONArray("data") ?: return emptyList()
+            val table = root.optJSONObject(blockName)
+                ?: throw IOException("В ответе MOEX ISS отсутствует таблица $blockName")
+            val columns = table.optJSONArray("columns")
+                ?: throw IOException("В таблице MOEX ISS отсутствуют столбцы")
+            val rows = table.optJSONArray("data")
+                ?: throw IOException("В таблице MOEX ISS отсутствуют данные")
             val indexes = (0 until columns.length()).associate { columns.getString(it).lowercase(Locale.ROOT) to it }
             val dateFields = if (isBond) listOf("coupondate", "paymentdate") else
                 listOf("paymentdate", "registryclosedate", "recorddate", "date")
