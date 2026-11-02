@@ -27,21 +27,34 @@ class CorporateEventsWorker(
                 val events = client.getEvents(asset.ticker, asset.assetType)
                 database.withTransaction {
                     events.forEach { event ->
-                        dao.insertPayout(
-                            PayoutEntity(
-                                assetId = asset.id,
-                                ticker = event.ticker,
-                                payoutType = event.type,
-                                amountPerUnit = event.amountPerUnit,
-                                quantity = asset.quantity,
-                                totalAmount = event.amountPerUnit * asset.quantity,
-                                taxAmount = 0.0,
-                                expectedDate = event.eventDate,
-                                actualDate = null,
-                                status = "EXPECTED",
-                                sourceKey = event.sourceKey
+                        val existing = dao.getPayoutBySourceKey(event.sourceKey)
+                        if (existing == null) {
+                            dao.insertPayout(
+                                PayoutEntity(
+                                    assetId = asset.id,
+                                    ticker = event.ticker,
+                                    payoutType = event.type,
+                                    amountPerUnit = event.amountPerUnit,
+                                    quantity = asset.quantity,
+                                    totalAmount = event.amountPerUnit * asset.quantity,
+                                    taxAmount = 0.0,
+                                    expectedDate = event.eventDate,
+                                    actualDate = null,
+                                    status = "EXPECTED",
+                                    sourceKey = event.sourceKey
+                                )
                             )
-                        )
+                        } else if (existing.status == "EXPECTED") {
+                            dao.updatePayout(
+                                existing.copy(
+                                    assetId = asset.id,
+                                    amountPerUnit = event.amountPerUnit,
+                                    quantity = asset.quantity,
+                                    totalAmount = event.amountPerUnit * asset.quantity,
+                                    expectedDate = event.eventDate
+                                )
+                            )
+                        }
                     }
                 }
                 succeeded++
