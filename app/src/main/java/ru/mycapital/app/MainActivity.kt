@@ -113,7 +113,8 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: Modifier = Modifier) {\n    val assetCount = assets.size\n    val invested = assets.sumOf { it.quantity * it.averagePrice }\n    val unrealized = total - invested\n    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, modifier: Modifier = Modifier) {
+    val assetCount = assets.size\n    val invested = assets.sumOf { it.quantity * it.averagePrice }\n    val unrealized = total - invested\n    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -212,6 +213,7 @@ private fun OperationsScreen(operations: List<OperationEntity>, modifier: Modifi
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun AddOperationDialog(assets: List<AssetEntity>, onDismiss: () -> Unit, onSave: (AssetEntity, Boolean, Double, Double, Double) -> Unit) {
     var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
