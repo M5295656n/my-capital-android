@@ -1,0 +1,195 @@
+package ru.mycapital.app
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import ru.mycapital.app.data.MoexIndexHistoryClient
+import ru.mycapital.app.data.MoexIndexPoint
+import ru.mycapital.app.data.PortfolioSnapshotEntity
+import java.util.Locale
+
+@Composable
+fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>) {
+    val ordered = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
+    val from = ordered.firstOrNull()?.dateKey
+    val till = ordered.lastOrNull()?.dateKey
+    var imoex by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
+    var mcftr by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val uriHandler = LocalUriHandler.current
+
+    LaunchedEffect(from, till) {
+        if (from != null && till != null && ordered.size >= 2) {
+            loading = true
+            error = null
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val client = MoexIndexHistoryClient()
+                    val price = client.getHistory("IMOEX", from, till)
+                    val totalReturn = client.getHistory("MCFTR", from, till)
+                    price to totalReturn
+                }
+                imoex = result.first
+                mcftr = result.second
+                if (result.first.isEmpty() || result.second.isEmpty()) {
+                    error = "MOEX ISS не вернул исторические значения одного или обоих индексов за период."
+                }
+            } catch (exception: Exception) {
+                error = exception.message ?: "Не удалось загрузить индексы Мосбиржи."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Сравнение с индексами Мосбиржи", style = MaterialTheme.typography.titleLarge)
+        when {
+            ordered.size < 2 -> Text(
+                "Сравнение появится после накопления двух дневных снимков портфеля.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Загружаю исторические данные MOEX…", style = MaterialTheme.typography.bodySmall)
+            }
+            imoex.isNotEmpty() && mcftr.isNotEmpty() -> BenchmarkChart(ordered, imoex, mcftr)
+            else -> Text(error ?: "Исторические ряды пока недоступны.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            "IMOEX — ценовой индекс без дивидендов. MCFTR — полная доходность «брутто» с учётом дивидендов. Ряды нормированы к 100 на первой общей дате.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "Источник: Московская биржа · ISS",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        androidx.compose.foundation.text.ClickableText(
+            text = androidx.compose.ui.text.AnnotatedString("Открыть страницу индексов MOEX"),
+            style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.primary),
+            onClick = { uriHandler.openUri("https://www.moex.com/ru/indices") }
+        )
+    }
+}
+
+@Composable
+private fun BenchmarkChart(
+    snapshots: List<PortfolioSnapshotEntity>,
+    imoex: List<MoexIndexPoint>,
+    mcftr: List<MoexIndexPoint>
+) {
+    val priceByDate = imoex.associate { it.date to it.value }
+    val totalByDate = mcftr.associate { it.date to it.value }
+    val navByDate = mutableMapOf<String, Double>()
+    var nav = 100.0
+    snapshots.forEachIndexed { index, snapshot ->
+        if (index > 0) {
+            val previous = snapshots[index - 1].totalValue
+            val adjustedBase = previous + snapshot.externalFlow
+            if (previous > 0.0 && adjustedBase > 0.0) nav *= snapshot.totalValue / adjustedBase
+        }
+        navByDate[snapshot.dateKey] = nav
+    }
+    val dates = snapshots.map { it.dateKey }.filter { priceByDate.containsKey(it) && totalByDate.containsKey(it) }
+    if (dates.size < 2) {
+        Text("Недостаточно общих торговых дат для корректного сравнения.", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    val first = dates.first()
+    val p0 = navByDate[first] ?: return
+    val i0 = priceByDate[first] ?: return
+    val t0 = totalByDate[first] ?: return
+    val portfolio = dates.map { (navByDate.getValue(it) / p0 * 100.0).toFloat() }
+    val price = dates.map { (priceByDate.getValue(it) / i0 * 100.0).toFloat() }
+    val total = dates.map { (totalByDate.getValue(it) / t0 * 100.0).toFloat() }
+    val values = portfolio + price + total
+    val min = values.minOrNull() ?: 100f
+    val max = values.maxOrNull() ?: 100f
+    val range = (max - min).takeIf { it > 0.0001f } ?: 1f
+    val portfolioColor = MaterialTheme.colorScheme.primary
+    val priceColor = MaterialTheme.colorScheme.tertiary
+    val totalColor = MaterialTheme.colorScheme.secondary
+    val grid = MaterialTheme.colorScheme.outlineVariant
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            Triple("Портфель", portfolio.last(), portfolioColor),
+            Triple("IMOEX · цена", price.last(), priceColor),
+            Triple("MCFTR · с дивидендами", total.last(), totalColor)
+        ).forEach { (label, value, color) ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(9.dp).background(color, CircleShape))
+                    Text(label, style = MaterialTheme.typography.labelMedium)
+                }
+                Text(
+                    String.format(Locale("ru", "RU"), "%+.2f%%", value - 100f),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+        Canvas(Modifier.fillMaxWidth().height(180.dp)) {
+            val left = 8f
+            val right = size.width - 8f
+            val top = 8f
+            val bottom = size.height - 8f
+            for (i in 0..4) {
+                val y = top + (bottom - top) * i / 4f
+                drawLine(grid, androidx.compose.ui.geometry.Offset(left, y), androidx.compose.ui.geometry.Offset(right, y), 1f)
+            }
+            fun drawLine(values: List<Float>, color: Color) {
+                if (values.size < 2) return
+                val path = Path()
+                values.forEachIndexed { index, value ->
+                    val x = left + (right - left) * index / (values.size - 1).toFloat()
+                    val y = bottom - ((value - min) / range) * (bottom - top)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, color, style = Stroke(width = 3.5f))
+            }
+            drawLine(portfolio, portfolioColor)
+            drawLine(price, priceColor)
+            drawLine(total, totalColor)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(dates.last(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            "Доходность портфеля — дневное приближение TWR: внешние денежные потоки учитываются на конец дня. Для сравнения используется только общая история всех трёх рядов.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
