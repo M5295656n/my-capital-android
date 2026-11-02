@@ -6,6 +6,8 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+class UnsupportedMoexInstrumentException(message: String) : IOException(message)
+
 data class MoexQuote(val ticker: String, val price: Double, val board: String?)
 
 class MoexIssClient {
@@ -27,6 +29,9 @@ class MoexIssClient {
             .build()
 
         client.newCall(request).execute().use { response ->
+            if (response.code == 400 || response.code == 404) {
+                throw UnsupportedMoexInstrumentException("MOEX ISS не поддерживает инструмент $ticker (HTTP ${response.code})")
+            }
             if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
             val body = response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS")
             val root = try {
