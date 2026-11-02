@@ -1,7 +1,6 @@
 package ru.mycapital.app.data
 
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 internal fun portfolioSnapshotDateKey(
