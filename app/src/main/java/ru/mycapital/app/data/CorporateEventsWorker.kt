@@ -21,6 +21,7 @@ class CorporateEventsWorker(
         val client = CorporateEventsClient()
         var succeeded = 0
         var attempted = 0
+        var failed = 0
         for (asset in assets.distinctBy { it.ticker.uppercase() }) {
             attempted++
             try {
@@ -60,9 +61,10 @@ class CorporateEventsWorker(
                 succeeded++
             } catch (_: Exception) {
                 // Continue syncing other holdings if one instrument is unsupported.
+                failed++
             }
         }
-        if (succeeded == 0 && attempted > 0 && runAttemptCount < 3) Result.retry()
+        if (failed > 0 && attempted > 0 && runAttemptCount < 3) Result.retry()
         else Result.success()
     }
 }
