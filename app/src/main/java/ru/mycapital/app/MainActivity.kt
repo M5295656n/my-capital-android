@@ -819,6 +819,8 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
 }
 private fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
 
+private fun quantity(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%.6f", value).trimEnd('0').trimEnd(',')
+
 
 @Composable
 private fun BrokerReportPreviewDialog(
@@ -870,7 +872,7 @@ private fun BrokerReportPreviewDialog(
                 knownRows.take(20).forEach { (row, current) ->
                     val difference = row.closingQuantity - current!!.quantity
                     val sign = if (difference > 0.000001) "+" else ""
-                    Text("${row.ticker}: ${current.quantity} → ${row.closingQuantity} шт. (${sign}${money(difference)})", fontSize = 12.sp)
+                    Text("${row.ticker}: ${quantity(current.quantity)} → ${quantity(row.closingQuantity)} шт. (${sign}${quantity(kotlin.math.abs(difference))})", fontSize = 12.sp)
                 }
                 if (knownRows.size > 20) Text("И ещё ${knownRows.size - 20} сопоставленных позиций…", fontSize = 12.sp)
                 if (unknownRows.isNotEmpty()) {
