@@ -78,10 +78,13 @@ interface PortfolioDao {
     @Query("SELECT * FROM portfolio_snapshots ORDER BY dateKey DESC LIMIT 1")
     suspend fun getLatestPortfolioSnapshot(): PortfolioSnapshotEntity?
 
+    @Query("SELECT * FROM portfolio_snapshots WHERE dateKey < :dateKey ORDER BY dateKey DESC LIMIT 1")
+    suspend fun getLatestPortfolioSnapshotBefore(dateKey: String): PortfolioSnapshotEntity?
+
     @Query("SELECT * FROM operations WHERE operationDate > :afterTimestamp AND (operationType = 'Пополнение' OR operationType = 'Вывод') ORDER BY operationDate ASC")
     suspend fun getExternalFlowsSince(afterTimestamp: Long): List<OperationEntity>
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPortfolioSnapshot(snapshot: PortfolioSnapshotEntity): Long
 
     @Query("SELECT * FROM index_history WHERE indexCode = :indexCode AND dateKey BETWEEN :fromDate AND :tillDate ORDER BY dateKey ASC")
