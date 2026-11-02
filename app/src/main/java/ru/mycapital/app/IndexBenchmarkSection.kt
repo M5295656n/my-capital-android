@@ -116,8 +116,10 @@ private fun BenchmarkChart(
     snapshots.forEachIndexed { index, snapshot ->
         if (index > 0) {
             val previous = snapshots[index - 1].totalValue
-            val adjustedBase = previous + snapshot.externalFlow
-            if (previous > 0.0 && adjustedBase > 0.0) nav *= snapshot.totalValue / adjustedBase
+            val valueBeforeEndOfDayFlow = snapshot.totalValue - snapshot.externalFlow
+            if (previous > 0.0 && valueBeforeEndOfDayFlow > 0.0) {
+                nav *= valueBeforeEndOfDayFlow / previous
+            }
         }
         navByDate[snapshot.dateKey] = nav
     }
