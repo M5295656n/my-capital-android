@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit
 internal fun isEventDateUpcoming(date: LocalDate, today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): Boolean =
     !date.isBefore(today)
 
+class UnsupportedCorporateEventsInstrumentException(message: String) : IOException(message)
+
 data class ImportedPayoutEvent(
     val ticker: String,
     val type: String,
@@ -42,6 +44,9 @@ class CorporateEventsClient {
         val request = Request.Builder().url(url).header("Accept", "application/json")
             .header("User-Agent", "MyCapital-Android/0.1").build()
         client.newCall(request).execute().use { response ->
+            if (response.code == 404 || response.code == 400) {
+                throw UnsupportedCorporateEventsInstrumentException("MOEX ISS не поддерживает инструмент $ticker (HTTP ${response.code})")
+            }
             if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
             val body = response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS")
             val root = try {
