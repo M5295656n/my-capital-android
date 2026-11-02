@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.OperationEntity
+import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.PortfolioRepository
 
 class MainActivity : ComponentActivity() {
@@ -52,13 +53,15 @@ private fun MyCapitalApp() {
     var showCashFlow by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
+    val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    var showAddPayout by remember { mutableStateOf(false) }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
 
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
         Scaffold(
             floatingActionButton = {
-                if (selected == Screen.Assets || selected == Screen.Operations) {
-                    FloatingActionButton(onClick = { if (selected == Screen.Assets) showAddAsset = true else showAddOperation = true }) {
+                if (selected == Screen.Assets || selected == Screen.Operations || selected == Screen.Payouts) {
+                    FloatingActionButton(onClick = { when (selected) { Screen.Assets -> showAddAsset = true; Screen.Operations -> showAddOperation = true; Screen.Payouts -> showAddPayout = true; else -> Unit } }) {
                         Icon(Icons.Default.Add, contentDescription = "Добавить актив")
                     }
                 }
@@ -80,11 +83,28 @@ private fun MyCapitalApp() {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
                 else -> PlaceholderScreen(selected, Modifier.padding(padding))
             }
         }
     }
 
+    if (showAddPayout) {
+        AddPayoutDialog(
+            assets = assets,
+            onDismiss = { showAddPayout = false },
+            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received ->
+                scope.launch {
+                    try {
+                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received)
+                        showAddPayout = false
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "Не удалось сохранить выплату"
+                    }
+                }
+            }
+        )
+    }
     if (showCashFlow) {
         CashFlowDialog(
             onDismiss = { showCashFlow = false },
@@ -256,6 +276,99 @@ private fun OperationsScreen(operations: List<OperationEntity>, onAddCashFlow: (
     }
 }
 
+
+
+@Composable
+private fun PayoutsScreen(payouts: List<PayoutEntity>, modifier: Modifier = Modifier) {
+    val received = payouts.filter { it.status == "RECEIVED" }.sumOf { it.totalAmount - it.taxAmount }
+    val expected = payouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
+    Column(modifier.fillMaxSize().padding(20.dp)) {
+        Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricCard("Получено после налога", money(received) + " ₽", Modifier.weight(1f))
+            MetricCard("Ожидается до налога", money(expected) + " ₽", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(12.dp))
+        if (payouts.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 80.dp)) {
+                items(payouts, key = { it.id }) { payout ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
+                                    color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
+                            Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddPayoutDialog(
+    assets: List<AssetEntity>,
+    onDismiss: () -> Unit,
+    onSave: (AssetEntity?, String, Double, Double, Double, Boolean) -> Unit
+) {
+    var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
+    var payoutType by remember { mutableStateOf("Дивиденд") }
+    var amountText by remember { mutableStateOf("") }
+    var quantityText by remember { mutableStateOf("1") }
+    var taxText by remember { mutableStateOf("0") }
+    var received by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    val asset = assets.firstOrNull { it.id == assetId }
+    val amount = amountText.replace(',', '.').toDoubleOrNull() ?: 0.0
+    val quantity = quantityText.replace(',', '.').toDoubleOrNull() ?: 0.0
+    val tax = taxText.replace(',', '.').toDoubleOrNull() ?: -1.0
+    val gross = amount * quantity
+    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Добавить выплату") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                    OutlinedTextField(value = asset?.ticker ?: "Нет активов", onValueChange = {}, readOnly = true,
+                        label = { Text("Бумага") }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        assets.forEach { item ->
+                            DropdownMenuItem(text = { Text(item.ticker) }, onClick = { assetId = item.id; expanded = false })
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = payoutType == "Дивиденд", onClick = { payoutType = "Дивиденд" }, label = { Text("Дивиденд") })
+                    FilterChip(selected = payoutType == "Купон", onClick = { payoutType = "Купон" }, label = { Text("Купон") })
+                }
+                OutlinedTextField(amountText, { amountText = it }, label = { Text("Сумма на акцию / облигацию, ₽") }, singleLine = true)
+                OutlinedTextField(quantityText, { quantityText = it }, label = { Text("Количество бумаг") }, singleLine = true)
+                OutlinedTextField(taxText, { taxText = it }, label = { Text("Налог, ₽") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = received, onCheckedChange = { received = it })
+                    Text("Уже фактически получено")
+                }
+                Text("Начислено: ${money(gross)} ₽ · К получению: ${money((gross - tax).coerceAtLeast(0.0))} ₽",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received) }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
 
 @Composable
 private fun CashFlowDialog(onDismiss: () -> Unit, onSave: (Boolean, Double) -> Unit) {
