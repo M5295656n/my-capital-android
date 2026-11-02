@@ -58,5 +58,6 @@ data class PortfolioSnapshotEntity(
     val capturedAt: Long,
     val assetsValue: Double,
     val cashValue: Double,
-    val totalValue: Double
+    val totalValue: Double,
+    val externalFlow: Double = 0.0
 )
