@@ -46,7 +46,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+        internal val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE operations ADD COLUMN sourceKey TEXT")
                 database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_operations_sourceKey ON operations(sourceKey)")
