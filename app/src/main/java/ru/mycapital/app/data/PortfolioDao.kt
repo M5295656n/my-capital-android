@@ -36,6 +36,12 @@ interface PortfolioDao {
     @Insert
     suspend fun insertOperation(operation: OperationEntity): Long
 
+    @Query("SELECT * FROM operations WHERE sourceKey = :sourceKey LIMIT 1")
+    suspend fun getOperationBySourceKey(sourceKey: String): OperationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertImportedOperation(operation: OperationEntity): Long
+
     @Query("SELECT * FROM payouts ORDER BY COALESCE(expectedDate, actualDate) ASC")
     fun observePayouts(): Flow<List<PayoutEntity>>
 
