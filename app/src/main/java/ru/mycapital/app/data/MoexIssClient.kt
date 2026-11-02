@@ -1,5 +1,6 @@
 package ru.mycapital.app.data
 
+import java.io.IOException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -26,12 +27,19 @@ class MoexIssClient {
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val body = response.body?.string() ?: return null
-            val root = JSONObject(body)
-            val table = root.optJSONObject("marketdata") ?: return null
-            val columns = table.optJSONArray("columns") ?: return null
-            val rows = table.optJSONArray("data") ?: return null
+            if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
+            val body = response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS")
+            val root = try {
+                JSONObject(body)
+            } catch (error: Exception) {
+                throw IOException("Некорректный JSON от MOEX ISS", error)
+            }
+            val table = root.optJSONObject("marketdata")
+                ?: throw IOException("В ответе MOEX ISS отсутствует таблица котировок")
+            val columns = table.optJSONArray("columns")
+                ?: throw IOException("В таблице котировок MOEX ISS отсутствуют столбцы")
+            val rows = table.optJSONArray("data")
+                ?: throw IOException("В таблице котировок MOEX ISS отсутствуют данные")
             val indexes = (0 until columns.length()).associate { columns.getString(it) to it }
             fun value(row: org.json.JSONArray, column: String): Double? {
                 val index = indexes[column] ?: return null
