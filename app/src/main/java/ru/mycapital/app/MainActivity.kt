@@ -86,6 +86,7 @@ private fun MyCapitalApp() {
     var isParsingReport by remember { mutableStateOf(false) }
     var isImportingReport by remember { mutableStateOf(false) }
     var importResultMessage by remember { mutableStateOf<String?>(null) }
+    var isReconcilingReport by remember { mutableStateOf(false) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -182,7 +183,23 @@ private fun MyCapitalApp() {
         BrokerReportPreviewDialog(
             report = importedReport!!,
             isImporting = isImportingReport,
-            onDismiss = { if (!isImportingReport) importedReport = null },
+            isReconciling = isReconcilingReport,
+            onDismiss = { if (!isImportingReport && !isReconcilingReport) importedReport = null },
+            onReconcile = {
+                val reportToReconcile = importedReport!!
+                isReconcilingReport = true
+                scope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) { repository.reconcileBrokerReportSnapshot(reportToReconcile) }
+                        importResultMessage = "Сверка завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Денежный остаток установлен по отчёту: ${money(result.reportCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Средняя цена не менялась; отсутствующие в отчёте активы не удалялись."
+                        importedReport = null
+                    } catch (error: Exception) {
+                        importError = error.message ?: "Не удалось сверить портфель."
+                    } finally {
+                        isReconcilingReport = false
+                    }
+                }
+            },
             onImportHistory = {
                 val reportToImport = importedReport!!
                 isImportingReport = true
@@ -817,7 +834,9 @@ private fun money(value: Double): String = String.format(java.util.Locale("ru", 
 private fun BrokerReportPreviewDialog(
     report: SberBrokerReport,
     isImporting: Boolean,
+    isReconciling: Boolean,
     onDismiss: () -> Unit,
+    onReconcile: () -> Unit,
     onImportHistory: () -> Unit
 ) {
     val pendingTrades = report.trades.filter { it.status.trim() != "И" }
@@ -837,7 +856,8 @@ private fun BrokerReportPreviewDialog(
                 Text("Списания: −${money(report.cashDebits)} ₽")
                 Text("На конец: ${money(report.closingCash)} ₽")
                 HorizontalDivider()
-                Text("Позиций в отчёте: ${report.assets.size}")
+                val knownTickers = report.assets.count { row -> row.ticker.isNotBlank() }
+                Text("Позиций в отчёте: ${report.assets.size} (с распознанными тикерами: $knownTickers)")
                 Text("Сделок: ${report.trades.size} (статус «И»: $completedTrades)")
                 Text("Комиссии по всем сделкам: ${money(report.trades.sumOf { it.totalFee })} ₽")
                 if (pendingTrades.isNotEmpty()) {
@@ -860,12 +880,23 @@ private fun BrokerReportPreviewDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onImportHistory, enabled = !isImporting && (report.cashFlows.isNotEmpty() || completedTrades > 0)) {
-                Text(if (isImporting) "Импортирую…" else "Импортировать историю")
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(
+                    onClick = onReconcile,
+                    enabled = !isImporting && !isReconciling && report.closingCash >= 0.0 && report.assets.any { it.ticker.isNotBlank() }
+                ) {
+                    Text(if (isReconciling) "Сверяю…" else "Сверить остатки и позиции")
+                }
+                TextButton(
+                    onClick = onImportHistory,
+                    enabled = !isImporting && !isReconciling && (report.cashFlows.isNotEmpty() || completedTrades > 0)
+                ) {
+                    Text(if (isImporting) "Импортирую…" else "Импортировать историю")
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isImporting) { Text("Отмена") }
+            TextButton(onClick = onDismiss, enabled = !isImporting && !isReconciling) { Text("Отмена") }
         }
     )
 }
