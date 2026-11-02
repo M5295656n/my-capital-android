@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class PortfolioDatabase : RoomDatabase() {
@@ -34,6 +34,12 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE portfolio_snapshots ADD COLUMN externalFlow REAL NOT NULL DEFAULT 0.0")
+            }
+        }
+
         @Volatile private var INSTANCE: PortfolioDatabase? = null
 
         fun getInstance(context: Context): PortfolioDatabase =
@@ -42,7 +48,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     context.applicationContext,
                     PortfolioDatabase::class.java,
                     "my_capital.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { INSTANCE = it }
             }
     }
 }
