@@ -28,11 +28,12 @@ class QuoteRefreshWorker(
                 if (quote != null) {
                     dao.updateAssetPrice(asset.id, quote.price, System.currentTimeMillis())
                     updated++
-                } else {
-                    failed++
                 }
+                // Missing market data is not necessarily a transport failure.
+            } catch (_: UnsupportedMoexInstrumentException) {
+                // Permanent instrument errors are skipped without retrying the whole batch.
             } catch (_: Exception) {
-                // A single unsupported instrument must not block updates for the rest.
+                // Retry only when an actual request or response processing failed.
                 failed++
             }
         }
