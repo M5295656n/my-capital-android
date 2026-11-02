@@ -19,11 +19,8 @@ class CorporateEventsWorker(
         if (assets.isEmpty()) return@withContext Result.success()
 
         val client = CorporateEventsClient()
-        var succeeded = 0
-        var attempted = 0
-        var failed = 0
+        var transientFailures = 0
         for (asset in assets.distinctBy { it.ticker.uppercase() }) {
-            attempted++
             try {
                 val events = client.getEvents(asset.ticker, asset.assetType)
                 database.withTransaction {
@@ -58,13 +55,13 @@ class CorporateEventsWorker(
                         }
                     }
                 }
-                succeeded++
+            } catch (_: UnsupportedCorporateEventsInstrumentException) {
+                // Unsupported instruments are permanent skips, not retryable failures.
             } catch (_: Exception) {
-                // Continue syncing other holdings if one instrument is unsupported.
-                failed++
+                transientFailures++
             }
         }
-        if (failed > 0 && attempted > 0 && runAttemptCount < 3) Result.retry()
+        if (transientFailures > 0 && runAttemptCount < 3) Result.retry()
         else Result.success()
     }
 }
