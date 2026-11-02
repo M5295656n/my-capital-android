@@ -88,4 +88,56 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             )
         }
     }
+
+    suspend fun recordPayout(
+        assetId: Long?,
+        ticker: String,
+        payoutType: String,
+        amountPerUnit: Double,
+        quantity: Double,
+        taxAmount: Double,
+        isReceived: Boolean
+    ) {
+        require(ticker.isNotBlank()) { "Укажите тикер" }
+        require(payoutType == "Дивиденд" || payoutType == "Купон") { "Неизвестный тип выплаты" }
+        require(amountPerUnit > 0.0) { "Сумма на единицу должна быть больше нуля" }
+        require(quantity > 0.0) { "Количество должно быть больше нуля" }
+        val gross = amountPerUnit * quantity
+        require(taxAmount >= 0.0 && taxAmount <= gross) { "Налог должен быть от нуля до суммы выплаты" }
+        val now = System.currentTimeMillis()
+
+        database.withTransaction {
+            dao.insertPayout(
+                PayoutEntity(
+                    assetId = assetId,
+                    ticker = ticker.trim().uppercase(),
+                    payoutType = payoutType,
+                    amountPerUnit = amountPerUnit,
+                    quantity = quantity,
+                    totalAmount = gross,
+                    taxAmount = taxAmount,
+                    expectedDate = if (isReceived) null else now,
+                    actualDate = if (isReceived) now else null,
+                    status = if (isReceived) "RECEIVED" else "EXPECTED"
+                )
+            )
+            if (isReceived) {
+                dao.ensureCashBalance(CashBalanceEntity())
+                val net = gross - taxAmount
+                val current = dao.getCashBalance() ?: 0.0
+                dao.updateCashBalance(current + net)
+                dao.insertOperation(
+                    OperationEntity(
+                        assetId = assetId,
+                        operationType = payoutType,
+                        ticker = ticker.trim().uppercase(),
+                        quantity = quantity,
+                        price = amountPerUnit,
+                        commission = taxAmount,
+                        note = "Фактически получено; после налога: ${"%.2f".format(java.util.Locale.US, net)} ₽"
+                    )
+                )
+            }
+        }
+    }
 }
