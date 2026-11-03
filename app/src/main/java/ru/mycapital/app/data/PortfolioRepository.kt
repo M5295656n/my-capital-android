@@ -76,15 +76,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             // unmatched and the user sees cash but no assets.
             reportAssets.forEach { (ticker, row) ->
                 if (ticker !in currentAssets && row.closingQuantity > 0.0) {
-                    val type = when {
-                        row.name.contains("ОФЗ", ignoreCase = true) ||
-                            row.name.contains("облигац", ignoreCase = true) -> "Облигация"
-                        row.name.contains("фонд", ignoreCase = true) ||
-                            row.name.contains("БПИФ", ignoreCase = true) ||
-                            row.name.contains("ПИФ", ignoreCase = true) -> "Фонд"
-                        row.name.contains("акци", ignoreCase = true) -> "Акция"
-                        else -> "Другое"
-                    }
+                    val type = row.assetType
                     val id = dao.insertAsset(
                         AssetEntity(
                             ticker = ticker,
