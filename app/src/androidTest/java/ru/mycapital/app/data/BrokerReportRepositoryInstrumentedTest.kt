@@ -185,7 +185,7 @@ class BrokerReportRepositoryInstrumentedTest {
                 assets = listOf(BrokerReportAsset("ABC", "ABC", "RU000A", 0.0, 4.0, 12.0, 48.0))
             )
         )
-        assertEquals(42.0, mainResult.reportCash, 0.000001)
+        assertEquals(42.0, mainResult.resultingCash, 0.000001)
         assertEquals(4.0, dao.getAsset(assetId)!!.quantity, 0.000001)
 
         val iisResult = repository.reconcileBrokerReportSnapshot(
