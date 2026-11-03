@@ -210,7 +210,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -416,7 +416,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
@@ -435,11 +435,6 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 Icon(Icons.Default.Refresh, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Обновить котировки MOEX")
-            }
-            OutlinedButton(onClick = onRefreshEvents) {
-                Icon(Icons.Default.Event, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Обновить дивиденды и купоны")
             }
             OutlinedButton(onClick = onImportReport, enabled = !isParsingReport) {
                 Icon(Icons.Default.FileOpen, contentDescription = null)
