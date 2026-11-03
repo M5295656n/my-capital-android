@@ -808,41 +808,6 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
     }
 }
 
-private data class RealizedTradingResult(val profit: Double, val unmatchedQuantity: Double)
-
-/** FIFO matching over recorded trades only; unmatched sales are surfaced, never guessed. */
-private fun calculateRealizedTradingResult(operations: List<OperationEntity>): RealizedTradingResult {
-    data class Lot(var quantity: Double, val unitCost: Double)
-    val lotsByTicker = mutableMapOf<String, ArrayDeque<Lot>>()
-    var profit = 0.0
-    var unmatched = 0.0
-    operations.asSequence()
-        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
-        .sortedBy { it.operationDate }
-        .forEach { operation ->
-            val ticker = operation.ticker?.trim()?.uppercase().orEmpty()
-            if (ticker.isBlank() || operation.quantity <= 0.0) return@forEach
-            val lots = lotsByTicker.getOrPut(ticker) { ArrayDeque() }
-            if (operation.operationType == "Покупка") {
-                val unitCost = (operation.quantity * operation.price + operation.commission) / operation.quantity
-                lots.addLast(Lot(operation.quantity, unitCost))
-            } else {
-                var remaining = operation.quantity
-                val netSalePerUnit = (operation.quantity * operation.price - operation.commission) / operation.quantity
-                while (remaining > 0.0000001 && lots.isNotEmpty()) {
-                    val lot = lots.first()
-                    val matched = minOf(remaining, lot.quantity)
-                    profit += matched * (netSalePerUnit - lot.unitCost)
-                    remaining -= matched
-                    lot.quantity -= matched
-                    if (lot.quantity <= 0.0000001) lots.removeFirst()
-                }
-                unmatched += remaining
-            }
-        }
-    return RealizedTradingResult(profit, unmatched)
-}
-
 @Composable
 private fun AnalyticsScreen(
     assets: List<AssetEntity>,
