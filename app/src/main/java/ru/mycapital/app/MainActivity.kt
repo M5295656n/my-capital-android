@@ -228,32 +228,28 @@ private fun MyCapitalApp() {
             isImporting = isImportingReport,
             isReconciling = isReconcilingReport,
             onDismiss = { if (!isImportingReport && !isReconcilingReport) importedReport = null },
-            onReconcile = {
-                val reportToReconcile = importedReport!!
-                isReconcilingReport = true
-                scope.launch {
-                    try {
-                        val result = withContext(Dispatchers.IO) { repository.reconcileBrokerReportSnapshot(reportToReconcile) }
-                        importResultMessage = "Сверка договора ${reportToReconcile.accountId} завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Денежный остаток по сверенным договорам: ${money(result.resultingCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Остатки ранее сверенных договоров сохранены; средняя цена не менялась."
-                        importedReport = null
-                    } catch (error: Exception) {
-                        importError = error.message ?: "Не удалось сверить портфель."
-                    } finally {
-                        isReconcilingReport = false
-                    }
-                }
-            },
-            onImportHistory = {
+            onImportAndReconcile = {
                 val reportToImport = importedReport!!
+                isReconcilingReport = true
                 isImportingReport = true
                 scope.launch {
                     try {
-                        val result = withContext(Dispatchers.IO) { repository.importBrokerReportHistory(reportToImport) }
-                        importResultMessage = "Добавлено операций: ${result.imported}. Выплат добавлено: ${result.payoutsImported}. Дубликатов пропущено: ${result.duplicates}. Неисполненных или непроверенных сделок пропущено: ${result.unsettledSkipped}. Денежный остаток и позиции не менялись."
+                        val result = withContext(Dispatchers.IO) {
+                            repository.importAndReconcileBrokerReport(reportToImport)
+                        }
+                        val snapshot = result.reconciliation
+                        val history = result.history
+                        importResultMessage =
+                            "Отчёт ${reportToImport.accountId} обработан полностью. " +
+                            "Сверено позиций: ${snapshot.matchedAssets}; не сопоставлено: ${snapshot.unmatchedReportAssets}. " +
+                            "Общий денежный остаток: ${money(snapshot.resultingCash)} ₽. " +
+                            "Добавлено операций: ${history.imported}; выплат: ${history.payoutsImported}; " +
+                            "дубликатов пропущено: ${history.duplicates}; неисполненных сделок пропущено: ${history.unsettledSkipped}."
                         importedReport = null
                     } catch (error: Exception) {
-                        importError = error.message ?: "Не удалось импортировать операции."
+                        importError = error.message ?: "Не удалось импортировать и сверить брокерский отчёт."
                     } finally {
+                        isReconcilingReport = false
                         isImportingReport = false
                     }
                 }
@@ -1603,8 +1599,7 @@ private fun BrokerReportPreviewDialog(
     isImporting: Boolean,
     isReconciling: Boolean,
     onDismiss: () -> Unit,
-    onReconcile: () -> Unit,
-    onImportHistory: () -> Unit
+    onImportAndReconcile: () -> Unit
 ) {
     val pendingTrades = report.trades.filterNot { isFullyExecutedBrokerTrade(it.status) }
     val completedTrades = report.trades.size - pendingTrades.size
@@ -1662,28 +1657,22 @@ private fun BrokerReportPreviewDialog(
                     Text("Внимание: денежный баланс отчёта не сходится. Сверка заблокирована.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
                 Text(
-                    "Импорт истории и сверка остатков — разные действия. Сверка не импортирует сделки, не меняет среднюю цену и не удаляет активы, которых нет в отчёте.",
+                    "История операций и остатки обрабатываются одной командой. Сначала сверяется снимок договора, затем импортируются сделки и выплаты; повторные строки пропускаются как дубликаты.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
             }
         },
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(
-                    onClick = { showReconcileConfirmation = true },
-                    enabled = !isImporting && !isReconciling && report.closingCash >= 0.0 &&
-                        report.assets.any { it.ticker.isNotBlank() } &&
-                        kotlin.math.abs(report.openingCash + report.cashCredits - report.cashDebits - report.closingCash) <= 0.02
-                ) {
-                    Text(if (isReconciling) "Сверяю…" else "Сверить остатки и позиции")
-                }
-                TextButton(
-                    onClick = onImportHistory,
-                    enabled = !isImporting && !isReconciling && (report.cashFlows.isNotEmpty() || completedTrades > 0)
-                ) {
-                    Text(if (isImporting) "Импортирую…" else "Импортировать историю")
-                }
+            TextButton(
+                onClick = { showReconcileConfirmation = true },
+                enabled = !isImporting && !isReconciling &&
+                    report.closingCash >= 0.0 &&
+                    report.assets.any { it.ticker.isNotBlank() } &&
+                    (report.cashFlows.isNotEmpty() || completedTrades > 0) &&
+                    kotlin.math.abs(report.openingCash + report.cashCredits - report.cashDebits - report.closingCash) <= 0.02
+            ) {
+                Text(if (isImporting || isReconciling) "Обрабатываю отчёт…" else "Импортировать и сверить портфель")
             }
         },
         dismissButton = {
@@ -1695,7 +1684,7 @@ private fun BrokerReportPreviewDialog(
             report = report,
             onConfirm = {
                 showReconcileConfirmation = false
-                onReconcile()
+                onImportAndReconcile()
             },
             onDismiss = { showReconcileConfirmation = false }
         )
@@ -1713,7 +1702,7 @@ private fun BrokerReportReconciliationConfirmation(
         title = { Text("Подтвердить сверку портфеля?") },
         text = {
             Text(
-                "Приложение сохранит остаток договора ${report.accountId} и пересчитает общий остаток по всем уже сверенным договорам. Первый договор задаёт начальную базу, последующие добавляются; повторная сверка заменяет только снимок этого договора. Количества позиций также пересчитываются по разнице с предыдущим снимком договора. Средняя цена покупки не изменится; бумаги, не сопоставленные с тикером в приложении, не будут изменены."
+                "Приложение обновит остатки договора ${report.accountId}, пересчитает общий портфель с учётом остальных договоров и импортирует историю операций и выплат из этого же отчёта. Повторно загруженные операции не будут продублированы. Сделки, которые не отмечены как полностью исполненные, в историю покупок и продаж не попадут."
             )
         },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Подтвердить сверку") } },
