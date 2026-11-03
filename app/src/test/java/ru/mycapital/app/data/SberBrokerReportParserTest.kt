@@ -151,7 +151,8 @@ class SberBrokerReportParserTest {
 
     @Test
     fun parsesPayoutTickersAndStableCashFlowKeys() {
-        val report = parseWithDiagnostics(sampleHtml())
+        // Keep IIS-only matching rows out of this regular brokerage-report fixture.
+        val report = parseWithDiagnostics(sampleHtml(includeMatchingIisRegisterRows = false))
         val dividend = report.cashFlows.single { it.kind == BrokerCashFlowKind.DIVIDEND }
         val coupon = report.cashFlows.single { it.kind == BrokerCashFlowKind.COUPON }
         assertEquals("T", dividend.ticker)
