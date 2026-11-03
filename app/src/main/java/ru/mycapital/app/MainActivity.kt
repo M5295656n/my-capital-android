@@ -935,6 +935,8 @@ private fun PayoutsScreen(
             MetricCard("Ожидается до налога", money(expected) + " ₽", Modifier.weight(1f))
         }
         Spacer(Modifier.height(12.dp))
+        PayoutForecastCard(visiblePayouts)
+        Spacer(Modifier.height(12.dp))
         if (visiblePayouts.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон." else "Для выбранного счёта выплат нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -972,6 +974,65 @@ private fun PayoutsScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
+    val forecast = remember(payouts) {
+        calculatePayoutForecast(payouts)
+    }
+    Card(shape = RoundedCornerShape(16.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Календарь ожидаемых выплат", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Прогноз по известным датам, суммы до налога",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("30 дней", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${money(forecast.next30Days)} ₽", fontWeight = FontWeight.SemiBold)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("90 дней", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${money(forecast.next90Days)} ₽", fontWeight = FontWeight.SemiBold)
+                }
+            }
+            if (forecast.monthly.isEmpty()) {
+                Text(
+                    "Нет ожидаемых выплат с будущей датой. Обновите корпоративные события или добавьте выплату вручную.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                HorizontalDivider()
+                forecast.monthly.take(6).forEach { month ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f)) {
+                            Text(month.displayMonth(), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "${month.paymentCount} ${if (month.paymentCount == 1) "выплата" else if (month.paymentCount in 2..4) "выплаты" else "выплат"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text("${money(month.amount)} ₽", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                if (forecast.monthly.size > 6) {
+                    Text(
+                        "Показаны ближайшие 6 месяцев",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
