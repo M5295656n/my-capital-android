@@ -120,8 +120,7 @@ class SberBrokerReportParserTest {
         try {
             return SberBrokerReportParser.parse(html)
         } catch (error: Exception) {
-            System.err.println("SBER_PARSER_FAILURE: ${error.javaClass.simpleName}: ${error.message}")
-            throw error
+            throw AssertionError("SBER_PARSER_FAILURE: ${error.javaClass.simpleName}: ${error.message}", error)
         }
     }
 
