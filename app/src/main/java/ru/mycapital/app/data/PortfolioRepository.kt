@@ -19,7 +19,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         val matchedAssets: Int,
         val unmatchedReportAssets: Int,
         val previousCash: Double,
-        val reportCash: Double
+        val resultingCash: Double
     )
 
     suspend fun reconcileBrokerReportSnapshot(report: SberBrokerReport): BrokerSnapshotReconciliationResult {
@@ -94,7 +94,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             matchedAssets = matched,
             unmatchedReportAssets = unmatched,
             previousCash = previousCash,
-            reportCash = resultingCash.coerceAtLeast(0.0)
+            resultingCash = resultingCash.coerceAtLeast(0.0)
         )
     }
 
