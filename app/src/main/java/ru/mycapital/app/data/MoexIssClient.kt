@@ -10,11 +10,13 @@ class UnsupportedMoexInstrumentException(message: String) : IOException(message)
 
 data class MoexQuote(val ticker: String, val price: Double, val board: String?)
 
-internal fun preferredMoexBoard(assetType: String): String? = when {
-    assetType.contains("облигац", ignoreCase = true) -> "TQOB"
-    assetType.contains("акци", ignoreCase = true) -> "TQBR"
-    assetType.contains("фонд", ignoreCase = true) || assetType.contains("пай", ignoreCase = true) -> "TQTF"
-    else -> null
+internal fun preferredMoexBoards(assetType: String): List<String> = when {
+    assetType.contains("облигац", ignoreCase = true) ->
+        // Government bonds (OFZ) trade on TQOB; corporate and municipal bonds on TQCB.
+        listOf("TQOB", "TQCB")
+    assetType.contains("акци", ignoreCase = true) -> listOf("TQBR")
+    assetType.contains("фонд", ignoreCase = true) || assetType.contains("пай", ignoreCase = true) -> listOf("TQTF")
+    else -> emptyList()
 }
 
 /** MOEX bond prices are quoted as a percentage of face value; add accrued coupon interest to get dirty price. */
@@ -91,11 +93,13 @@ class MoexIssClient {
                 val board = boardIndex?.let { row.optString(it).takeIf(String::isNotBlank) }
                 row to board
             }
-            val preferredBoard = preferredMoexBoard(assetType)
-            // MOEX returns several market boards for one security. Never silently take
-            // the first row: it may belong to an auxiliary/less liquid trading mode.
-            val selectedRows = if (preferredBoard != null) {
-                matchingRows.filter { it.second == preferredBoard }
+            val preferredBoards = preferredMoexBoards(assetType)
+            // MOEX returns several market boards for one security. OFZ and corporate
+            // bonds use different main boards (TQOB and TQCB respectively), so accept
+            // either main bond board and rank them explicitly instead of rejecting
+            // corporate-bond quotes or falling through to an auxiliary board.
+            val selectedRows = if (preferredBoards.isNotEmpty()) {
+                preferredBoards.flatMap { board -> matchingRows.filter { it.second == board } }
             } else matchingRows
             for ((row, board) in selectedRows) {
                 val price = value(row, "LAST")
