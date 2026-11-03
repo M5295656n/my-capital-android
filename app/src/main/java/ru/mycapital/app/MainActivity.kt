@@ -444,6 +444,14 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 Spacer(Modifier.width(8.dp))
                 Text("Обновить котировки MOEX")
             }
+            quoteRefreshStatus?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (it.contains("Ошибок:") || it.startsWith("Не удалось")) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             OutlinedButton(onClick = onImportReport, enabled = !isParsingReport) {
                 Icon(Icons.Default.FileOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
