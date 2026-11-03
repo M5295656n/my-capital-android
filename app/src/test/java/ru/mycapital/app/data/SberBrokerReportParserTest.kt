@@ -10,14 +10,15 @@ class SberBrokerReportParserTest {
         tableCount: Int = 11,
         tradePrice: String = "47.34",
         cashCredit: String = "107.00",
-        closingQuantity: String = "3"
+        closingQuantity: String = "3",
+        closingValue: String = "33"
     ): String {
         val assets = """
             <table>
               <tr><td>Основной рынок</td></tr>
               <tr><td>Наименование</td><td>ISIN ценной бумаги</td><td>Валюта рыночной цены</td><td>Количество, шт</td><td>Номинал</td><td>Рыночная цена ²</td><td>Рыночная стоимость</td><td>НКД</td><td>Количество, шт</td><td>Номинал</td><td>Рыночная цена ²</td><td>Рыночная стоимость</td><td>НКД</td><td>Количество, шт</td><td>Рыночная стоимость</td><td>Плановые зачисления</td><td>Плановые списания</td><td>Плановый остаток</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td>10</td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td>10</td><td>11</td><td>33</td><td>0</td><td>3</td><td>33</td><td>0</td><td>0</td><td>3</td></tr>
+              <tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td>10</td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td>10</td><td>11</td><td>$closingValue</td><td>0</td><td>3</td><td>33</td><td>0</td><td>0</td><td>3</td></tr>
             </table>
         """.trimIndent()
         val cash = """
@@ -98,6 +99,14 @@ class SberBrokerReportParserTest {
         assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, classifyBrokerCashFlow("Перевод д/с с договора A на договор B"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Комиссия Биржи от 01.10.2026"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Сделка от 01.10.2026"))
+    }
+
+    @Test
+    fun acceptsBlankMarketValueOnlyForZeroQuantityPosition() {
+        val report = parseWithDiagnostics(sampleHtml(closingQuantity = "0", closingValue = ""))
+        assertEquals(0.0, report.assets.single().closingQuantity, 0.001)
+        assertEquals(0.0, report.assets.single().closingValue, 0.001)
+        assertParseFails(sampleHtml(closingQuantity = "3", closingValue = ""))
     }
 
     @Test
