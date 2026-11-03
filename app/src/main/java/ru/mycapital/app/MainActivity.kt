@@ -583,7 +583,7 @@ private fun AssetPurchaseHistoryDialog(
             operation.operationType == "Покупка" &&
                 operation.quantity > 0.0 &&
                 (operation.assetId == asset.id ||
-                    operation.ticker.equals(asset.ticker, ignoreCase = true))
+                    operation.ticker?.equals(asset.ticker, ignoreCase = true) == true)
         }.sortedBy { it.operationDate }
     }
     val purchasedQuantity = purchases.sumOf { it.quantity }
