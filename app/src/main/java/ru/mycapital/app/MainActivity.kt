@@ -661,6 +661,8 @@ private fun OperationsScreen(
                     label = { Text(filter) }
                 )
             }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("Деньги", "Выплаты").forEach { filter ->
                 FilterChip(
                     selected = operationTypeFilter == filter,
