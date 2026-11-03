@@ -643,7 +643,7 @@ private fun AssetTypeIcon(assetType: String, ticker: String) {
     val context = LocalContext.current
     var logoDomains by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(Unit) {
-        logoDomains = AssetLogoCatalog.load(context)
+        logoDomains = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
     }
 
     val type = assetType.lowercase()
