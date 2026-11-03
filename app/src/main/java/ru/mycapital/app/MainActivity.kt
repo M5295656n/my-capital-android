@@ -911,7 +911,9 @@ private fun BrokerReportPreviewDialog(
             currentByTicker[ticker.uppercase()]?.let { asset -> row to asset }
         }
     }
-    val unknownRows = report.assets.filter { it.ticker.isBlank() || currentByTicker[it.ticker.uppercase()] == null }
+    val unknownRows = report.assets.filter {
+        it.closingQuantity > 0.0 && (it.ticker.isBlank() || currentByTicker[it.ticker.uppercase()] == null)
+    }
     var showReconcileConfirmation by remember(report.accountId, report.periodEnd) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,

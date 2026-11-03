@@ -63,7 +63,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 val asset = currentAssets[ticker]
                 val reportRow = reportAssets[ticker]
                 if (asset == null) {
-                    if (reportRow != null) unmatched++
+                    if (reportRow != null && reportRow.closingQuantity > 0.0) unmatched++
                     return@forEach
                 }
                 if (reportRow != null) matched++
