@@ -612,28 +612,93 @@ private fun OperationsScreen(
     onAddCashFlow: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var operationTypeFilter by remember { mutableStateOf("Все") }
+    var searchQuery by remember { mutableStateOf("") }
     val visibleOperations = operations.filter { operation ->
-        when (selectedAccountId) {
+        val matchesAccount = when (selectedAccountId) {
             ALL_HISTORY_ACCOUNTS -> true
             UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
             else -> historyAccountId(operation.sourceKey) == selectedAccountId
         }
+        val matchesType = when (operationTypeFilter) {
+            "Сделки" -> operation.operationType == "Покупка" || operation.operationType == "Продажа"
+            "Деньги" -> operation.operationType == "Пополнение" || operation.operationType == "Вывод"
+            "Выплаты" -> operation.operationType == "Дивиденд" || operation.operationType == "Купон"
+            else -> true
+        }
+        val query = searchQuery.trim()
+        val matchesQuery = query.isBlank() ||
+            operation.ticker.orEmpty().contains(query, ignoreCase = true) ||
+            operation.operationType.contains(query, ignoreCase = true) ||
+            operation.note.contains(query, ignoreCase = true)
+        matchesAccount && matchesType && matchesQuery
     }
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Операции", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("История сделок и движения денег", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Поиск по тикеру, типу или примечанию") },
+            singleLine = true,
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Close, contentDescription = "Очистить поиск")
+                    }
+                }
+            }
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("Все", "Сделки").forEach { filter ->
+                FilterChip(
+                    selected = operationTypeFilter == filter,
+                    onClick = { operationTypeFilter = filter },
+                    label = { Text(filter) }
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("Деньги", "Выплаты").forEach { filter ->
+                FilterChip(
+                    selected = operationTypeFilter == filter,
+                    onClick = { operationTypeFilter = filter },
+                    label = { Text(filter) }
+                )
+            }
+        }
         TextButton(onClick = onAddCashFlow) { Text("Пополнить / вывести деньги") }
-        Spacer(Modifier.height(12.dp))
-        if (visibleOperations.isEmpty()) Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет операций. Нажмите +, чтобы добавить сделку." else "Для выбранного счёта операций нет.")
-        else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Найдено операций: ${visibleOperations.size}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium
+        )
+        Spacer(Modifier.height(8.dp))
+        if (visibleOperations.isEmpty()) {
+            Text(
+                if (operations.isEmpty()) "Пока нет операций. Нажмите +, чтобы добавить сделку."
+                else "По выбранным фильтрам операций нет.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(visibleOperations, key = { it.id }) { op ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text((op.operationType) + " · " + (op.ticker ?: "—"), fontWeight = FontWeight.SemiBold)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(op.operationType + " · " + (op.ticker ?: "—"), fontWeight = FontWeight.SemiBold)
                             Text(op.quantity.toString() + " × " + money(op.price) + " ₽", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(op.operationDate)),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            if (op.commission > 0.0) {
+                                Text("Комиссия: ${money(op.commission)} ₽", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                         val amount = op.quantity * op.price
                         val displayed = when (op.operationType) {
@@ -649,7 +714,6 @@ private fun OperationsScreen(
         }
     }
 }
-
 
 
 @Composable
