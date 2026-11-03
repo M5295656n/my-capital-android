@@ -1,6 +1,8 @@
 package ru.mycapital.app.data
 
 import java.time.LocalDate
+import java.io.ByteArrayInputStream
+import java.nio.charset.Charset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.fail
@@ -93,6 +95,18 @@ class SberBrokerReportParserTest {
         }
         val accountId = if (tableCount == 9) "TESTIIS03" else "TESTMAIN01"
         return "<html><head><title>Отчёт брокера\n$accountId</title></head><body>за период с 30.10.2026 по 30.10.2026${orderedTables.joinToString("")}</body></html>"
+    }
+
+    @Test
+    fun detectsWindows1251BrokerReportFromHtmlMetaCharset() {
+        val html = sampleHtml().replace("<head>", "<head><meta charset=\"windows-1251\">")
+        val bytes = html.toByteArray(Charset.forName("windows-1251"))
+
+        val report = SberBrokerReportParser.parse(ByteArrayInputStream(bytes))
+
+        assertEquals("TESTMAIN01", report.accountId)
+        assertEquals("Тестовая акция", report.assets.single().name)
+        assertEquals("Зачисление д/с", report.cashFlows.first().description)
     }
 
     @Test
