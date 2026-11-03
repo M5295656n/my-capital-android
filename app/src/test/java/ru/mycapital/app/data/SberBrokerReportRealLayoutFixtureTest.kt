@@ -2,6 +2,7 @@ package ru.mycapital.app.data
 
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SberBrokerReportRealLayoutFixtureTest {
@@ -17,6 +18,8 @@ class SberBrokerReportRealLayoutFixtureTest {
         assertEquals(436.0, report.cashCredits, 0.000001)
         assertEquals(60.43, report.cashDebits, 0.000001)
         assertEquals(12, report.assets.size)
+        assertEquals(setOf("M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10", "M11", "M12"), report.assets.map { it.ticker }.toSet())
+        assertTrue(report.assets.all { it.assetType == "Акция" })
         assertEquals(92, report.cashFlows.size)
         assertEquals(48, report.trades.size)
         assertEquals(43, report.cashFlows.count { it.kind == BrokerCashFlowKind.DEPOSIT })
@@ -40,6 +43,7 @@ class SberBrokerReportRealLayoutFixtureTest {
         assertEquals(150.0, report.cashCredits, 0.000001)
         assertEquals(0.12, report.cashDebits, 0.000001)
         assertEquals(5, report.assets.size)
+        assertEquals("Акция", report.assets.first().assetType)
         assertEquals(20, report.cashFlows.size)
         assertEquals(6, report.trades.size)
         assertEquals(4, report.cashFlows.count { it.kind == BrokerCashFlowKind.DEPOSIT })
