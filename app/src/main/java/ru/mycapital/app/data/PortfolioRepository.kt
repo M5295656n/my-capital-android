@@ -118,6 +118,15 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         var unsettledSkipped = 0
         var payoutsImported = 0
         database.withTransaction {
+            if (dao.getBrokerAccount(report.accountId) == null) {
+                dao.upsertBrokerAccount(
+                    BrokerAccountEntity(
+                        accountId = report.accountId,
+                        displayName = "Договор ••••" + report.accountId.takeLast(4),
+                        accountType = "Не указан"
+                    )
+                )
+            }
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
                 val kind = flow.kind
