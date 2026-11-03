@@ -197,9 +197,9 @@ object SberBrokerReportParser {
             val contributionDateIndex = header.indexOf("Дата операции")
             val amountIndex = header.indexOf("Сумма, руб.")
             val reasonIndex = header.indexOf("Основание операции")
-            val seen = cashFlows.mapTo(mutableSetOf()) {
+            val generalFlowCounts = cashFlows.groupingBy {
                 "${it.date}:${it.description}:${it.credit}:${it.debit}"
-            }
+            }.eachCount()
             val iisOccurrences = mutableMapOf<String, Int>()
             contributionRows.drop(headerRowIndex + 1).forEach { row ->
                 val dateText = row.getOrNull(contributionDateIndex).orEmpty()
@@ -210,9 +210,11 @@ object SberBrokerReportParser {
                 if (amount == 0.0 || description.isBlank()) return@forEach
                 val date = LocalDate.parse(dateText, dateFormat)
                 val canonical = "${date}:$description:$amount:0.0"
-                if (!seen.add(canonical)) return@forEach
                 val occurrence = iisOccurrences.getOrDefault(canonical, 0)
                 iisOccurrences[canonical] = occurrence + 1
+                // If the same row is already present in the general cash-flow table,
+                // skip only the matching occurrence; preserve legitimate repeated rows. 
+                if (occurrence < generalFlowCounts.getOrDefault(canonical, 0)) return@forEach
                 cashFlows += BrokerReportCashFlow(
                     date = date,
                     description = description,
