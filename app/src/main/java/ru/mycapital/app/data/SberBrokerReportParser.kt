@@ -1,6 +1,8 @@
 package ru.mycapital.app.data
 
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+import java.io.InputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -78,8 +80,13 @@ object SberBrokerReportParser {
     private val dateFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.ROOT)
     private val datePattern = Regex("\\d{2}\\.\\d{2}\\.\\d{4}")
 
-    fun parse(html: String): SberBrokerReport {
-        val document = Jsoup.parse(html)
+    fun parse(html: String): SberBrokerReport = parseDocument(Jsoup.parse(html))
+
+    // Parse the original byte stream so Jsoup can honor the report's BOM/meta charset.
+    // Decoding every downloaded report as UTF-8 corrupts Russian text in legacy exports.
+    fun parse(input: InputStream): SberBrokerReport = parseDocument(Jsoup.parse(input, null, ""))
+
+    private fun parseDocument(document: Document): SberBrokerReport {
         val tables = document.select("table")
         require(tables.isNotEmpty()) { "В отчёте не найдены таблицы." }
 
