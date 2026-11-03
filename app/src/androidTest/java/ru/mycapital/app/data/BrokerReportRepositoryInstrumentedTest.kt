@@ -187,6 +187,32 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
+    fun snapshotCreatesCompanySharesAsStocksUsingBrokerSecurityDirectoryType() = runBlocking {
+        val report = report(
+            accountId = "S25F9ZU",
+            assets = listOf(
+                BrokerReportAsset(
+                    name = "Сбербанк",
+                    ticker = "SBER",
+                    isin = "RU0009029540",
+                    openingQuantity = 0.0,
+                    closingQuantity = 2.0,
+                    closingPrice = 300.0,
+                    closingValue = 600.0,
+                    assetType = "Акция"
+                )
+            )
+        )
+
+        repository.reconcileBrokerReportSnapshot(report)
+
+        val imported = dao.getAssetByTicker("SBER")
+        assertNotNull(imported)
+        assertEquals("Акция", imported!!.assetType)
+        assertEquals(2.0, imported.quantity, 0.000001)
+    }
+
+    @Test
     fun snapshotReconciliationAggregatesCashAndPositionsAcrossBrokerAccounts() = runBlocking {
         val assetId = dao.insertAsset(
             AssetEntity(ticker = "ABC", name = "ABC", assetType = "Акция",
