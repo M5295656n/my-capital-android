@@ -43,6 +43,7 @@ class BrokerReportRepositoryInstrumentedTest {
         )
         dao.ensureCashBalance(CashBalanceEntity(balance = 100.0))
         val report = report(
+            accountId = "403RY0J",
             cashFlows = listOf(
                 BrokerReportCashFlow(LocalDate.parse("2026-10-30"), "Зачисление д/с", 50.0, 0.0, "CASH:1")
             ),
@@ -64,8 +65,8 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(100.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(3.0, dao.getAsset(assetId)!!.quantity, 0.000001)
         assertEquals(2, dao.observeOperations().first().size)
-        assertNotNull(dao.getOperationBySourceKey("CASH:1"))
-        assertNotNull(dao.getOperationBySourceKey("SBER:101"))
+        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:CASH:1"))
+        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:TRADE:101"))
     }
 
 
@@ -101,6 +102,47 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(null, dao.getOperationBySourceKey("TRANSFER:1"))
     }
 
+
+    @Test
+    fun identicalOperationsFromDifferentBrokerageAccountsAreImportedSeparately() = runBlocking {
+        val sameCashFlow = BrokerReportCashFlow(
+            LocalDate.parse("2026-10-30"), "Зачисление д/с", 50.0, 0.0, "CASH:SAME"
+        )
+        val mainAccount = report(accountId = "403RY0J", cashFlows = listOf(sameCashFlow))
+        val iisAccount = report(accountId = "S25F9ZU", cashFlows = listOf(sameCashFlow))
+
+        val mainResult = repository.importBrokerReportHistory(mainAccount)
+        val iisResult = repository.importBrokerReportHistory(iisAccount)
+        val repeatedIisResult = repository.importBrokerReportHistory(iisAccount)
+
+        assertEquals(1, mainResult.imported)
+        assertEquals(1, iisResult.imported)
+        assertEquals(1, repeatedIisResult.duplicates)
+        assertEquals(2, dao.observeOperations().first().size)
+        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:CASH:SAME"))
+        assertNotNull(dao.getOperationBySourceKey("SBER:S25F9ZU:CASH:SAME"))
+    }
+
+    @Test
+    fun legacyUnscopedImportKeyPreventsReimportAfterUpgrade() = runBlocking {
+        dao.insertOperation(
+            OperationEntity(
+                assetId = null, operationType = "Пополнение", ticker = "RUB",
+                quantity = 1.0, price = 50.0, sourceKey = "LEGACY:CASH:1"
+            )
+        )
+        val result = repository.importBrokerReportHistory(
+            report(cashFlows = listOf(
+                BrokerReportCashFlow(LocalDate.parse("2026-10-30"),
+                    "Зачисление д/с", 50.0, 0.0, "LEGACY:CASH:1")
+            ))
+        )
+
+        assertEquals(0, result.imported)
+        assertEquals(1, result.duplicates)
+        assertEquals(1, dao.observeOperations().first().size)
+    }
+
     @Test
     fun snapshotReconciliationSetsAbsoluteCashAndOnlyUpdatesMatchedAssets() = runBlocking {
         val assetId = dao.insertAsset(
@@ -130,11 +172,13 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     private fun report(
+        accountId: String = "403RY0J",
         closingCash: Double = 100.0,
         assets: List<BrokerReportAsset> = emptyList(),
         cashFlows: List<BrokerReportCashFlow> = emptyList(),
         trades: List<BrokerReportTrade> = emptyList()
     ) = SberBrokerReport(
+        accountId = accountId,
         periodStart = LocalDate.parse("2026-10-01"),
         periodEnd = LocalDate.parse("2026-10-31"),
         openingCash = 50.0,

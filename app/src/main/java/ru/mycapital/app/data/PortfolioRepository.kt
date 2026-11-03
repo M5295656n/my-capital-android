@@ -91,6 +91,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                         "Сумма зачисления по брокерскому отчёту; налоговая разбивка не указана"
                     else -> "Импорт из брокерского отчёта: ${flow.description}"
                 }
+                val scopedSourceKey = "SBER:${report.accountId}:CASH:${flow.rowKey
+                    .removePrefix("SBER:CASH:").removePrefix("CASH:")}"
                 val row = OperationEntity(
                     assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
                     operationType = operationType,
@@ -100,10 +102,16 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     commission = 0.0,
                     operationDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = note,
-                    sourceKey = flow.rowKey
+                    sourceKey = scopedSourceKey
                 )
-                val id = dao.insertImportedOperation(row)
-                if (id == -1L) duplicates++ else imported++
+                // Older app versions used an unscoped key. Respect it during upgrade
+                // so re-importing an old statement cannot create a duplicate.
+                if (dao.getOperationBySourceKey(flow.rowKey) != null) {
+                    duplicates++
+                } else {
+                    val id = dao.insertImportedOperation(row)
+                    if (id == -1L) duplicates++ else imported++
+                }
             }
             report.trades.forEach { trade ->
                 // Only the explicit fully executed status is imported. Other codes may
@@ -118,6 +126,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     unsettledSkipped++
                     return@forEach
                 }
+                val scopedSourceKey = "SBER:${report.accountId}:TRADE:${trade.sourceKey.removePrefix("SBER:")}"
                 val row = OperationEntity(
                     assetId = assetsByTicker[trade.ticker.uppercase()]?.id,
                     operationType = if (isBuy) "Покупка" else "Продажа",
@@ -127,10 +136,14 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     commission = trade.totalFee,
                     operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
-                    sourceKey = trade.sourceKey
+                    sourceKey = scopedSourceKey
                 )
-                val id = dao.insertImportedOperation(row)
-                if (id == -1L) duplicates++ else imported++
+                if (dao.getOperationBySourceKey(trade.sourceKey) != null) {
+                    duplicates++
+                } else {
+                    val id = dao.insertImportedOperation(row)
+                    if (id == -1L) duplicates++ else imported++
+                }
             }
         }
         return BrokerHistoryImportResult(imported, duplicates, unsettledSkipped)

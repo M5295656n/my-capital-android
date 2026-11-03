@@ -62,6 +62,7 @@ data class BrokerReportTrade(
 }
 
 data class SberBrokerReport(
+    val accountId: String,
     val periodStart: LocalDate,
     val periodEnd: LocalDate,
     val openingCash: Double,
@@ -103,6 +104,16 @@ object SberBrokerReportParser {
                 ?: error("Не удалось прочитать сумму «$label» в брокерском отчёте.")
         }
 
+        // Sber exports the agreement number on a separate line in <TITLE>;
+        // normalize whitespace and accept both е/ё in the Russian word "отчёт".
+        val title = document.selectFirst("title")?.text().orEmpty()
+            .replace('ё', 'е')
+            .replace('Ё', 'Е')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        val accountId = Regex("(?iu)отчет\\s+брокера\\s+([A-Z0-9-]+)")
+            .find(title)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
+            ?: error("Не удалось определить номер брокерского счёта в заголовке отчёта: «$title».")
         val reportText = document.text()
         val periodMatch = Regex("за период с (\\d{2}\\.\\d{2}\\.\\d{4}) по (\\d{2}\\.\\d{2}\\.\\d{4})")
             .find(reportText) ?: error("Не удалось определить период отчёта.")
@@ -178,14 +189,19 @@ object SberBrokerReportParser {
             val isin = row.getOrNull(1).orEmpty()
             if (!isin.startsWith("RU") || row.size < 18) return@mapNotNull null
             val security = securityNames.firstOrNull { it.third == isin }
+            val closingQuantity = number(row.getOrNull(8), "количество на конец по ${row[0]}")
+            val closingValueText = row.getOrNull(11)
+            // Sber leaves market value blank for zero-quantity rows (e.g. a fully sold position).
+            val closingValue = if (closingValueText.isNullOrBlank() && closingQuantity == 0.0) 0.0
+                else number(closingValueText, "стоимость позиции ${row[0]}")
             BrokerReportAsset(
                 name = row[0],
                 ticker = security?.second.orEmpty(),
                 isin = isin,
                 openingQuantity = number(row.getOrNull(3), "количество на начало по ${row[0]}"),
-                closingQuantity = number(row.getOrNull(8), "количество на конец по ${row[0]}"),
+                closingQuantity = closingQuantity,
                 closingPrice = number(row.getOrNull(10), "цена на конец по ${row[0]}"),
-                closingValue = number(row.getOrNull(11), "стоимость позиции ${row[0]}")
+                closingValue = closingValue
             )
         }
 
@@ -218,6 +234,7 @@ object SberBrokerReportParser {
             "В отчёте обнаружены отрицательные или некорректные данные по позициям."
         }
         return SberBrokerReport(
+            accountId = accountId,
             periodStart = periodStart,
             periodEnd = periodEnd,
             openingCash = openingCash,

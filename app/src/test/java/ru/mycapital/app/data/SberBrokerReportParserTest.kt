@@ -10,14 +10,15 @@ class SberBrokerReportParserTest {
         tableCount: Int = 11,
         tradePrice: String = "47.34",
         cashCredit: String = "107.00",
-        closingQuantity: String = "3"
+        closingQuantity: String = "3",
+        closingValue: String = "33"
     ): String {
         val assets = """
             <table>
               <tr><td>Основной рынок</td></tr>
               <tr><td>Наименование</td><td>ISIN ценной бумаги</td><td>Валюта рыночной цены</td><td>Количество, шт</td><td>Номинал</td><td>Рыночная цена ²</td><td>Рыночная стоимость</td><td>НКД</td><td>Количество, шт</td><td>Номинал</td><td>Рыночная цена ²</td><td>Рыночная стоимость</td><td>НКД</td><td>Количество, шт</td><td>Рыночная стоимость</td><td>Плановые зачисления</td><td>Плановые списания</td><td>Плановый остаток</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td>10</td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td>10</td><td>11</td><td>33</td><td>0</td><td>3</td><td>33</td><td>0</td><td>0</td><td>3</td></tr>
+              <tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td>10</td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td>10</td><td>11</td><td>$closingValue</td><td>0</td><td>3</td><td>33</td><td>0</td><td>0</td><td>3</td></tr>
             </table>
         """.trimIndent()
         val cash = """
@@ -58,13 +59,14 @@ class SberBrokerReportParserTest {
         """.trimIndent()
         val required = listOf(assets, cash, flows, trades, securities)
         val dummies = (0 until (tableCount - required.size)).joinToString("") { "<table><tr><td>Дополнительная таблица $it</td></tr></table>" }
-        return "<html><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
+        return "<html><head><title>Отчёт брокера\nTESTACCOUNT</title></head><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
     }
 
     @Test
     fun parsesBothRegularAndIisReportLayouts() {
         listOf(11, 9).forEach { count ->
-            val report = SberBrokerReportParser.parse(sampleHtml(tableCount = count))
+            val report = parseWithDiagnostics(sampleHtml(tableCount = count))
+            assertEquals("TESTACCOUNT", report.accountId)
             assertEquals(428.73, report.openingCash, 0.001)
             assertEquals(635.73, report.closingCash, 0.001)
             assertEquals("TEST", report.assets.single().ticker)
@@ -77,7 +79,7 @@ class SberBrokerReportParserTest {
 
     @Test
     fun parsesPayoutTickersAndStableCashFlowKeys() {
-        val report = SberBrokerReportParser.parse(sampleHtml())
+        val report = parseWithDiagnostics(sampleHtml())
         val dividend = report.cashFlows.single { it.kind == BrokerCashFlowKind.DIVIDEND }
         val coupon = report.cashFlows.single { it.kind == BrokerCashFlowKind.COUPON }
         assertEquals("T", dividend.ticker)
@@ -100,6 +102,14 @@ class SberBrokerReportParserTest {
     }
 
     @Test
+    fun acceptsBlankMarketValueOnlyForZeroQuantityPosition() {
+        val report = parseWithDiagnostics(sampleHtml(closingQuantity = "0", closingValue = ""))
+        assertEquals(0.0, report.assets.single().closingQuantity, 0.001)
+        assertEquals(0.0, report.assets.single().closingValue, 0.001)
+        assertParseFails(sampleHtml(closingQuantity = "3", closingValue = ""))
+    }
+
+    @Test
     fun rejectsMalformedTradePriceInsteadOfTreatingItAsZero() {
         assertParseFails(sampleHtml(tradePrice = "не число"))
     }
@@ -112,6 +122,15 @@ class SberBrokerReportParserTest {
     @Test
     fun rejectsMalformedPositionQuantityInsteadOfTreatingItAsZero() {
         assertParseFails(sampleHtml(closingQuantity = "не число"))
+    }
+
+
+    private fun parseWithDiagnostics(html: String): SberBrokerReport {
+        try {
+            return SberBrokerReportParser.parse(html)
+        } catch (error: Exception) {
+            throw AssertionError("SBER_PARSER_FAILURE: ${error.javaClass.simpleName}: ${error.message}", error)
+        }
     }
 
     private fun assertParseFails(html: String) {
