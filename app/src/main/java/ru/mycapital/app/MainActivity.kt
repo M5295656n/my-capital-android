@@ -532,6 +532,11 @@ private fun AssetsScreen(
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var logoCatalog by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        logoCatalog = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
+    }
     var selectedAssetForHistory by remember { mutableStateOf<AssetEntity?>(null) }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
@@ -555,7 +560,7 @@ private fun AssetsScreen(
                             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AssetTypeIcon(asset.assetType, asset.ticker)
+                            AssetTypeIcon(asset.assetType, asset.ticker, logoCatalog)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
@@ -639,18 +644,16 @@ private fun DoubleHeadedEagleIcon(tint: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun AssetTypeIcon(assetType: String, ticker: String) {
-    val context = LocalContext.current
-    var logoDomains by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    LaunchedEffect(Unit) {
-        logoDomains = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
-    }
-
+private fun AssetTypeIcon(
+    assetType: String,
+    ticker: String,
+    logoCatalog: Map<String, String>
+) {
     val type = assetType.lowercase()
     val normalizedTicker = ticker.trim().uppercase()
     val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
     val isFund = type.contains("фонд") || type.contains("бпиф") || type.contains("etf")
-    val domain = if (isBond) null else AssetLogoCatalog.domainFor(normalizedTicker, logoDomains)
+    val domain = if (isBond) null else AssetLogoCatalog.domainFor(normalizedTicker, logoCatalog)
     val blue = androidx.compose.ui.graphics.Color(0xFF173F78)
     val fallbackTint = if (isFund) androidx.compose.ui.graphics.Color(0xFF67469A)
         else androidx.compose.ui.graphics.Color(0xFF176B55)
