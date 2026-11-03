@@ -104,10 +104,15 @@ object SberBrokerReportParser {
                 ?: error("Не удалось прочитать сумму «$label» в брокерском отчёте.")
         }
 
+        // Sber exports the agreement number on a separate line in <TITLE>;
+        // normalize whitespace and accept both е/ё in the Russian word "отчёт".
         val title = document.selectFirst("title")?.text().orEmpty()
+            .replace('ё', 'е')
+            .replace(Regex("\\s+"), " ")
+            .trim()
         val accountId = Regex("(?i)отчет\\s+брокера\\s+([A-Z0-9-]+)")
             .find(title)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
-            ?: error("Не удалось определить номер брокерского счёта в заголовке отчёта.")
+            ?: error("Не удалось определить номер брокерского счёта в заголовке отчёта: «$title».")
         val reportText = document.text()
         val periodMatch = Regex("за период с (\\d{2}\\.\\d{2}\\.\\d{4}) по (\\d{2}\\.\\d{2}\\.\\d{4})")
             .find(reportText) ?: error("Не удалось определить период отчёта.")
