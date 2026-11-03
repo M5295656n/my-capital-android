@@ -188,6 +188,23 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         )
     }
 
+    data class BrokerReportImportAndReconciliationResult(
+        val reconciliation: BrokerSnapshotReconciliationResult,
+        val history: BrokerHistoryImportResult
+    )
+
+    /**
+     * Applies the holdings/cash snapshot first, then imports the statement's
+     * transaction and payout history. Both steps run in one Room transaction.
+     */
+    suspend fun importAndReconcileBrokerReport(
+        report: SberBrokerReport
+    ): BrokerReportImportAndReconciliationResult = database.withTransaction {
+        val reconciliation = reconcileBrokerReportSnapshot(report)
+        val history = importBrokerReportHistory(report)
+        BrokerReportImportAndReconciliationResult(reconciliation, history)
+    }
+
     suspend fun importBrokerReportHistory(report: SberBrokerReport): BrokerHistoryImportResult {
         var imported = 0
         var duplicates = 0
