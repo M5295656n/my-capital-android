@@ -4,9 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MoexIssClientTest {
-    @Test fun convertsBondPercentQuoteToRublesUsingFaceValue() {
-        assertEquals(780.70, normalizeMoexPrice(78.07, "Облигация", 1_000.0), 0.0001)
-        assertEquals(813.98, normalizeMoexPrice(81.398, "Облигация", 1_000.0), 0.0001)
+    @Test fun convertsBondPercentQuoteToFullRubPriceIncludingAccruedInterest() {
+        assertEquals(786.50, normalizeMoexPrice(78.07, "Облигация", 1_000.0, 5.80), 0.0001)
+        assertEquals(813.98, normalizeMoexPrice(81.398, "Облигация", 1_000.0, 0.0), 0.0001)
     }
 
     @Test fun keepsSharePricesUnchanged() {
@@ -15,6 +15,16 @@ class MoexIssClientTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun refusesBondQuoteWhenFaceValueIsMissing() {
-        normalizeMoexPrice(78.07, "Облигация", null)
+        normalizeMoexPrice(78.07, "Облигация", null, 5.80)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun refusesBondQuoteWhenAccruedInterestIsMissing() {
+        normalizeMoexPrice(78.07, "Облигация", 1_000.0, null)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun refusesNegativeAccruedInterest() {
+        normalizeMoexPrice(78.07, "Облигация", 1_000.0, -0.01)
     }
 }
