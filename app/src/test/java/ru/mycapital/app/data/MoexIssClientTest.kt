@@ -9,6 +9,13 @@ class MoexIssClientTest {
         assertEquals(813.98, normalizeMoexPrice(81.398, "Облигация", 1_000.0, 0.0), 0.0001)
     }
 
+    @Test fun selectsMainTradingBoardForEachAssetType() {
+        assertEquals("TQBR", preferredMoexBoard("Акция"))
+        assertEquals("TQOB", preferredMoexBoard("Облигация"))
+        assertEquals("TQTF", preferredMoexBoard("Фонд"))
+        assertEquals(null, preferredMoexBoard("Другое"))
+    }
+
     @Test fun keepsSharePricesUnchanged() {
         assertEquals(296.25, normalizeMoexPrice(296.25, "Акция", null), 0.0001)
     }
