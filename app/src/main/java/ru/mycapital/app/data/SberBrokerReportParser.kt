@@ -149,6 +149,11 @@ object SberBrokerReportParser {
             val isin = row.getOrNull(2).orEmpty()
             if (name.isNotBlank() && ticker.isNotBlank() && isin.startsWith("RU")) Triple(name, ticker, isin) else null
         }
+        val bondIsins = securitiesRows.mapNotNull { row ->
+            val isin = row.getOrNull(2).orEmpty()
+            val securityType = row.getOrNull(4).orEmpty()
+            isin.takeIf { it.startsWith("RU") && securityType.contains("облигац", ignoreCase = true) }
+        }.toSet()
         fun normalize(value: String): String = value.lowercase(Locale.ROOT)
             .replace('ё', 'е').replace(Regex("[^\\p{L}\\p{N}]"), "")
         fun tickerFor(description: String): String? {
@@ -264,7 +269,11 @@ object SberBrokerReportParser {
                 isin = isin,
                 openingQuantity = number(row.getOrNull(3), "количество на начало по ${row[0]}"),
                 closingQuantity = closingQuantity,
-                closingPrice = number(row.getOrNull(10), "цена на конец по ${row[0]}"),
+                // Bond quotes in Sber reports are percentages of nominal (e.g. 92.697),
+                // but the position market value is in RUB (e.g. 926.97).
+                // Store a RUB-per-security price in the portfolio.
+                closingPrice = if (closingQuantity > 0.0) closingValue / closingQuantity
+                    else number(row.getOrNull(10), "цена на конец по ${row[0]}"),
                 closingValue = closingValue
             )
         }
@@ -283,7 +292,16 @@ object SberBrokerReportParser {
                 ticker = securityNames.firstOrNull { it.third == row[4] }?.second ?: row[4],
                 side = row[6],
                 quantity = number(row.getOrNull(7), "количество в сделке"),
-                price = number(row.getOrNull(8), "цена сделки"),
+                price = run {
+                    val quotedPrice = number(row.getOrNull(8), "цена сделки")
+                    val quantity = number(row.getOrNull(7), "количество в сделке")
+                    val grossAmount = number(row.getOrNull(9), "сумма сделки")
+                    val code = row.getOrNull(4).orEmpty()
+                    val isin = securityNames.firstOrNull { it.second == code || it.third == code }?.third ?: code
+                    // Bond trade prices are percentages of nominal; the report amount
+                    // is in RUB, so normalize it to a RUB-per-security price.
+                    if (isin in bondIsins && quantity > 0.0) grossAmount / quantity else quotedPrice
+                },
                 grossAmount = number(row.getOrNull(9), "сумма сделки"),
                 brokerFee = number(row.getOrNull(11), "комиссия брокера"),
                 exchangeFee = number(row.getOrNull(12), "биржевая комиссия"),
