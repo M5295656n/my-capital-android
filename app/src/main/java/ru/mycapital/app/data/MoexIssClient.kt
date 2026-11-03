@@ -10,6 +10,14 @@ class UnsupportedMoexInstrumentException(message: String) : IOException(message)
 
 data class MoexQuote(val ticker: String, val price: Double, val board: String?)
 
+internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Double?): Double {
+    if (!assetType.contains("облигац", ignoreCase = true)) return price
+    require(faceValue != null && faceValue.isFinite() && faceValue > 0.0) {
+        "MOEX ISS не вернул номинал облигации; котировка не обновлена."
+    }
+    return price * faceValue / 100.0
+}
+
 class MoexIssClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -21,7 +29,7 @@ class MoexIssClient {
         val market = if (assetType.contains("облигац", ignoreCase = true)) "bonds" else "shares"
         val safeTicker = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker.json" +
-            "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE"
+            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
@@ -39,6 +47,18 @@ class MoexIssClient {
             } catch (error: Exception) {
                 throw IOException("Некорректный JSON от MOEX ISS", error)
             }
+            val faceValue = if (market == "bonds") {
+                val securities = root.optJSONObject("securities")
+                val securityColumns = securities?.optJSONArray("columns")
+                val securityRows = securities?.optJSONArray("data")
+                val faceIndex = securityColumns?.let { cols -> (0 until cols.length()).firstOrNull { cols.optString(it) == "FACEVALUE" } }
+                val idIndex = securityColumns?.let { cols -> (0 until cols.length()).firstOrNull { cols.optString(it) == "SECID" } }
+                (0 until (securityRows?.length() ?: 0)).firstNotNullOfOrNull { index ->
+                    val securityRow = securityRows?.optJSONArray(index) ?: return@firstNotNullOfOrNull null
+                    if (idIndex != null && securityRow.optString(idIndex) != ticker.trim().uppercase()) return@firstNotNullOfOrNull null
+                    faceIndex?.let { securityRow.optDouble(it, Double.NaN) }?.takeIf { it.isFinite() && it > 0.0 }
+                }
+            } else null
             val table = root.optJSONObject("marketdata")
                 ?: throw IOException("В ответе MOEX ISS отсутствует таблица котировок")
             val columns = table.optJSONArray("columns")
@@ -63,7 +83,12 @@ class MoexIssClient {
                     ?: continue
                 val boardIndex = indexes["BOARDID"]
                 val board = boardIndex?.let { row.optString(it).takeIf(String::isNotBlank) }
-                return MoexQuote(ticker.trim().uppercase(), price, board)
+                val normalizedPrice = try {
+                    normalizeMoexPrice(price, assetType, faceValue)
+                } catch (error: IllegalArgumentException) {
+                    throw IOException(error.message ?: "Не удалось пересчитать цену облигации", error)
+                }
+                return MoexQuote(ticker.trim().uppercase(), normalizedPrice, board)
             }
             return null
         }
