@@ -14,7 +14,8 @@ data class BrokerReportAsset(
     val openingQuantity: Double,
     val closingQuantity: Double,
     val closingPrice: Double,
-    val closingValue: Double
+    val closingValue: Double,
+    val assetType: String = "Другое"
 )
 
 enum class BrokerCashFlowKind { DEPOSIT, WITHDRAWAL, DIVIDEND, COUPON, INTERNAL_TRANSFER, IGNORE }
@@ -149,6 +150,16 @@ object SberBrokerReportParser {
             val isin = row.getOrNull(2).orEmpty()
             if (name.isNotBlank() && ticker.isNotBlank() && isin.startsWith("RU")) Triple(name, ticker, isin) else null
         }
+        fun assetTypeFor(isin: String): String {
+            val securityType = securitiesRows.firstOrNull { it.getOrNull(2) == isin }
+                ?.getOrNull(4).orEmpty().lowercase(Locale.ROOT)
+            return when {
+                securityType.contains("акци") -> "Акция"
+                securityType.contains("облигац") -> "Облигация"
+                securityType.contains("фонд") || securityType.contains("пай") || securityType.contains("бпиф") -> "Фонд"
+                else -> "Другое"
+            }
+        }
         val bondIsins = securitiesRows.mapNotNull { row ->
             val isin = row.getOrNull(2).orEmpty()
             val securityType = row.getOrNull(4).orEmpty()
@@ -267,6 +278,7 @@ object SberBrokerReportParser {
                 // Trade rows carrying the ISIN will resolve to this same identifier below.
                 ticker = security?.second?.takeIf { it.isNotBlank() } ?: isin,
                 isin = isin,
+                assetType = assetTypeFor(isin),
                 openingQuantity = number(row.getOrNull(3), "количество на начало по ${row[0]}"),
                 closingQuantity = closingQuantity,
                 // Bond quotes in Sber reports are percentages of nominal (e.g. 92.697),
