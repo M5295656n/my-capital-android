@@ -9,6 +9,9 @@ class BrokerTradeImportRuleTest {
     fun importsOnlyFullyExecutedStatus() {
         assertTrue(isFullyExecutedBrokerTrade("И"))
         assertTrue(isFullyExecutedBrokerTrade(" И "))
+        assertTrue(isFullyExecutedBrokerTrade("ЗИ"))
+        assertTrue(isFullyExecutedBrokerTrade(" ЗИ "))
+        assertTrue(isFullyExecutedBrokerTrade("зи"))
     }
 
     @Test
