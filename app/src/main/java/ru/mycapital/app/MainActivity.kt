@@ -84,6 +84,8 @@ private fun MyCapitalApp() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    var selectedOperationAccount by remember { mutableStateOf("ALL") }
+    var selectedPayoutAccount by remember { mutableStateOf("ALL") }
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
     var showAddPayout by remember { mutableStateOf(false) }
     var payoutToConfirm by remember { mutableStateOf<PayoutEntity?>(null) }
@@ -178,8 +180,8 @@ private fun MyCapitalApp() {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
-                Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
+                Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, dao, Modifier.padding(padding))
             }
         }
@@ -432,16 +434,83 @@ private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifie
     }
 }
 
+private const val ALL_HISTORY_ACCOUNTS = "ALL"
+private const val UNASSIGNED_HISTORY_ACCOUNT = "UNASSIGNED"
+
+private fun historyAccountId(sourceKey: String?): String? {
+    if (sourceKey.isNullOrBlank() || !sourceKey.startsWith("SBER:")) return null
+    val parts = sourceKey.split(':', limit = 3)
+    if (parts.size < 3 || parts[1] == "CASH") return null
+    return parts[1].takeIf { it.isNotBlank() }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OperationsScreen(operations: List<OperationEntity>, onAddCashFlow: () -> Unit, modifier: Modifier = Modifier) {
+private fun AccountHistoryFilter(
+    accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
+    selectedAccountId: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = when (selectedAccountId) {
+        ALL_HISTORY_ACCOUNTS -> "Все счета"
+        UNASSIGNED_HISTORY_ACCOUNT -> "Без привязки к счёту"
+        else -> accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName ?: "Все счета"
+    }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selectedLabel,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Брокерский счёт") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Все счета") },
+                onClick = { onSelect(ALL_HISTORY_ACCOUNTS); expanded = false }
+            )
+            DropdownMenuItem(
+                text = { Text("Без привязки к счёту") },
+                onClick = { onSelect(UNASSIGNED_HISTORY_ACCOUNT); expanded = false }
+            )
+            accounts.forEach { account ->
+                DropdownMenuItem(
+                    text = { Text(account.displayName) },
+                    onClick = { onSelect(account.accountId); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OperationsScreen(
+    operations: List<OperationEntity>,
+    accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
+    selectedAccountId: String,
+    onAccountSelected: (String) -> Unit,
+    onAddCashFlow: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val visibleOperations = operations.filter { operation ->
+        when (selectedAccountId) {
+            ALL_HISTORY_ACCOUNTS -> true
+            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
+            else -> historyAccountId(operation.sourceKey) == selectedAccountId
+        }
+    }
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Операции", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("История сделок и движения денег", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
         TextButton(onClick = onAddCashFlow) { Text("Пополнить / вывести деньги") }
         Spacer(Modifier.height(12.dp))
-        if (operations.isEmpty()) Text("Пока нет операций. Нажмите +, чтобы добавить сделку.")
+        if (visibleOperations.isEmpty()) Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет операций. Нажмите +, чтобы добавить сделку." else "Для выбранного счёта операций нет.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(operations, key = { it.id }) { op ->
+            items(visibleOperations, key = { it.id }) { op ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -468,9 +537,19 @@ private fun OperationsScreen(operations: List<OperationEntity>, onAddCashFlow: (
 @Composable
 private fun PayoutsScreen(
     payouts: List<PayoutEntity>,
+    accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
+    selectedAccountId: String,
+    onAccountSelected: (String) -> Unit,
     onConfirmReceipt: (PayoutEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val visiblePayouts = payouts.filter { payout ->
+        when (selectedAccountId) {
+            ALL_HISTORY_ACCOUNTS -> true
+            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(payout.sourceKey) == null
+            else -> historyAccountId(payout.sourceKey) == selectedAccountId
+        }
+    }
     val received = payouts.filter { it.status == "RECEIVED" }.sumOf {
         it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
     }
@@ -478,19 +557,21 @@ private fun PayoutsScreen(
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricCard("Получено после налога", money(received) + " ₽", Modifier.weight(1f))
             MetricCard("Ожидается до налога", money(expected) + " ₽", Modifier.weight(1f))
         }
         Spacer(Modifier.height(12.dp))
-        if (payouts.isEmpty()) {
+        if (visiblePayouts.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон." else "Для выбранного счёта выплат нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 80.dp)) {
-                items(payouts, key = { it.id }) { payout ->
+                items(visiblePayouts, key = { it.id }) { payout ->
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
