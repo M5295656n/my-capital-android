@@ -83,6 +83,7 @@ private fun MyCapitalApp() {
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
     var showAddAsset by remember { mutableStateOf(false) }
+    var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
     var showAddOperation by remember { mutableStateOf(false) }
     var showCashFlow by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -208,7 +209,7 @@ private fun MyCapitalApp() {
         ) { padding ->
             when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, onEditAsset = { assetToEdit = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
@@ -352,6 +353,22 @@ private fun MyCapitalApp() {
             confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("Понятно") } }
         )
     }
+    if (assetToEdit != null) {
+        EditAssetDialog(
+            asset = assetToEdit!!,
+            onDismiss = { assetToEdit = null },
+            onSave = { updated ->
+                scope.launch {
+                    try {
+                        dao.updateAsset(updated)
+                        assetToEdit = null
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "Не удалось обновить актив."
+                    }
+                }
+            }
+        )
+    }
     if (showAddAsset) {
         AddAssetDialog(
             onDismiss = { showAddAsset = false },
@@ -469,7 +486,7 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
 }
 
 @Composable
-private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifier) {
+private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(20.dp))
         Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -488,11 +505,16 @@ private fun AssetsScreen(assets: List<AssetEntity>, modifier: Modifier = Modifie
                             Column(Modifier.weight(1f)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                                 Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${asset.assetType} · ${asset.quantity} шт.")
+                                Text("${asset.assetType} · ${quantity(asset.quantity)} шт.")
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
                                 Text("Средняя ${money(asset.averagePrice)} ₽", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton(onClick = { onEditAsset(asset) }) {
+                                    Icon(Icons.Default.Edit, contentDescription = null)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Изменить")
+                                }
                             }
                         }
                     }
