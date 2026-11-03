@@ -68,18 +68,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
                 closingValue = index * 2.0 * (20.0 + index)
             )
         }
-        (mainAssets + iisAssets).forEach { asset ->
-            dao.insertAsset(
-                AssetEntity(
-                    ticker = asset.ticker,
-                    name = asset.name,
-                    assetType = "Акция",
-                    quantity = 0.0,
-                    averagePrice = 0.0,
-                    currentPrice = 0.0
-                )
-            )
-        }
+        // Start with an empty portfolio: snapshot reconciliation must create assets.
         dao.ensureCashBalance(CashBalanceEntity(balance = 0.0))
 
         val mainReport = report(
@@ -141,10 +130,15 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         )
 
         // Snapshot reconciliation is absolute and account-scoped.
-        repository.reconcileBrokerReportSnapshot(mainReport)
-        repository.reconcileBrokerReportSnapshot(iisReport)
+        val mainSnapshot = repository.reconcileBrokerReportSnapshot(mainReport)
+        val iisSnapshot = repository.reconcileBrokerReportSnapshot(iisReport)
+        assertEquals(0, mainSnapshot.unmatchedReportAssets)
+        assertEquals(0, iisSnapshot.unmatchedReportAssets)
+        assertEquals(12, mainSnapshot.matchedAssets)
+        assertEquals(5, iisSnapshot.matchedAssets)
         assertEquals(600.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(17, dao.getAssets().size)
+        assertTrue(dao.getAssets().all { it.averagePrice == 0.0 })
         mainAssets.forEach { expected ->
             assertEquals(expected.closingQuantity, dao.getAssetByTicker(expected.ticker)!!.quantity, 0.000001)
         }
