@@ -84,6 +84,7 @@ private fun MyCapitalApp() {
     var selected by remember { mutableStateOf(Screen.Overview) }
     var showAddAsset by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
+    var assetToDelete by remember { mutableStateOf<AssetEntity?>(null) }
     var showAddOperation by remember { mutableStateOf(false) }
     var showCashFlow by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -209,7 +210,7 @@ private fun MyCapitalApp() {
         ) { padding ->
             when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, onEditAsset = { assetToEdit = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
@@ -353,6 +354,28 @@ private fun MyCapitalApp() {
             confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("Понятно") } }
         )
     }
+    if (assetToDelete != null) {
+        val target = assetToDelete!!
+        AlertDialog(
+            onDismissRequest = { assetToDelete = null },
+            title = { Text("Удалить ${target.ticker}?") },
+            text = { Text("Будет удалена только карточка актива и её текущая позиция. История операций, дивиденды и купоны не удаляются. Если актив импортируется повторно из брокерского отчёта, он может появиться снова.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            dao.deleteAsset(target)
+                            assetToDelete = null
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "Не удалось удалить актив."
+                            assetToDelete = null
+                        }
+                    }
+                }) { Text("Удалить") }
+            },
+            dismissButton = { TextButton(onClick = { assetToDelete = null }) { Text("Отмена") } }
+        )
+    }
     if (assetToEdit != null) {
         EditAssetDialog(
             asset = assetToEdit!!,
@@ -486,7 +509,7 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
 }
 
 @Composable
-private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -> Unit, modifier: Modifier = Modifier) {
+private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -> Unit, onDeleteAsset: (AssetEntity) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(20.dp))
         Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -514,6 +537,11 @@ private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -
                                     Icon(Icons.Default.Edit, contentDescription = null)
                                     Spacer(Modifier.width(4.dp))
                                     Text("Изменить")
+                                }
+                                TextButton(onClick = { onDeleteAsset(asset) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                                    Icon(Icons.Default.Delete, contentDescription = null)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Удалить")
                                 }
                             }
                         }
