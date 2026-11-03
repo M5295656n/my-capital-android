@@ -154,9 +154,10 @@ object SberBrokerReportParser {
             val securityType = securitiesRows.firstOrNull { it.getOrNull(2) == isin }
                 ?.getOrNull(4).orEmpty().lowercase(Locale.ROOT)
             return when {
-                securityType.contains("акци") -> "Акция"
-                securityType.contains("облигац") -> "Облигация"
-                securityType.contains("фонд") || securityType.contains("пай") || securityType.contains("бпиф") -> "Фонд"
+                securityType.contains("акци") || securityType.contains("share") -> "Акция"
+                securityType.contains("облигац") || securityType.contains("bond") -> "Облигация"
+                securityType.contains("фонд") || securityType.contains("пай") || securityType.contains("бпиф") ||
+                    securityType.contains("fund") || securityType.contains("unit") -> "Фонд"
                 else -> "Другое"
             }
         }
