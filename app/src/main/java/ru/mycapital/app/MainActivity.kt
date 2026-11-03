@@ -808,7 +808,6 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
     }
 }
 
-@Composable
 private data class RealizedTradingResult(val profit: Double, val unmatchedQuantity: Double)
 
 /** FIFO matching over recorded trades only; unmatched sales are surfaced, never guessed. */
@@ -844,6 +843,7 @@ private fun calculateRealizedTradingResult(operations: List<OperationEntity>): R
     return RealizedTradingResult(profit, unmatched)
 }
 
+@Composable
 private fun AnalyticsScreen(
     assets: List<AssetEntity>,
     marketValue: Double,
