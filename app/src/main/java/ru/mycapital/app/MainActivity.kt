@@ -211,7 +211,7 @@ private fun MyCapitalApp() {
         ) { padding ->
             when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, operations, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
@@ -513,6 +513,7 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
 private fun AssetsScreen(
     assets: List<AssetEntity>,
     operations: List<OperationEntity>,
+    accounts: List<BrokerAccountEntity>,
     onEditAsset: (AssetEntity) -> Unit,
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
@@ -567,6 +568,7 @@ private fun AssetsScreen(
         AssetPurchaseHistoryDialog(
             asset = asset,
             operations = operations,
+            accounts = accounts,
             onDismiss = { selectedAssetForHistory = null }
         )
     }
@@ -576,6 +578,7 @@ private fun AssetsScreen(
 private fun AssetPurchaseHistoryDialog(
     asset: AssetEntity,
     operations: List<OperationEntity>,
+    accounts: List<BrokerAccountEntity>,
     onDismiss: () -> Unit
 ) {
     val purchases = remember(asset.id, asset.ticker, operations) {
@@ -616,6 +619,14 @@ private fun AssetPurchaseHistoryDialog(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text("${quantity(purchase.quantity)} шт. × ${money(purchase.price)} ₽")
+                                val accountId = historyAccountId(purchase.sourceKey)
+                                val accountLabel = accounts.firstOrNull { it.accountId == accountId }?.displayName
+                                    ?: if (accountId == null) "Счёт не указан" else "Счёт не найден в списке"
+                                Text(
+                                    accountLabel,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 val total = purchase.quantity * purchase.price + purchase.commission
                                 Text(
                                     "Комиссия: ${money(purchase.commission)} ₽ · Итого: ${money(total)} ₽",
