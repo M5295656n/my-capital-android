@@ -850,6 +850,62 @@ private fun AddOperationDialog(assets: List<AssetEntity>, onDismiss: () -> Unit,
     )
 }
 @Composable
+private fun EditAssetDialog(
+    asset: AssetEntity,
+    onDismiss: () -> Unit,
+    onSave: (AssetEntity) -> Unit
+) {
+    var name by remember(asset.id) { mutableStateOf(asset.name) }
+    var type by remember(asset.id) { mutableStateOf(asset.assetType) }
+    var quantityText by remember(asset.id) { mutableStateOf(quantity(asset.quantity)) }
+    var averageText by remember(asset.id) { mutableStateOf(asset.averagePrice.toString()) }
+    var currentText by remember(asset.id) { mutableStateOf(asset.currentPrice.toString()) }
+
+    val parsedQuantity = parseDecimalInput(quantityText)
+    val parsedAverage = parseDecimalInput(averageText)
+    val parsedCurrent = parseDecimalInput(currentText)
+    val valid = name.isNotBlank() && type.isNotBlank() &&
+        parsedQuantity != null && parsedQuantity > 0.0 &&
+        parsedAverage != null && parsedAverage >= 0.0 &&
+        parsedCurrent != null && parsedCurrent >= 0.0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Изменить актив · ${asset.ticker}") },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 440.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Тикер и история операций не меняются, чтобы не нарушить связь с прошлыми сделками.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(name, { name = it }, label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(type, { type = it }, label = { Text("Тип актива") }, singleLine = true)
+                OutlinedTextField(quantityText, { quantityText = it }, label = { Text("Количество") }, singleLine = true)
+                OutlinedTextField(averageText, { averageText = it }, label = { Text("Средняя цена") }, singleLine = true)
+                OutlinedTextField(currentText, { currentText = it }, label = { Text("Текущая цена") }, singleLine = true)
+                Text("Изменение количества вручную корректирует только общую позицию. История сделок и распределение по брокерским счетам не переписываются.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = {
+                onSave(asset.copy(
+                    name = name.trim(),
+                    assetType = type.trim(),
+                    quantity = parsedQuantity!!,
+                    averagePrice = parsedAverage!!,
+                    currentPrice = parsedCurrent!!
+                ))
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@Composable
 private fun AddAssetDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, String, Double, Double, Double) -> Unit
