@@ -86,7 +86,7 @@ object SberBrokerReportParser {
             row.select("th,td").map { it.text().replace('\u00a0', ' ').trim() }
         }
         fun headerIndex(tableIndex: Int, required: Set<String>): Int =
-            rows(tableIndex).indexOfFirst { row -> required.all { requiredName -> row.any { it.equals(requiredName, true) } } }
+            rows(tableIndex).indexOfFirst { row -> required.all { requiredName -> row.any { it.startsWith(requiredName, true) } } }
 
         fun locate(required: Set<String>): Pair<Int, Int> {
             tables.indices.forEach { tableIndex ->
