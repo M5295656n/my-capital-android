@@ -209,7 +209,7 @@ private fun MyCapitalApp() {
                 scope.launch {
                     try {
                         val result = withContext(Dispatchers.IO) { repository.importBrokerReportHistory(reportToImport) }
-                        importResultMessage = "Добавлено операций: ${result.imported}. Дубликатов пропущено: ${result.duplicates}. Неисполненных или непроверенных сделок пропущено: ${result.unsettledSkipped}. Денежный остаток и позиции не менялись."
+                        importResultMessage = "Добавлено операций: ${result.imported}. Выплат добавлено: ${result.payoutsImported}. Дубликатов пропущено: ${result.duplicates}. Неисполненных или непроверенных сделок пропущено: ${result.unsettledSkipped}. Денежный остаток и позиции не менялись."
                         importedReport = null
                     } catch (error: Exception) {
                         importError = error.message ?: "Не удалось импортировать операции."
@@ -466,7 +466,9 @@ private fun PayoutsScreen(
     onConfirmReceipt: (PayoutEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val received = payouts.filter { it.status == "RECEIVED" }.sumOf { it.totalAmount - it.taxAmount }
+    val received = payouts.filter { it.status == "RECEIVED" }.sumOf {
+        it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
+    }
     val expected = payouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -491,8 +493,14 @@ private fun PayoutsScreen(
                                 Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
                                     color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
-                            Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
+                            if (payout.reportedNetAmount != null) {
+                                Text("Зачислено по брокерскому отчёту: ${money(payout.reportedNetAmount)} ₽")
+                                Text("Сумма до налога и удержанный налог в отчёте отдельно не раскрыты",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
+                                Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
+                            }
                             payout.expectedDate?.let {
                                 Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
