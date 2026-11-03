@@ -149,6 +149,18 @@ private fun MyCapitalApp() {
         }
     }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
+    val quoteWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("moex_quote_refresh_manual")
+        .collectAsState(initial = emptyList())
+    val quoteRefreshStatus = quoteWorkInfos.firstOrNull()?.let { info ->
+        when (info.state) {
+            androidx.work.WorkInfo.State.RUNNING -> "Обновляю котировки MOEX…"
+            androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Обновление котировок ожидает запуска…"
+            androidx.work.WorkInfo.State.SUCCEEDED -> info.outputData.getString("summary") ?: "Обновление котировок завершено."
+            androidx.work.WorkInfo.State.FAILED -> "Не удалось обновить котировки. Проверьте подключение к интернету."
+            androidx.work.WorkInfo.State.CANCELLED -> "Обновление котировок отменено."
+        }
+    }
 
     LaunchedEffect(Unit) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
@@ -176,7 +188,7 @@ private fun MyCapitalApp() {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val request = OneTimeWorkRequestBuilder<QuoteRefreshWorker>().setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "moex_quote_refresh_manual", ExistingWorkPolicy.KEEP, request
+            "moex_quote_refresh_manual", ExistingWorkPolicy.REPLACE, request
         )
     }
     val refreshEvents: () -> Unit = {
@@ -210,7 +222,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, quoteRefreshStatus, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -412,7 +424,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, quoteRefreshStatus: String?, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
