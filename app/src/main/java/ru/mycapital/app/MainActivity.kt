@@ -1640,13 +1640,13 @@ private fun BrokerReportPreviewDialog(
                 }
                 HorizontalDivider()
                 Text("Сверка позиций", fontWeight = FontWeight.SemiBold)
-                Text("Будет изменено количество и текущая цена только у уже известных приложению бумаг. Средняя цена покупки останется прежней.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Остатки существующих бумаг будут обновлены, а новые позиции из справочника брокера добавлены в портфель. Затем приложение загрузит сделки, пополнения, дивиденды и купоны из этого же отчёта.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 knownRows.take(20).forEach { (row, current) ->
                     Text("${row.ticker}: по этому договору ${quantity(row.closingQuantity)} шт.; всего в приложении сейчас ${quantity(current!!.quantity)} шт.", fontSize = 12.sp)
                 }
                 if (knownRows.size > 20) Text("И ещё ${knownRows.size - 20} сопоставленных позиций…", fontSize = 12.sp)
                 if (unknownRows.isNotEmpty()) {
-                    Text("Не будут изменены: ${unknownRows.size} поз. без совпадения тикера в приложении.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    Text("Позиции, которые не удалось распознать по тикеру: ${unknownRows.size}.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     unknownRows.take(5).forEach { Text("• ${it.ticker.ifBlank { it.name }}", fontSize = 12.sp) }
                 }
                 HorizontalDivider()
@@ -1669,7 +1669,6 @@ private fun BrokerReportPreviewDialog(
                 enabled = !isImporting && !isReconciling &&
                     report.closingCash >= 0.0 &&
                     report.assets.any { it.ticker.isNotBlank() } &&
-                    (report.cashFlows.isNotEmpty() || completedTrades > 0) &&
                     kotlin.math.abs(report.openingCash + report.cashCredits - report.cashDebits - report.closingCash) <= 0.02
             ) {
                 Text(if (isImporting || isReconciling) "Обрабатываю отчёт…" else "Импортировать и сверить портфель")
