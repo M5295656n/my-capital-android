@@ -10,6 +10,13 @@ class UnsupportedMoexInstrumentException(message: String) : IOException(message)
 
 data class MoexQuote(val ticker: String, val price: Double, val board: String?)
 
+internal fun preferredMoexBoard(assetType: String): String? = when {
+    assetType.contains("облигац", ignoreCase = true) -> "TQOB"
+    assetType.contains("акци", ignoreCase = true) -> "TQBR"
+    assetType.contains("фонд", ignoreCase = true) || assetType.contains("пай", ignoreCase = true) -> "TQTF"
+    else -> null
+}
+
 /** MOEX bond prices are quoted as a percentage of face value; add accrued coupon interest to get dirty price. */
 internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Double?, accruedInterest: Double? = 0.0): Double {
     if (!assetType.contains("облигац", ignoreCase = true)) return price
@@ -76,17 +83,26 @@ class MoexIssClient {
                 val number = row.optDouble(index, Double.NaN)
                 return number.takeIf { it.isFinite() && it > 0.0 }
             }
-            for (i in 0 until rows.length()) {
-                val row = rows.optJSONArray(i) ?: continue
-                val secidIndex = indexes["SECID"]
-                if (secidIndex != null && row.optString(secidIndex) != ticker.trim().uppercase()) continue
+            val boardIndex = indexes["BOARDID"]
+            val secidIndex = indexes["SECID"]
+            val matchingRows = (0 until rows.length()).mapNotNull { index ->
+                val row = rows.optJSONArray(index) ?: return@mapNotNull null
+                if (secidIndex != null && row.optString(secidIndex) != ticker.trim().uppercase()) return@mapNotNull null
+                val board = boardIndex?.let { row.optString(it).takeIf(String::isNotBlank) }
+                row to board
+            }
+            val preferredBoard = preferredMoexBoard(assetType)
+            // MOEX returns several market boards for one security. Never silently take
+            // the first row: it may belong to an auxiliary/less liquid trading mode.
+            val selectedRows = if (preferredBoard != null) {
+                matchingRows.filter { it.second == preferredBoard }
+            } else matchingRows
+            for ((row, board) in selectedRows) {
                 val price = value(row, "LAST")
                     ?: value(row, "WAPRICE")
                     ?: value(row, "LCURRENTPRICE")
                     ?: value(row, "MARKETPRICE")
                     ?: continue
-                val boardIndex = indexes["BOARDID"]
-                val board = boardIndex?.let { row.optString(it).takeIf(String::isNotBlank) }
                 val accruedInterest = if (market == "bonds") {
                     val accruedIndex = indexes["ACCRUEDINT"]
                         ?: throw IOException("MOEX ISS не вернул поле ACCRUEDINT для облигации $ticker")
