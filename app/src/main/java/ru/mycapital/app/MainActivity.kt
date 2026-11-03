@@ -603,6 +603,12 @@ private fun AssetPurchaseHistoryDialog(
     val remainingQuantity = purchases.sumOf { purchase ->
         lotBalances.remainingByOperationId[purchase.id] ?: 0.0
     }
+    val sales = assetTradeOperations.filter { it.operationType == "Продажа" }
+        .sortedByDescending { it.operationDate }
+    val saleResults = remember(asset.id, assetTradeOperations) {
+        calculateSaleLotResults(assetTradeOperations).associateBy { it.operationId }
+    }
+    val knownRealizedProfit = sales.sumOf { saleResults[it.id]?.profit ?: 0.0 }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -667,6 +673,65 @@ private fun AssetPurchaseHistoryDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
+                    }
+                }
+                HorizontalDivider()
+                Text("История продаж", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                if (sales.isEmpty()) {
+                    Text("Продаж этого актива пока нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text(
+                        "Продаж: ${sales.size} · Известный реализованный результат: ${if (knownRealizedProfit > 0.0) "+" else ""}${money(knownRealizedProfit)} ₽",
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (knownRealizedProfit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(sales, key = { it.id }) { sale ->
+                            val result = saleResults[sale.id]
+                            val accountId = historyAccountId(sale.sourceKey)
+                            val accountLabel = accounts.firstOrNull { it.accountId == accountId }?.displayName
+                                ?: if (accountId == null) "Счёт не указан" else "Счёт не найден в списке"
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU"))
+                                        .format(java.util.Date(sale.operationDate)),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text("${quantity(sale.quantity)} шт. × ${money(sale.price)} ₽")
+                                Text(accountLabel, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                                if (result != null && result.matchedQuantity > 0.0000001) {
+                                    Text(
+                                        "Сопоставлено: ${quantity(result.matchedQuantity)} шт. · Себестоимость: ${money(result.costBasis)} ₽",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        "Выручка после комиссии: ${money(result.netProceeds)} ₽",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        "Результат: ${if (result.profit > 0.0) "+" else ""}${money(result.profit)} ₽",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (result.profit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                if (result != null && result.unmatchedQuantity > 0.0000001) {
+                                    Text(
+                                        "Без подтверждённой себестоимости: ${quantity(result.unmatchedQuantity)} шт. Прибыль для этой части не рассчитывается.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                Text(
+                                    "Комиссия продажи: ${money(sale.commission)} ₽",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                HorizontalDivider()
+                            }
+                        }
                     }
                 }
             }
