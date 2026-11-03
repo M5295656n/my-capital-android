@@ -193,6 +193,37 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         }
     }
 
+    /**
+     * Confirms an existing expected payout. The transaction and status guard make
+     * cash crediting idempotent: a payout can be credited only once.
+     */
+    suspend fun confirmPayoutReceived(payoutId: Long, taxAmount: Double, receivedAt: Long = System.currentTimeMillis()): Boolean {
+        require(taxAmount.isFinite() && taxAmount >= 0.0) { "Налог не может быть отрицательным" }
+        return database.withTransaction {
+            val payout = requireNotNull(dao.getPayoutById(payoutId)) { "Выплата не найдена" }
+            if (payout.status == "RECEIVED") return@withTransaction false
+            require(payout.status == "EXPECTED") { "Можно подтвердить только ожидаемую выплату" }
+            val net = calculatePayoutNetAmount(payout.totalAmount, taxAmount)
+            dao.updatePayout(payout.copy(taxAmount = taxAmount, actualDate = receivedAt, status = "RECEIVED"))
+            dao.ensureCashBalance(CashBalanceEntity())
+            val current = dao.getCashBalance() ?: 0.0
+            dao.updateCashBalance(current + net)
+            dao.insertOperation(
+                OperationEntity(
+                    assetId = payout.assetId,
+                    operationType = payout.payoutType,
+                    ticker = payout.ticker,
+                    quantity = payout.quantity,
+                    price = payout.amountPerUnit,
+                    commission = taxAmount,
+                    operationDate = receivedAt,
+                    note = "Фактически получено; после налога: ${"%.2f".format(java.util.Locale.US, net)} ₽"
+                )
+            )
+            true
+        }
+    }
+
     suspend fun recordPayout(
         assetId: Long?,
         ticker: String,
