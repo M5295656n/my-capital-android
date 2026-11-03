@@ -117,6 +117,7 @@ class SberBrokerReportParserTest {
             assertEquals(428.73, report.openingCash, 0.001)
             assertEquals(635.73, report.closingCash, 0.001)
             assertEquals("TEST", report.assets.single().ticker)
+        assertEquals("Акция", report.assets.single().assetType)
             assertEquals(3.0, report.assets.single().closingQuantity, 0.001)
             assertEquals(1, report.trades.size)
             assertEquals(0.42, report.trades.single().totalFee, 0.001)
@@ -135,6 +136,7 @@ class SberBrokerReportParserTest {
             .replace("<td>473.40</td>", "<td>927.40</td>")
         val report = parseWithDiagnostics(html)
         assertEquals(926.97, report.assets.single().closingPrice, 0.001)
+        assertEquals("Облигация", report.assets.single().assetType)
         assertEquals(92.74, report.trades.single().price, 0.001)
     }
 
