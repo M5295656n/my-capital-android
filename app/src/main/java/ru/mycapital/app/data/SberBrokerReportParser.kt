@@ -257,7 +257,9 @@ object SberBrokerReportParser {
                 settlementDate = LocalDate.parse(row[1], dateFormat),
                 time = row[2],
                 name = row[3],
-                ticker = row[4],
+                // Sber sometimes writes the ISIN (rather than the exchange ticker)
+                // into the trade-code column, notably for OFZ bonds.
+                ticker = securityNames.firstOrNull { it.third == row[4] }?.second ?: row[4],
                 side = row[6],
                 quantity = number(row.getOrNull(7), "количество в сделке"),
                 price = number(row.getOrNull(8), "цена сделки"),
