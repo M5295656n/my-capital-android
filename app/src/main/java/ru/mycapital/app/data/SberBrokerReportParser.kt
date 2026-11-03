@@ -189,14 +189,19 @@ object SberBrokerReportParser {
             val isin = row.getOrNull(1).orEmpty()
             if (!isin.startsWith("RU") || row.size < 18) return@mapNotNull null
             val security = securityNames.firstOrNull { it.third == isin }
+            val closingQuantity = number(row.getOrNull(8), "количество на конец по ${row[0]}")
+            val closingValueText = row.getOrNull(11)
+            // Sber leaves market value blank for zero-quantity rows (e.g. a fully sold position).
+            val closingValue = if (closingValueText.isNullOrBlank() && closingQuantity == 0.0) 0.0
+                else number(closingValueText, "стоимость позиции ${row[0]}")
             BrokerReportAsset(
                 name = row[0],
                 ticker = security?.second.orEmpty(),
                 isin = isin,
                 openingQuantity = number(row.getOrNull(3), "количество на начало по ${row[0]}"),
-                closingQuantity = number(row.getOrNull(8), "количество на конец по ${row[0]}"),
+                closingQuantity = closingQuantity,
                 closingPrice = number(row.getOrNull(10), "цена на конец по ${row[0]}"),
-                closingValue = number(row.getOrNull(11), "стоимость позиции ${row[0]}")
+                closingValue = closingValue
             )
         }
 
