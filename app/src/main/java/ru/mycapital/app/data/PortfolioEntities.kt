@@ -78,3 +78,11 @@ data class BrokerAccountAssetEntity(
     val ticker: String,
     val quantity: Double
 )
+
+
+@Entity(tableName = "broker_accounts")
+data class BrokerAccountEntity(
+    @PrimaryKey val accountId: String,
+    val displayName: String,
+    val accountType: String = "Не указан"
+)

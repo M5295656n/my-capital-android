@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Overview("Обзор", Icons.Default.Home),
     Assets("Активы", Icons.Default.AccountBalanceWallet),
+    Accounts("Счета", Icons.Default.AccountBalance),
     Payouts("Выплаты", Icons.Default.Payments),
     Operations("Операции", Icons.Default.SwapHoriz),
     Analytics("Аналитика", Icons.Default.ShowChart)
@@ -70,6 +71,9 @@ private fun MyCapitalApp() {
     val context = LocalContext.current
     val dao = remember { PortfolioDatabase.getInstance(context).portfolioDao() }
     val assets by dao.observeAssets().collectAsState(initial = emptyList())
+    val brokerAccounts by dao.observeBrokerAccounts().collectAsState(initial = emptyList())
+    val brokerAccountCash by dao.observeBrokerAccountCashAccounts().collectAsState(initial = emptyList())
+    val brokerAccountAssets by dao.observeAllBrokerAccountAssets().collectAsState(initial = emptyList())
     val total by dao.observePortfolioValue().collectAsState(initial = 0.0)
     val cashBalance by dao.observeCashBalance().collectAsState(initial = 0.0)
     val scope = rememberCoroutineScope()
@@ -173,6 +177,7 @@ private fun MyCapitalApp() {
             when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
+                Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, dao, Modifier.padding(padding))

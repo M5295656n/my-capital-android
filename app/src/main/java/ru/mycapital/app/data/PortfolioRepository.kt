@@ -33,6 +33,15 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         var previousCash = 0.0
         var resultingCash = 0.0
         database.withTransaction {
+            if (dao.getBrokerAccount(report.accountId) == null) {
+                dao.upsertBrokerAccount(
+                    BrokerAccountEntity(
+                        accountId = report.accountId,
+                        displayName = "Договор ••••" + report.accountId.takeLast(4),
+                        accountType = "Не указан"
+                    )
+                )
+            }
             dao.ensureCashBalance(CashBalanceEntity())
             previousCash = dao.getCashBalance() ?: 0.0
 
