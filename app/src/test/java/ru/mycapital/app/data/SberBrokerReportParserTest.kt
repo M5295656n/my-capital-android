@@ -58,13 +58,14 @@ class SberBrokerReportParserTest {
         """.trimIndent()
         val required = listOf(assets, cash, flows, trades, securities)
         val dummies = (0 until (tableCount - required.size)).joinToString("") { "<table><tr><td>Дополнительная таблица $it</td></tr></table>" }
-        return "<html><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
+        return "<html><head><title>Отчет брокера TESTACCOUNT</title></head><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
     }
 
     @Test
     fun parsesBothRegularAndIisReportLayouts() {
         listOf(11, 9).forEach { count ->
             val report = SberBrokerReportParser.parse(sampleHtml(tableCount = count))
+            assertEquals("TESTACCOUNT", report.accountId)
             assertEquals(428.73, report.openingCash, 0.001)
             assertEquals(635.73, report.closingCash, 0.001)
             assertEquals("TEST", report.assets.single().ticker)
