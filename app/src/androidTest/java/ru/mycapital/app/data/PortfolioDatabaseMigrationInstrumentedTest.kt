@@ -35,6 +35,9 @@ class PortfolioDatabaseMigrationInstrumentedTest {
                 "CREATE TABLE payouts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, assetId INTEGER, ticker TEXT NOT NULL, payoutType TEXT NOT NULL, amountPerUnit REAL NOT NULL, quantity REAL NOT NULL, totalAmount REAL NOT NULL, taxAmount REAL NOT NULL, expectedDate INTEGER, actualDate INTEGER, status TEXT NOT NULL, sourceKey TEXT)"
             )
             legacy.execSQL("CREATE UNIQUE INDEX index_payouts_sourceKey ON payouts(sourceKey)")
+            legacy.execSQL(
+                "INSERT INTO payouts (id, assetId, ticker, payoutType, amountPerUnit, quantity, totalAmount, taxAmount, expectedDate, actualDate, status, sourceKey) VALUES (9, NULL, 'SBER', 'Дивиденд', 1.0, 2.0, 20.0, 2.0, NULL, 1790000000000, 'RECEIVED', 'LEGACY:PAYOUT')"
+            )
             legacy.execSQL("CREATE TABLE cash_balance (id INTEGER NOT NULL PRIMARY KEY, balance REAL NOT NULL)")
             legacy.execSQL(
                 "CREATE TABLE portfolio_snapshots (dateKey TEXT NOT NULL PRIMARY KEY, capturedAt INTEGER NOT NULL, assetsValue REAL NOT NULL, cashValue REAL NOT NULL, totalValue REAL NOT NULL, externalFlow REAL NOT NULL DEFAULT 0.0)"
@@ -52,7 +55,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
         }
 
         val database = Room.databaseBuilder(context, PortfolioDatabase::class.java, databaseName)
-            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8)
+            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
 
@@ -67,6 +70,10 @@ class PortfolioDatabaseMigrationInstrumentedTest {
             assertEquals(123.45, dao.getCashBalance()!!, 0.000001)
             assertEquals(0, dao.getBrokerAccountCashAccounts().size)
             assertEquals(0, dao.getBrokerAccountAssets("403RY0J").size)
+            val legacyPayout = dao.getPayoutById(9L)
+            assertNotNull(legacyPayout)
+            assertEquals(20.0, legacyPayout!!.totalAmount, 0.000001)
+            assertEquals(null, legacyPayout.reportedNetAmount)
 
             val imported = OperationEntity(
                 assetId = null,
