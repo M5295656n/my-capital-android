@@ -203,8 +203,15 @@ object SberBrokerReportParser {
             val contributionDateIndex = header.indexOf("Дата операции")
             val amountIndex = header.indexOf("Сумма, руб.")
             val reasonIndex = header.indexOf("Основание операции")
+            // The contribution register uses shorter/different descriptions than the
+            // general cash-flow table (for example, "Зачисление д/с на ИИС" vs
+            // "Зачисление д/с"). Match by date, amount and semantic flow kind so the
+            // same real contribution/transfer is not imported twice. Occurrence counts
+            // preserve genuinely repeated transactions with identical values.
+            fun contributionMatchKey(date: LocalDate, credit: Double, debit: Double, kind: BrokerCashFlowKind) =
+                "${date}:${credit}:${debit}:${kind}"
             val generalFlowCounts = cashFlows.groupingBy {
-                "${it.date}:${it.description}:${it.credit}:${it.debit}"
+                contributionMatchKey(it.date, it.credit, it.debit, it.kind)
             }.eachCount()
             val iisOccurrences = mutableMapOf<String, Int>()
             contributionRows.drop(headerRowIndex + 1).forEach { row ->
@@ -215,18 +222,17 @@ object SberBrokerReportParser {
                 require(amount >= 0.0) { "В отчёте найдена отрицательная сумма операции по ИИС." }
                 if (amount == 0.0 || description.isBlank()) return@forEach
                 val date = LocalDate.parse(dateText, dateFormat)
-                val canonical = "${date}:$description:$amount:0.0"
+                val kind = classifyBrokerCashFlow(description)
+                val canonical = contributionMatchKey(date, amount, 0.0, kind)
                 val occurrence = iisOccurrences.getOrDefault(canonical, 0)
                 iisOccurrences[canonical] = occurrence + 1
-                // If the same row is already present in the general cash-flow table,
-                // skip only the matching occurrence; preserve legitimate repeated rows. 
                 if (occurrence < generalFlowCounts.getOrDefault(canonical, 0)) return@forEach
                 cashFlows += BrokerReportCashFlow(
                     date = date,
                     description = description,
                     credit = amount,
                     debit = 0.0,
-                    rowKey = "SBER:IIS:CASH:$canonical:$occurrence",
+                    rowKey = "SBER:IIS:CASH:${canonical}:${occurrence}",
                     ticker = tickerFor(description)
                 )
             }
