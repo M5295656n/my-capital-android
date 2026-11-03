@@ -111,7 +111,7 @@ object SberBrokerReportParser {
             .replace('Ё', 'Е')
             .replace(Regex("\\s+"), " ")
             .trim()
-        val accountId = Regex("(?i)отчет\\s+брокера\\s+([A-Z0-9-]+)")
+        val accountId = Regex("(?iu)отчет\\s+брокера\\s+([A-Z0-9-]+)")
             .find(title)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
             ?: error("Не удалось определить номер брокерского счёта в заголовке отчёта: «$title».")
         val reportText = document.text()
