@@ -10,12 +10,16 @@ class UnsupportedMoexInstrumentException(message: String) : IOException(message)
 
 data class MoexQuote(val ticker: String, val price: Double, val board: String?)
 
-internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Double?): Double {
+/** MOEX bond prices are quoted as a percentage of face value; add accrued coupon interest to get dirty price. */
+internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Double?, accruedInterest: Double? = 0.0): Double {
     if (!assetType.contains("облигац", ignoreCase = true)) return price
     require(faceValue != null && faceValue.isFinite() && faceValue > 0.0) {
         "MOEX ISS не вернул номинал облигации; котировка не обновлена."
     }
-    return price * faceValue / 100.0
+    require(accruedInterest != null && accruedInterest.isFinite() && accruedInterest >= 0.0) {
+        "MOEX ISS не вернул корректный НКД; котировка не обновлена."
+    }
+    return price * faceValue / 100.0 + accruedInterest
 }
 
 class MoexIssClient {
@@ -29,7 +33,7 @@ class MoexIssClient {
         val market = if (assetType.contains("облигац", ignoreCase = true)) "bonds" else "shares"
         val safeTicker = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker.json" +
-            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE"
+            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
@@ -83,8 +87,17 @@ class MoexIssClient {
                     ?: continue
                 val boardIndex = indexes["BOARDID"]
                 val board = boardIndex?.let { row.optString(it).takeIf(String::isNotBlank) }
+                val accruedInterest = if (market == "bonds") {
+                    val accruedIndex = indexes["ACCRUEDINT"]
+                        ?: throw IOException("MOEX ISS не вернул поле ACCRUEDINT для облигации $ticker")
+                    if (accruedIndex >= row.length() || row.isNull(accruedIndex)) {
+                        throw IOException("MOEX ISS не вернул НКД для облигации $ticker; котировка не обновлена.")
+                    }
+                    row.optDouble(accruedIndex, Double.NaN).takeIf { it.isFinite() && it >= 0.0 }
+                        ?: throw IOException("MOEX ISS вернул некорректный НКД для облигации $ticker")
+                } else 0.0
                 val normalizedPrice = try {
-                    normalizeMoexPrice(price, assetType, faceValue)
+                    normalizeMoexPrice(price, assetType, faceValue, accruedInterest)
                 } catch (error: IllegalArgumentException) {
                     throw IOException(error.message ?: "Не удалось пересчитать цену облигации", error)
                 }
