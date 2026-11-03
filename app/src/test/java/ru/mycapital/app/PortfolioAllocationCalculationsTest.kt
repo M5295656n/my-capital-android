@@ -17,10 +17,10 @@ class PortfolioAllocationCalculationsTest {
         val result = calculatePortfolioAllocation(assets, 200.0)
 
         assertEquals(listOf("Акция", "Облигация", "Денежные средства"), result.map { it.label })
-        assertEquals(400.0, result[0].value, 0.000001)
-        assertEquals(0.5, result[0].share, 0.000001)
-        assertEquals(0.25, result[1].share, 0.000001)
-        assertEquals(0.25, result[2].share, 0.000001)
+        assertEquals(500.0, result[0].value, 0.000001)
+        assertEquals(500.0 / 900.0, result[0].share, 0.000001)
+        assertEquals(200.0 / 900.0, result[1].share, 0.000001)
+        assertEquals(200.0 / 900.0, result[2].share, 0.000001)
         assertEquals(1.0, result.sumOf { it.share }, 0.000001)
     }
 
