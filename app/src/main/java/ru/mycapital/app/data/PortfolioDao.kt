@@ -69,6 +69,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM operations ORDER BY operationDate DESC")
     fun observeOperations(): Flow<List<OperationEntity>>
 
+    @Query("SELECT * FROM operations WHERE assetId = :assetId ORDER BY operationDate ASC, id ASC")
+    suspend fun getOperationsForAsset(assetId: Long): List<OperationEntity>
+
     @Insert
     suspend fun insertOperation(operation: OperationEntity): Long
 
