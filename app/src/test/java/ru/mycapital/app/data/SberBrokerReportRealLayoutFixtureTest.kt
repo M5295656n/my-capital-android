@@ -40,6 +40,7 @@ class SberBrokerReportRealLayoutFixtureTest {
         assertEquals(150.0, report.cashCredits, 0.000001)
         assertEquals(0.12, report.cashDebits, 0.000001)
         assertEquals(5, report.assets.size)
+        assertEquals("Акция", report.assets.first().assetType)
         assertEquals(20, report.cashFlows.size)
         assertEquals(6, report.trades.size)
         assertEquals(4, report.cashFlows.count { it.kind == BrokerCashFlowKind.DEPOSIT })
