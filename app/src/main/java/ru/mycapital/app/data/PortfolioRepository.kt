@@ -61,7 +61,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             dao.updateCashBalance(resultingCash.coerceAtLeast(0.0))
 
             val oldAccountAssets = dao.getBrokerAccountAssets(report.accountId).associateBy { it.ticker.uppercase() }
-            val currentAssets = dao.getAssets().associateBy { it.ticker.uppercase() }
+            val currentAssets = dao.getAssets().associateBy { it.ticker.uppercase() }.toMutableMap()
             val reportAssets = report.assets
                 .filter { it.ticker.isNotBlank() }
                 .groupBy { it.ticker.trim().uppercase() }
@@ -69,6 +69,45 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     rows.first().copy(closingQuantity = rows.sumOf { it.closingQuantity })
                 }
             val isFirstAccountSnapshot = knownAccountCash.isEmpty()
+
+            // A first snapshot must be able to initialize an empty app. Create missing
+            // portfolio instruments from the broker's security directory before applying
+            // account-scoped quantities; otherwise every valid report row is counted as
+            // unmatched and the user sees cash but no assets.
+            reportAssets.forEach { (ticker, row) ->
+                if (ticker !in currentAssets && row.closingQuantity > 0.0) {
+                    val type = when {
+                        row.name.contains("ОФЗ", ignoreCase = true) ||
+                            row.name.contains("облигац", ignoreCase = true) -> "Облигация"
+                        row.name.contains("фонд", ignoreCase = true) ||
+                            row.name.contains("БПИФ", ignoreCase = true) ||
+                            row.name.contains("ПИФ", ignoreCase = true) -> "Фонд"
+                        row.name.contains("акци", ignoreCase = true) -> "Акция"
+                        else -> "Другое"
+                    }
+                    val id = dao.insertAsset(
+                        AssetEntity(
+                            ticker = ticker,
+                            name = row.name,
+                            assetType = type,
+                            quantity = 0.0,
+                            // The holdings snapshot contains market value, not acquisition cost.
+                            // Leave cost basis unknown rather than inventing an average purchase price.
+                            averagePrice = 0.0,
+                            currentPrice = row.closingPrice
+                        )
+                    )
+                    currentAssets[ticker] = AssetEntity(
+                        id = id,
+                        ticker = ticker,
+                        name = row.name,
+                        assetType = type,
+                        quantity = 0.0,
+                        averagePrice = 0.0,
+                        currentPrice = row.closingPrice
+                    )
+                }
+            }
 
             // Quantities in AssetEntity are portfolio-wide. Apply only the delta
             // belonging to this agreement, so importing IIS-3 cannot overwrite
