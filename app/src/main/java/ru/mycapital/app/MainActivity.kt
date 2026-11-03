@@ -44,6 +44,7 @@ import ru.mycapital.app.data.CorporateEventsWorker
 import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
 import ru.mycapital.app.data.AssetEntity
+import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
@@ -343,6 +344,7 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = total - invested
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
+    val allocation = calculatePortfolioAllocation(assets, cashBalance)
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -387,6 +389,30 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard("Результат к себестоимости", String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent), Modifier.weight(1f))
                 MetricCard("Свободные деньги", money(cashBalance) + " ₽", Modifier.weight(1f))
+            }
+        }
+        item {
+            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (allocation.isEmpty()) {
+                Text("Распределение появится после добавления активов или свободных денег.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    allocation.forEach { slice ->
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(slice.label, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "${money(slice.value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", slice.share * 100.0)}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { slice.share.toFloat().coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
             }
         }
         item {
