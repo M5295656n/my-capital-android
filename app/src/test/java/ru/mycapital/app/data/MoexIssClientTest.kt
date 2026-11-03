@@ -10,7 +10,6 @@ class MoexIssClientTest {
     }
 
     @Test fun selectsMainTradingBoardForEachAssetType() {
-        assertEquals("TQBR", preferredMoexBoard("Акция"))
         assertEquals(listOf("TQOB", "TQCB"), preferredMoexBoards("Облигация"))
         assertEquals(listOf("TQBR"), preferredMoexBoards("Акция"))
         assertEquals(listOf("TQTF"), preferredMoexBoards("Фонд"))
