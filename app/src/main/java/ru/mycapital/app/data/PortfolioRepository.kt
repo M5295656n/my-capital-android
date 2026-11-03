@@ -61,18 +61,45 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         database.withTransaction {
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
-                val amount = flow.credit.takeIf { it > 0.0 } ?: flow.debit
+                val kind = flow.kind
+                if (kind == BrokerCashFlowKind.IGNORE || kind == BrokerCashFlowKind.INTERNAL_TRANSFER) {
+                    // Trades and fees are imported from the trade table; transfers between
+                    // brokerage agreements are not external portfolio cash flows.
+                    return@forEach
+                }
+                val amount = when (kind) {
+                    BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON -> flow.credit
+                    BrokerCashFlowKind.WITHDRAWAL -> flow.debit
+                    else -> 0.0
+                }
                 if (amount <= 0.0) return@forEach
-                val isDeposit = flow.credit > 0.0
+                val operationType = when (kind) {
+                    BrokerCashFlowKind.DEPOSIT -> "Пополнение"
+                    BrokerCashFlowKind.WITHDRAWAL -> "Вывод"
+                    BrokerCashFlowKind.DIVIDEND -> "Дивиденд"
+                    BrokerCashFlowKind.COUPON -> "Купон"
+                    else -> return@forEach
+                }
+                val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON
+                val ticker = if (payout) flow.ticker else "RUB"
+                val note = when (kind) {
+                    BrokerCashFlowKind.DIVIDEND ->
+                        if (flow.description.contains("налог удержан", true))
+                            "Чистая сумма по брокерскому отчёту; налог удержан, точная сумма налога не указана"
+                        else "Чистая сумма по брокерскому отчёту; налоговая разбивка не указана"
+                    BrokerCashFlowKind.COUPON ->
+                        "Сумма зачисления по брокерскому отчёту; налоговая разбивка не указана"
+                    else -> "Импорт из брокерского отчёта: ${flow.description}"
+                }
                 val row = OperationEntity(
-                    assetId = null,
-                    operationType = if (isDeposit) "Пополнение" else "Вывод",
-                    ticker = "RUB",
+                    assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
+                    operationType = operationType,
+                    ticker = ticker,
                     quantity = 1.0,
                     price = amount,
                     commission = 0.0,
                     operationDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
-                    note = "Импорт из брокерского отчёта: ${flow.description}",
+                    note = note,
                     sourceKey = flow.rowKey
                 )
                 val id = dao.insertImportedOperation(row)
