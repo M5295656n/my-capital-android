@@ -220,7 +220,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     quantity = quantity,
                     totalAmount = gross,
                     taxAmount = taxAmount,
-                    expectedDate = if (isReceived) null else now,
+                    // No expected payment date is collected by the current form; do not invent one.
+                    expectedDate = null,
                     actualDate = if (isReceived) now else null,
                     status = if (isReceived) "RECEIVED" else "EXPECTED"
                 )
