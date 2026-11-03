@@ -550,10 +550,10 @@ private fun PayoutsScreen(
             else -> historyAccountId(payout.sourceKey) == selectedAccountId
         }
     }
-    val received = payouts.filter { it.status == "RECEIVED" }.sumOf {
+    val received = visiblePayouts.filter { it.status == "RECEIVED" }.sumOf {
         it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
     }
-    val expected = payouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
+    val expected = visiblePayouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
