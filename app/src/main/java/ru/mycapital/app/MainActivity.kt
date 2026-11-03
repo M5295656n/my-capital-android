@@ -861,7 +861,7 @@ private fun AnalyticsScreen(
     val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val payoutIncome = receivedDividends + receivedCoupons
-    val unrealizedPlusPayouts = unrealized + payoutIncome
+    val totalInvestmentResult = unrealized + realizedResult.profit + payoutIncome
     val totalValue = marketValue + cashBalance
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     val groups = assets.groupBy { it.assetType.ifBlank { "Прочее" } }
@@ -941,14 +941,14 @@ private fun AnalyticsScreen(
                         Text("${money(receivedCoupons)} ₽", fontWeight = FontWeight.SemiBold)
                     }
                     HorizontalDivider()
-                    Text("Нереализованный результат + выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Общий результат с учётом продаж и выплат", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        (if (unrealizedPlusPayouts > 0) "+" else "") + "${money(unrealizedPlusPayouts)} ₽",
+                        (if (totalInvestmentResult > 0) "+" else "") + "${money(totalInvestmentResult)} ₽",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (unrealizedPlusPayouts >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        color = if (totalInvestmentResult >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
-                    Text("Суммы выплат учитываются после налога, если он известен. При импорте брокерского отчёта используется фактически зачисленная чистая сумма. Реализованный результат продаж здесь не учтён.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Сумма нереализованного результата по текущим остаткам, реализованного результата по FIFO и полученных выплат после налога. Если история покупок неполная, итог по сделкам также неполный. Не включает налоги и расходы, не отражённые в операциях.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
