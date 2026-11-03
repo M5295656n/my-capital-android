@@ -11,7 +11,8 @@ class SberBrokerReportParserTest {
         tradePrice: String = "47.34",
         cashCredit: String = "107.00",
         closingQuantity: String = "3",
-        closingValue: String = "33"
+        closingValue: String = "33",
+        tradeCode: String = "TEST"
     ): String {
         val assets = """
             <table>
@@ -45,7 +46,7 @@ class SberBrokerReportParserTest {
             <table>
               <tr><td>Дата заключения</td><td>Дата расчетов</td><td>Время заключения</td><td>Наименование ЦБ</td><td>Код ЦБ</td><td>Валюта</td><td>Вид</td><td>Количество, шт.</td><td>Цена ²</td><td>Сумма</td><td>НКД ⁴</td><td>Комиссия Брокера</td><td>Комиссия Биржи</td><td>Номер сделки</td><td>Комментарий</td><td>Статус сделки ⁵</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>TEST</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>123456</td><td></td><td>И</td></tr>
+              <tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>$tradeCode</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>123456</td><td></td><td>И</td></tr>
             </table>
         """.trimIndent()
         val securities = """
@@ -101,6 +102,12 @@ class SberBrokerReportParserTest {
             assertEquals(0.42, report.trades.single().totalFee, 0.001)
             assertEquals("SBER:123456", report.trades.single().sourceKey)
         }
+    }
+
+    @Test
+    fun mapsIsinInTradeCodeColumnToExchangeTicker() {
+        val report = parseWithDiagnostics(sampleHtml(tradeCode = "RU000A000003"))
+        assertEquals("SU26228RMFS9", report.trades.single().ticker)
     }
 
     @Test
