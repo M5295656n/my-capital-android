@@ -258,7 +258,9 @@ object SberBrokerReportParser {
                 else number(closingValueText, "стоимость позиции ${row[0]}")
             BrokerReportAsset(
                 name = row[0],
-                ticker = security?.second.orEmpty(),
+                // Keep an importable stable identifier even when the broker's security directory omits a code.
+                // Trade rows carrying the ISIN will resolve to this same identifier below.
+                ticker = security?.second?.takeIf { it.isNotBlank() } ?: isin,
                 isin = isin,
                 openingQuantity = number(row.getOrNull(3), "количество на начало по ${row[0]}"),
                 closingQuantity = closingQuantity,
