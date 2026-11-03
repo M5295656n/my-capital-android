@@ -491,9 +491,9 @@ private fun AddPayoutDialog(
     var received by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     val asset = assets.firstOrNull { it.id == assetId }
-    val amount = amountText.replace(',', '.').toDoubleOrNull() ?: 0.0
-    val quantity = quantityText.replace(',', '.').toDoubleOrNull() ?: 0.0
-    val tax = taxText.replace(',', '.').toDoubleOrNull() ?: -1.0
+    val amount = parseDecimalInput(amountText) ?: 0.0
+    val quantity = parseDecimalInput(quantityText) ?: 0.0
+    val tax = parseDecimalInput(taxText) ?: -1.0
     val gross = amount * quantity
     val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross
     AlertDialog(
@@ -536,7 +536,7 @@ private fun AddPayoutDialog(
 private fun CashFlowDialog(onDismiss: () -> Unit, onSave: (Boolean, Double) -> Unit) {
     var isDeposit by remember { mutableStateOf(true) }
     var amountText by remember { mutableStateOf("") }
-    val amount = amountText.toDoubleOrNull() ?: 0.0
+    val amount = parseDecimalInput(amountText) ?: 0.0
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Движение денег") },
@@ -565,9 +565,9 @@ private fun AddOperationDialog(assets: List<AssetEntity>, onDismiss: () -> Unit,
     var priceText by remember { mutableStateOf("") }
     var feeText by remember { mutableStateOf("0") }
     val asset = assets.firstOrNull { it.id == assetId }
-    val qty = qtyText.toDoubleOrNull() ?: 0.0
-    val price = priceText.toDoubleOrNull() ?: -1.0
-    val fee = feeText.toDoubleOrNull() ?: -1.0
+    val qty = parseDecimalInput(qtyText) ?: 0.0
+    val price = parseDecimalInput(priceText) ?: -1.0
+    val fee = parseDecimalInput(feeText) ?: -1.0
     val valid = asset != null && qty > 0 && price >= 0 && fee >= 0 && (isBuy || qty <= asset.quantity)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -607,9 +607,9 @@ private fun AddAssetDialog(
     var average by remember { mutableStateOf("") }
     var current by remember { mutableStateOf("") }
     val valid = ticker.isNotBlank() && name.isNotBlank() &&
-        (quantity.toDoubleOrNull() ?: 0.0) > 0 &&
-        (average.toDoubleOrNull() ?: -1.0) >= 0 &&
-        (current.toDoubleOrNull() ?: -1.0) >= 0
+        (parseDecimalInput(quantity) ?: 0.0) > 0 &&
+        (parseDecimalInput(average) ?: -1.0) >= 0 &&
+        (parseDecimalInput(current) ?: -1.0) >= 0
 
     AlertDialog(
         onDismissRequest = onDismiss,
