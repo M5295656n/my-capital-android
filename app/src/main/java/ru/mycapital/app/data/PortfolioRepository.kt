@@ -347,7 +347,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     price = payout.amountPerUnit,
                     commission = taxAmount,
                     operationDate = receivedAt,
-                    note = "Фактически получено; после налога: ${"%.2f".format(java.util.Locale.US, net)} ₽"
+                    note = "Фактически получено; после налога: ${"%.2f".format(java.util.Locale.US, net)} ₽",
+                    sourceKey = payout.sourceKey
                 )
             )
             true
