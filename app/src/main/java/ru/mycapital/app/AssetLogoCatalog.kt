@@ -5,6 +5,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Remote ticker -> issuer website catalog.
@@ -26,6 +28,7 @@ internal object AssetLogoCatalog {
         .build()
 
     @Volatile private var memoryCache: Map<String, String>? = null
+    private val loadMutex = Mutex()
 
     fun domainFor(ticker: String, catalog: Map<String, String>): String? =
         catalog[ticker.trim().uppercase()]
@@ -33,8 +36,8 @@ internal object AssetLogoCatalog {
     fun faviconUrl(domain: String): String =
         "https://www.google.com/s2/favicons?domain=${domain}&sz=128"
 
-    suspend fun load(context: Context): Map<String, String> {
-        memoryCache?.let { return it }
+    suspend fun load(context: Context): Map<String, String> = loadMutex.withLock {
+        memoryCache?.let { return@withLock it }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val cached = parseCatalog(prefs.getString(KEY_DOMAINS, null))
         val isFresh = System.currentTimeMillis() - prefs.getLong(KEY_UPDATED_AT, 0L) < MAX_AGE_MS
