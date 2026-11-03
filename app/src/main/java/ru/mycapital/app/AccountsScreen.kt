@@ -25,6 +25,8 @@ internal fun AccountsScreen(
     accountCash: List<BrokerAccountCashEntity>,
     accountAssets: List<BrokerAccountAssetEntity>,
     assets: List<AssetEntity>,
+    operations: List<ru.mycapital.app.data.OperationEntity>,
+    payouts: List<ru.mycapital.app.data.PayoutEntity>,
     onSaveAccount: (BrokerAccountEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -59,6 +61,16 @@ internal fun AccountsScreen(
                 val positionValue = positions.sumOf { row ->
                     row.quantity * (assetsByTicker[row.ticker.uppercase()]?.currentPrice ?: 0.0)
                 }
+                val accountTradePrefix = "SBER:${account.accountId}:TRADE:"
+                val accountPayoutPrefix = "SBER:${account.accountId}:PAYOUT:"
+                val accountOperations = operations.filter { it.sourceKey?.startsWith(accountTradePrefix) == true }
+                val realized = calculateRealizedTradingResult(accountOperations)
+                val receivedPayouts = payouts.filter {
+                    it.sourceKey?.startsWith(accountPayoutPrefix) == true && it.status == "RECEIVED"
+                }
+                val receivedPayoutIncome = receivedPayouts.sumOf {
+                    it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
+                }
                 Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -83,6 +95,31 @@ internal fun AccountsScreen(
                             Text("Всего по договору", fontWeight = FontWeight.SemiBold)
                             Text(formatMoney(cash + positionValue) + " ₽", fontWeight = FontWeight.Bold)
                         }
+                        HorizontalDivider()
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Реализованный результат FIFO", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                (if (realized.profit > 0.0) "+" else "") + formatMoney(realized.profit) + " ₽",
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (realized.profit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Полученные выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatMoney(receivedPayoutIncome) + " ₽", fontWeight = FontWeight.SemiBold)
+                        }
+                        if (realized.unmatchedQuantity > 0.0000001) {
+                            Text(
+                                "Для расчёта FIFO не хватает истории покупок по ${String.format(Locale("ru", "RU"), "%.4f", realized.unmatchedQuantity)} шт. Результат частичный.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            "Показатели учитывают только импортированные операции и выплаты этого договора. Нереализованная прибыль не рассчитывается отдельно по счёту, поскольку средняя цена в карточке актива общая.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Text("Позиции: " + positions.size, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         positions.sortedBy { it.ticker }.forEach { row ->
                             val asset = assetsByTicker[row.ticker.uppercase()]
