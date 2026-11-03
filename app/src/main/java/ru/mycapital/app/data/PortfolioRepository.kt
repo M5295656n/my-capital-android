@@ -8,6 +8,51 @@ import java.util.Locale
 internal fun isFullyExecutedBrokerTrade(status: String): Boolean =
     status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ")
 
+
+/**
+ * Calculates weighted-average acquisition cost from a complete buy/sell history.
+ * Returns null when the available operations do not explain the current holding
+ * (for example, when the report omits purchases made before its start date).
+ */
+internal fun calculateAverageCostFromCompleteHistory(
+    operations: List<OperationEntity>,
+    expectedQuantity: Double
+): Double? {
+    val epsilon = 0.0000001
+    var quantity = 0.0
+    var totalCost = 0.0
+
+    operations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
+        .forEach { operation ->
+            when (operation.operationType) {
+                "Покупка" -> {
+                    if (operation.quantity <= 0.0 || operation.price < 0.0 || operation.commission < 0.0) {
+                        return null
+                    }
+                    quantity += operation.quantity
+                    totalCost += operation.quantity * operation.price + operation.commission
+                }
+                "Продажа" -> {
+                    if (operation.quantity <= 0.0 || quantity + epsilon < operation.quantity) {
+                        return null
+                    }
+                    val averageBeforeSale = if (quantity > epsilon) totalCost / quantity else 0.0
+                    quantity -= operation.quantity
+                    totalCost = averageBeforeSale * quantity
+                    if (quantity <= epsilon) {
+                        quantity = 0.0
+                        totalCost = 0.0
+                    }
+                }
+            }
+        }
+
+    if (kotlin.math.abs(quantity - expectedQuantity) > max(epsilon, expectedQuantity * 0.000001)) {
+        return null
+    }
+    return if (quantity > epsilon) totalCost / quantity else 0.0
+}
+
 class PortfolioRepository(private val database: PortfolioDatabase) {
     private val dao = database.portfolioDao()
 
@@ -264,6 +309,23 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 } else {
                     val id = dao.insertImportedOperation(row)
                     if (id == -1L) duplicates++ else imported++
+                }
+            }
+
+            // Rebuild average acquisition cost only when the stored trade history
+            // fully explains the current snapshot quantity. If the statement starts
+            // after the first purchase, keep the existing value rather than publish
+            // a misleading partial-period average.
+            assetsByTicker.values.forEach { asset ->
+                val history = dao.getOperationsForAsset(asset.id)
+                val calculatedAverage = calculateAverageCostFromCompleteHistory(history, asset.quantity)
+                if (calculatedAverage != null) {
+                    dao.updateAsset(
+                        asset.copy(
+                            averagePrice = calculatedAverage,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
                 }
             }
         }
