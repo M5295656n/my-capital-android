@@ -1400,61 +1400,118 @@ private fun AnalyticsScreen(
 
 @Composable
 private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
-    val ordered = snapshots.sortedBy { it.dateKey }
-    // Unitized NAV excludes net external cash flows from each daily return factor.
-    // Approximation: cash flows are treated as if they occurred at the end of the day.
-    val navValues = mutableListOf<Double>()
-    var nav = 100.0
-    ordered.forEachIndexed { index, snapshot ->
-        if (index > 0) {
-            val previousValue = ordered[index - 1].totalValue
-            val valueBeforeEndOfDayFlow = snapshot.totalValue - snapshot.externalFlow
-            if (valueBeforeEndOfDayFlow > 0.0 && previousValue > 0.0) {
-                nav *= valueBeforeEndOfDayFlow / previousValue
-            }
-        }
-        navValues += nav
+    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
+    var showReturn by remember { mutableStateOf(false) }
+    val points = remember(snapshots, selectedRange) {
+        calculatePortfolioHistoryPoints(snapshots, selectedRange)
     }
-    val values = navValues.map { it.toFloat() }
-    val minValue = values.minOrNull() ?: 100f
-    val maxValue = values.maxOrNull() ?: 100f
+    val plottedValues = points.map { if (showReturn) it.nav else it.totalValue }.map { it.toFloat() }
+    val minValue = plottedValues.minOrNull() ?: 0f
+    val maxValue = plottedValues.maxOrNull() ?: 0f
     val range = (maxValue - minValue).takeIf { it > 0.0001f } ?: 1f
     val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant
-    val totalReturn = (navValues.lastOrNull() ?: 100.0) - 100.0
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Доходность с начала: ${if (totalReturn >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f%%", totalReturn)}",
-                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            Text("База = 100", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(String.format(java.util.Locale("ru", "RU"), "%.2f", minValue), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(String.format(java.util.Locale("ru", "RU"), "%.2f", maxValue), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Canvas(Modifier.fillMaxWidth().height(170.dp)) {
-            val left = 8f
-            val right = size.width - 8f
-            val top = 8f
-            val bottom = size.height - 8f
-            for (i in 0..3) {
-                val y = top + (bottom - top) * i / 3f
-                drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PortfolioHistoryRange.entries.forEach { period ->
+                FilterChip(
+                    selected = selectedRange == period,
+                    onClick = { selectedRange = period },
+                    label = { Text(period.label) }
+                )
             }
-            if (values.size >= 2) {
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = !showReturn,
+                onClick = { showReturn = false },
+                label = { Text("Стоимость ₽") }
+            )
+            FilterChip(
+                selected = showReturn,
+                onClick = { showReturn = true },
+                label = { Text("Доходность %") }
+            )
+        }
+        if (points.size < 2) {
+            Text(
+                "За выбранный период пока недостаточно дневных снимков. Выберите более длинный период.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            val first = points.first()
+            val last = points.last()
+            if (showReturn) {
+                val totalReturn = last.nav - 100.0
+                Text(
+                    "Доходность за период: ${if (totalReturn >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f%%", totalReturn)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (totalReturn >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+                Text(
+                    "Индекс доходности: 100 → ${String.format(java.util.Locale("ru", "RU"), "%.2f", last.nav)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    "Стоимость: ${money(last.totalValue)} ₽",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Изменение за период: ${if (last.totalValue - first.totalValue >= 0) "+" else ""}${money(last.totalValue - first.totalValue)} ₽",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    if (showReturn) String.format(java.util.Locale("ru", "RU"), "%.2f", minValue)
+                    else money(minValue.toDouble()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    if (showReturn) String.format(java.util.Locale("ru", "RU"), "%.2f", maxValue)
+                    else money(maxValue.toDouble()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Canvas(Modifier.fillMaxWidth().height(170.dp)) {
+                val left = 8f
+                val right = size.width - 8f
+                val top = 8f
+                val bottom = size.height - 8f
+                for (i in 0..3) {
+                    val y = top + (bottom - top) * i / 3f
+                    drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+                }
                 val path = Path()
-                values.forEachIndexed { index, value ->
-                    val x = left + (right - left) * index / (values.size - 1).toFloat()
+                plottedValues.forEachIndexed { index, value ->
+                    val x = left + (right - left) * index / (plottedValues.size - 1).toFloat()
                     val y = bottom - ((value - minValue) / range) * (bottom - top)
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 drawPath(path, lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(first.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(last.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(ordered.first().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(ordered.last().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        Text(
+            if (showReturn)
+                "Доходность рассчитана как дневное приближение TWR: пополнения и выводы исключаются из изменения стоимости. Денежные потоки считаются совершёнными в конце дня."
+            else
+                "Показана фактическая оценка активов и свободных денег на дату дневного снимка. Изменение стоимости включает влияние пополнений и выводов.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 private fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
