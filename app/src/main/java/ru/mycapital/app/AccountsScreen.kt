@@ -78,6 +78,7 @@ internal fun AccountsScreen(
                 val receivedPayoutIncome = receivedPayouts.sumOf {
                     it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
                 }
+                val totalAccountResult = realized.profit + openPositionResult.profit + receivedPayoutIncome
                 Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -123,6 +124,15 @@ internal fun AccountsScreen(
                             Text("Полученные выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(formatMoney(receivedPayoutIncome) + " ₽", fontWeight = FontWeight.SemiBold)
                         }
+                        HorizontalDivider()
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Общий результат по счёту", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(
+                                (if (totalAccountResult > 0.0) "+" else "") + formatMoney(totalAccountResult) + " ₽",
+                                fontWeight = FontWeight.Bold,
+                                color = if (totalAccountResult >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
                         if (realized.unmatchedQuantity > 0.0000001) {
                             Text(
                                 "Для расчёта FIFO не хватает истории покупок по ${String.format(Locale("ru", "RU"), "%.4f", realized.unmatchedQuantity)} шт. Результат частичный.",
@@ -138,7 +148,7 @@ internal fun AccountsScreen(
                             )
                         }
                         Text(
-                            "Показатели учитывают только импортированные операции и выплаты этого договора. Нереализованная прибыль не рассчитывается отдельно по счёту, поскольку средняя цена в карточке актива общая.",
+                            "Общий результат — сумма реализованного результата FIFO, нереализованного результата по известной себестоимости и полученных выплат после налога. При неполной истории он является частичным и не включает неизвестную себестоимость начальных остатков.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
