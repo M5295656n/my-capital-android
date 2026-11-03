@@ -50,6 +50,9 @@ import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.PortfolioRepository
 import ru.mycapital.app.data.PortfolioSnapshotEntity
+import ru.mycapital.app.data.BrokerAccountEntity
+import ru.mycapital.app.data.BrokerAccountCashEntity
+import ru.mycapital.app.data.BrokerAccountAssetEntity
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +99,8 @@ private fun MyCapitalApp() {
     var isImportingReport by remember { mutableStateOf(false) }
     var importResultMessage by remember { mutableStateOf<String?>(null) }
     var isReconcilingReport by remember { mutableStateOf(false) }
+    var isExportingData by remember { mutableStateOf(false) }
+    var exportResultMessage by remember { mutableStateOf<String?>(null) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -112,6 +117,30 @@ private fun MyCapitalApp() {
                     importError = error.message ?: "Не удалось прочитать брокерский отчёт."
                 } finally {
                     isParsingReport = false
+                }
+            }
+        }
+    }
+    val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) {
+            isExportingData = true
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Не удалось создать файл архива.")
+                        output.use {
+                            writePortfolioExportZip(
+                                it, assets, operations, payouts, brokerAccounts,
+                                brokerAccountCash, brokerAccountAssets, cashBalance ?: 0.0
+                            )
+                        }
+                    }
+                    exportResultMessage = "Архив ZIP сохранён. Внутри CSV-файлы с активами, счетами, позициями по договорам, операциями и выплатами. Полные номера договоров не экспортируются."
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось экспортировать данные."
+                } finally {
+                    isExportingData = false
                 }
             }
         }
@@ -178,7 +207,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -226,6 +255,14 @@ private fun MyCapitalApp() {
                     }
                 }
             }
+        )
+    }
+    if (exportResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { exportResultMessage = null },
+            title = { Text("Экспорт завершён") },
+            text = { Text(exportResultMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { exportResultMessage = null }) { Text("Готово") } }
         )
     }
     if (importResultMessage != null) {
@@ -338,7 +375,7 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
@@ -367,6 +404,11 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 Icon(Icons.Default.FileOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
+            }
+            OutlinedButton(onClick = onExportData, enabled = !isExportingData) {
+                Icon(Icons.Default.FileDownload, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
             }
         }
         item {
