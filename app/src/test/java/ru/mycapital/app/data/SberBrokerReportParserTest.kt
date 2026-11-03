@@ -73,6 +73,7 @@ class SberBrokerReportParserTest {
               <tr><td>Год</td><td>Лимит, руб.</td><td>Дата операции</td><td>Сумма, руб.</td><td>Основание операции</td><td>Остаток лимита</td></tr>
               <tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
               <tr><td></td><td></td><td>23.10.2026</td><td>70.00</td><td>Зачисление д/с на ИИС</td><td></td></tr>
+              <tr><td></td><td></td><td>23.10.2026</td><td>70.00</td><td>Зачисление д/с на ИИС</td><td></td></tr>
               <tr><td></td><td></td><td>23.10.2026</td><td>100.00</td><td>Перевод д/с между договорами</td><td></td></tr>
             </table>
         """.trimIndent()
@@ -105,16 +106,18 @@ class SberBrokerReportParserTest {
     @Test
     fun importsIisContributionRegisterAsCashFlows() {
         val report = parseWithDiagnostics(sampleHtml(tableCount = 9))
-        val iisDeposit = report.cashFlows.single { it.description == "Зачисление д/с на ИИС" }
+        val iisDeposits = report.cashFlows.filter { it.description == "Зачисление д/с на ИИС" }
         val iisTransfer = report.cashFlows.single { it.description == "Перевод д/с между договорами" }
 
-        assertEquals(BrokerCashFlowKind.DEPOSIT, iisDeposit.kind)
-        assertEquals(70.0, iisDeposit.credit, 0.001)
-        assertEquals(0.0, iisDeposit.debit, 0.001)
+        assertEquals(2, iisDeposits.size)
+        assertEquals(setOf(BrokerCashFlowKind.DEPOSIT), iisDeposits.map { it.kind }.toSet())
+        assertEquals(listOf(70.0, 70.0), iisDeposits.map { it.credit })
+        assertEquals(0.0, iisDeposits.first().debit, 0.001)
+        assertNotEquals(iisDeposits[0].rowKey, iisDeposits[1].rowKey)
+        assertEquals(true, iisDeposits.all { it.rowKey.startsWith("SBER:IIS:CASH:") })
         assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, iisTransfer.kind)
         assertEquals(100.0, iisTransfer.credit, 0.001)
         assertEquals(0.0, iisTransfer.debit, 0.001)
-        assertEquals(true, iisDeposit.rowKey.startsWith("SBER:IIS:CASH:"))
     }
 
     @Test
