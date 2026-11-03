@@ -591,7 +591,15 @@ private fun AssetPurchaseHistoryDialog(
     }
     val purchasedQuantity = purchases.sumOf { it.quantity }
     val totalCost = purchases.sumOf { it.quantity * it.price + it.commission }
-    val lotBalances = remember(asset.id, operations) { calculateRemainingPurchaseLots(operations) }
+    val assetTradeOperations = remember(asset.id, asset.ticker, operations) {
+        operations.filter { operation ->
+            operation.assetId == asset.id ||
+                operation.ticker?.equals(asset.ticker, ignoreCase = true) == true
+        }
+    }
+    val lotBalances = remember(asset.id, assetTradeOperations) {
+        calculateRemainingPurchaseLots(assetTradeOperations)
+    }
     val remainingQuantity = purchases.sumOf { purchase ->
         lotBalances.remainingByOperationId[purchase.id] ?: 0.0
     }
