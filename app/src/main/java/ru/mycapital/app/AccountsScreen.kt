@@ -65,6 +65,13 @@ internal fun AccountsScreen(
                 val accountPayoutPrefix = "SBER:${account.accountId}:PAYOUT:"
                 val accountOperations = operations.filter { it.sourceKey?.startsWith(accountTradePrefix) == true }
                 val realized = calculateRealizedTradingResult(accountOperations)
+                val openPositionResult = calculateAccountOpenPositionResult(
+                    operations = accountOperations,
+                    actualQuantities = positions.associate { it.ticker.uppercase() to it.quantity },
+                    currentPrices = positions.associate { row ->
+                        row.ticker.uppercase() to (assetsByTicker[row.ticker.uppercase()]?.currentPrice ?: 0.0)
+                    }
+                )
                 val receivedPayouts = payouts.filter {
                     it.sourceKey?.startsWith(accountPayoutPrefix) == true && it.status == "RECEIVED"
                 }
@@ -105,12 +112,27 @@ internal fun AccountsScreen(
                             )
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Нереализованный результат по известной себестоимости", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(
+                                (if (openPositionResult.profit > 0.0) "+" else "") + formatMoney(openPositionResult.profit) + " ₽",
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (openPositionResult.profit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Полученные выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(formatMoney(receivedPayoutIncome) + " ₽", fontWeight = FontWeight.SemiBold)
                         }
                         if (realized.unmatchedQuantity > 0.0000001) {
                             Text(
                                 "Для расчёта FIFO не хватает истории покупок по ${String.format(Locale("ru", "RU"), "%.4f", realized.unmatchedQuantity)} шт. Результат частичный.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (openPositionResult.unmatchedQuantity > 0.0000001) {
+                            Text(
+                                "Нереализованный результат частичный: история сделок не покрывает остаток по ${String.format(Locale("ru", "RU"), "%.4f", openPositionResult.unmatchedQuantity)} шт. или содержит продажи без соответствующих покупок.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
