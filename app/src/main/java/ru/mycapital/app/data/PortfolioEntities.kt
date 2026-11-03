@@ -62,3 +62,17 @@ data class PortfolioSnapshotEntity(
     val totalValue: Double,
     val externalFlow: Double = 0.0
 )
+
+
+@Entity(tableName = "broker_account_cash")
+data class BrokerAccountCashEntity(
+    @PrimaryKey val accountId: String,
+    val balance: Double
+)
+
+@Entity(tableName = "broker_account_assets", primaryKeys = ["accountId", "ticker"])
+data class BrokerAccountAssetEntity(
+    val accountId: String,
+    val ticker: String,
+    val quantity: Double
+)

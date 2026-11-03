@@ -171,6 +171,47 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(null, dao.getAssetByTicker("XYZ"))
     }
 
+    @Test
+    fun snapshotReconciliationAggregatesCashAndPositionsAcrossBrokerAccounts() = runBlocking {
+        val assetId = dao.insertAsset(
+            AssetEntity(ticker = "ABC", name = "ABC", assetType = "Акция",
+                quantity = 99.0, averagePrice = 10.0, currentPrice = 11.0)
+        )
+
+        val mainResult = repository.reconcileBrokerReportSnapshot(
+            report(
+                accountId = "403RY0J",
+                closingCash = 42.0,
+                assets = listOf(BrokerReportAsset("ABC", "ABC", "RU000A", 0.0, 4.0, 12.0, 48.0))
+            )
+        )
+        assertEquals(42.0, mainResult.resultingCash, 0.000001)
+        assertEquals(4.0, dao.getAsset(assetId)!!.quantity, 0.000001)
+
+        val iisResult = repository.reconcileBrokerReportSnapshot(
+            report(
+                accountId = "S25F9ZU",
+                closingCash = 9.63,
+                assets = listOf(BrokerReportAsset("ABC", "ABC", "RU000A", 0.0, 3.0, 12.0, 36.0))
+            )
+        )
+        assertEquals(51.63, iisResult.resultingCash, 0.000001)
+        assertEquals(51.63, dao.getCashBalance()!!, 0.000001)
+        assertEquals(7.0, dao.getAsset(assetId)!!.quantity, 0.000001)
+
+        val updatedMain = repository.reconcileBrokerReportSnapshot(
+            report(
+                accountId = "403RY0J",
+                closingCash = 50.0,
+                assets = listOf(BrokerReportAsset("ABC", "ABC", "RU000A", 0.0, 5.0, 13.0, 65.0))
+            )
+        )
+        assertEquals(59.63, updatedMain.resultingCash, 0.000001)
+        assertEquals(59.63, dao.getCashBalance()!!, 0.000001)
+        assertEquals(8.0, dao.getAsset(assetId)!!.quantity, 0.000001)
+        assertEquals(13.0, dao.getAsset(assetId)!!.currentPrice, 0.000001)
+    }
+
     private fun report(
         accountId: String = "403RY0J",
         closingCash: Double = 100.0,

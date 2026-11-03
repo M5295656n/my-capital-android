@@ -19,41 +19,82 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         val matchedAssets: Int,
         val unmatchedReportAssets: Int,
         val previousCash: Double,
-        val reportCash: Double
+        val resultingCash: Double
     )
 
     suspend fun reconcileBrokerReportSnapshot(report: SberBrokerReport): BrokerSnapshotReconciliationResult {
         var matched = 0
         var unmatched = 0
         var previousCash = 0.0
+        var resultingCash = 0.0
         database.withTransaction {
             dao.ensureCashBalance(CashBalanceEntity())
             previousCash = dao.getCashBalance() ?: 0.0
-            report.assets.forEach { row ->
-                val ticker = row.ticker.trim().uppercase()
-                val asset = ticker.takeIf { it.isNotBlank() }?.let { dao.getAssetByTicker(it) }
-                if (asset == null) {
-                    unmatched++
-                } else {
-                    dao.updateAsset(
-                        asset.copy(
-                            quantity = row.closingQuantity,
-                            currentPrice = row.closingPrice.takeIf { it > 0.0 } ?: asset.currentPrice,
-                            updatedAt = System.currentTimeMillis()
-                        )
-                    )
-                    matched++
-                }
+
+            // Keep one absolute cash snapshot per brokerage agreement. The first
+            // imported agreement establishes the baseline; additional agreements
+            // are added, and later imports replace only that agreement's amount.
+            val knownAccountCash = dao.getBrokerAccountCashAccounts()
+            val oldAccountCash = dao.getBrokerAccountCash(report.accountId)
+            resultingCash = if (oldAccountCash != null) {
+                previousCash - oldAccountCash.balance + report.closingCash
+            } else if (knownAccountCash.isEmpty()) {
+                report.closingCash
+            } else {
+                previousCash + report.closingCash
             }
-            // Statement closing cash is an absolute balance, not a cash flow.
-            // Set it directly; never add it to the app's existing balance.
-            dao.updateCashBalance(report.closingCash)
+            dao.upsertBrokerAccountCash(BrokerAccountCashEntity(report.accountId, report.closingCash))
+            dao.updateCashBalance(resultingCash.coerceAtLeast(0.0))
+
+            val oldAccountAssets = dao.getBrokerAccountAssets(report.accountId).associateBy { it.ticker.uppercase() }
+            val currentAssets = dao.getAssets().associateBy { it.ticker.uppercase() }
+            val reportAssets = report.assets
+                .filter { it.ticker.isNotBlank() }
+                .groupBy { it.ticker.trim().uppercase() }
+                .mapValues { (_, rows) ->
+                    rows.first().copy(closingQuantity = rows.sumOf { it.closingQuantity })
+                }
+            val isFirstAccountSnapshot = knownAccountCash.isEmpty()
+
+            // Quantities in AssetEntity are portfolio-wide. Apply only the delta
+            // belonging to this agreement, so importing IIS-3 cannot overwrite
+            // positions already reconciled from the main brokerage account.
+            (oldAccountAssets.keys + reportAssets.keys).forEach { ticker ->
+                val asset = currentAssets[ticker]
+                val reportRow = reportAssets[ticker]
+                if (asset == null) {
+                    if (reportRow != null) unmatched++
+                    return@forEach
+                }
+                if (reportRow != null) matched++
+                val oldQuantity = oldAccountAssets[ticker]?.quantity ?: 0.0
+                val newQuantity = reportRow?.closingQuantity ?: 0.0
+                val nextQuantity = if (isFirstAccountSnapshot) {
+                    reportRow?.closingQuantity ?: asset.quantity
+                } else {
+                    (asset.quantity - oldQuantity + newQuantity).coerceAtLeast(0.0)
+                }
+                dao.updateAsset(
+                    asset.copy(
+                        quantity = nextQuantity,
+                        currentPrice = reportRow?.closingPrice?.takeIf { it > 0.0 } ?: asset.currentPrice,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+
+            dao.deleteBrokerAccountAssets(report.accountId)
+            dao.upsertBrokerAccountAssets(
+                reportAssets.map { (ticker, row) ->
+                    BrokerAccountAssetEntity(report.accountId, ticker, row.closingQuantity)
+                }
+            )
         }
         return BrokerSnapshotReconciliationResult(
             matchedAssets = matched,
             unmatchedReportAssets = unmatched,
             previousCash = previousCash,
-            reportCash = report.closingCash
+            resultingCash = resultingCash.coerceAtLeast(0.0)
         )
     }
 

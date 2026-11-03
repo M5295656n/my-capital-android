@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.mycapital.app.data.SberBrokerReport
 import ru.mycapital.app.data.SberBrokerReportParser
+import ru.mycapital.app.data.isFullyExecutedBrokerTrade
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -193,7 +194,7 @@ private fun MyCapitalApp() {
                 scope.launch {
                     try {
                         val result = withContext(Dispatchers.IO) { repository.reconcileBrokerReportSnapshot(reportToReconcile) }
-                        importResultMessage = "Сверка завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Денежный остаток установлен по отчёту: ${money(result.reportCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Средняя цена не менялась; отсутствующие в отчёте активы не удалялись."
+                        importResultMessage = "Сверка договора ${reportToReconcile.accountId} завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Денежный остаток по сверенным договорам: ${money(result.resultingCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Остатки ранее сверенных договоров сохранены; средняя цена не менялась."
                         importedReport = null
                     } catch (error: Exception) {
                         importError = error.message ?: "Не удалось сверить портфель."
@@ -902,14 +903,16 @@ private fun BrokerReportPreviewDialog(
     onReconcile: () -> Unit,
     onImportHistory: () -> Unit
 ) {
-    val pendingTrades = report.trades.filter { it.status.trim() != "И" }
+    val pendingTrades = report.trades.filterNot { isFullyExecutedBrokerTrade(it.status) }
     val completedTrades = report.trades.size - pendingTrades.size
     val currentByTicker = currentAssets.associateBy { it.ticker.uppercase() }
     val knownRows = report.assets.mapNotNull { row ->
-        row.ticker.takeIf { it.isNotBlank() }?.let { ticker -> row to currentByTicker[ticker.uppercase()] }
+        row.ticker.takeIf { it.isNotBlank() }?.let { ticker ->
+            currentByTicker[ticker.uppercase()]?.let { asset -> row to asset }
+        }
     }
     val unknownRows = report.assets.filter { it.ticker.isBlank() || currentByTicker[it.ticker.uppercase()] == null }
-    var showReconcileConfirmation by remember(report.periodEnd) { mutableStateOf(false) }
+    var showReconcileConfirmation by remember(report.accountId, report.periodEnd) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Предварительный просмотр отчёта") },
@@ -927,7 +930,7 @@ private fun BrokerReportPreviewDialog(
                 HorizontalDivider()
                 val knownTickers = report.assets.count { row -> row.ticker.isNotBlank() }
                 Text("Позиций в отчёте: ${report.assets.size} (с распознанными тикерами: $knownTickers)")
-                Text("Сделок: ${report.trades.size} (статус «И»: $completedTrades)")
+                Text("Сделок: ${report.trades.size} (исполнено, статусы «И/ЗИ»: $completedTrades)")
                 Text("Комиссии по всем сделкам: ${money(report.trades.sumOf { it.totalFee })} ₽")
                 if (pendingTrades.isNotEmpty()) {
                     Text("Сделки, не включаемые в историю как исполненные: ${pendingTrades.size}", color = MaterialTheme.colorScheme.error)
@@ -939,9 +942,7 @@ private fun BrokerReportPreviewDialog(
                 Text("Сверка позиций", fontWeight = FontWeight.SemiBold)
                 Text("Будет изменено количество и текущая цена только у уже известных приложению бумаг. Средняя цена покупки останется прежней.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 knownRows.take(20).forEach { (row, current) ->
-                    val difference = row.closingQuantity - current!!.quantity
-                    val sign = if (difference > 0.000001) "+" else ""
-                    Text("${row.ticker}: ${quantity(current.quantity)} → ${quantity(row.closingQuantity)} шт. (${sign}${quantity(kotlin.math.abs(difference))})", fontSize = 12.sp)
+                    Text("${row.ticker}: по этому договору ${quantity(row.closingQuantity)} шт.; всего в приложении сейчас ${quantity(current!!.quantity)} шт.", fontSize = 12.sp)
                 }
                 if (knownRows.size > 20) Text("И ещё ${knownRows.size - 20} сопоставленных позиций…", fontSize = 12.sp)
                 if (unknownRows.isNotEmpty()) {
@@ -949,7 +950,7 @@ private fun BrokerReportPreviewDialog(
                     unknownRows.take(5).forEach { Text("• ${it.ticker.ifBlank { it.name }}", fontSize = 12.sp) }
                 }
                 HorizontalDivider()
-                Text("Деньги: ${money(currentCash)} ₽ → ${money(report.closingCash)} ₽ (изменение ${if (report.closingCash - currentCash >= 0) "+" else ""}${money(report.closingCash - currentCash)} ₽)", fontWeight = FontWeight.SemiBold)
+                Text("Общий остаток сейчас: ${money(currentCash)} ₽. По договору ${report.accountId}: ${money(report.closingCash)} ₽. После сверки общий остаток будет пересчитан с учётом ранее сверенных договоров.", fontWeight = FontWeight.SemiBold)
                 val cashCheck = report.openingCash + report.cashCredits - report.cashDebits
                 Text("Контроль отчёта: начальный остаток + поступления − списания = ${money(cashCheck)} ₽. Конечный остаток: ${money(report.closingCash)} ₽.")
                 if (kotlin.math.abs(cashCheck - report.closingCash) > 0.02) {
@@ -1007,7 +1008,7 @@ private fun BrokerReportReconciliationConfirmation(
         title = { Text("Подтвердить сверку портфеля?") },
         text = {
             Text(
-                "Приложение установит денежный остаток ${money(report.closingCash)} ₽ и обновит количество/текущую цену только у совпавших позиций из отчёта. Средняя цена покупки не изменится. Неизвестные и отсутствующие в отчёте активы останутся без изменений."
+                "Приложение сохранит остаток договора ${report.accountId} и пересчитает общий остаток по всем уже сверенным договорам. Первый договор задаёт начальную базу, последующие добавляются; повторная сверка заменяет только снимок этого договора. Количества позиций также пересчитываются по разнице с предыдущим снимком договора. Средняя цена покупки не изменится; бумаги, не сопоставленные с тикером в приложении, не будут изменены."
             )
         },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Подтвердить сверку") } },
