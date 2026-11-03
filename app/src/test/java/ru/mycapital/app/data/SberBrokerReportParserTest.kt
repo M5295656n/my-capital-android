@@ -113,6 +113,8 @@ class SberBrokerReportParserTest {
     @Test
     fun importsIisContributionRegisterAsCashFlows() {
         val report = parseWithDiagnostics(sampleHtml(tableCount = 9))
+        assertEquals(253.55, report.cashCredits, 0.001)
+        assertEquals(33.10, report.cashDebits, 0.001)
         val iisDeposits = report.cashFlows.filter { it.description == "Зачисление д/с на ИИС" }
         val iisTransfer = report.cashFlows.single { it.description == "Перевод д/с между договорами" }
 
