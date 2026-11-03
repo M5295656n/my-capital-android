@@ -190,7 +190,9 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
             dao.observePayouts().first().map { it.reportedNetAmount!! }.toSet()
         )
         assertFalse(dao.observeOperations().first().any { it.operationType.contains("Перевод") })
-        val finalOperations = dao.observeOperations().first()\n        assertEquals(53, finalOperations.count { it.operationType == "Покупка" })\n        assertFalse(finalOperations.any { it.note.contains("MAIN-DEAL-REJECTED") })
+        val finalOperations = dao.observeOperations().first()
+        assertEquals(53, finalOperations.count { it.operationType == "Покупка" })
+        assertFalse(finalOperations.any { it.note.contains("MAIN-DEAL-REJECTED") })
     }
 
     private fun flow(
