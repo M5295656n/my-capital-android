@@ -62,6 +62,7 @@ data class BrokerReportTrade(
 }
 
 data class SberBrokerReport(
+    val accountId: String,
     val periodStart: LocalDate,
     val periodEnd: LocalDate,
     val openingCash: Double,
@@ -103,6 +104,10 @@ object SberBrokerReportParser {
                 ?: error("Не удалось прочитать сумму «$label» в брокерском отчёте.")
         }
 
+        val title = document.selectFirst("title")?.text().orEmpty()
+        val accountId = Regex("(?i)отчет\\s+брокера\\s+([A-Z0-9-]+)")
+            .find(title)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
+            ?: error("Не удалось определить номер брокерского счёта в заголовке отчёта.")
         val reportText = document.text()
         val periodMatch = Regex("за период с (\\d{2}\\.\\d{2}\\.\\d{4}) по (\\d{2}\\.\\d{2}\\.\\d{4})")
             .find(reportText) ?: error("Не удалось определить период отчёта.")
@@ -218,6 +223,7 @@ object SberBrokerReportParser {
             "В отчёте обнаружены отрицательные или некорректные данные по позициям."
         }
         return SberBrokerReport(
+            accountId = accountId,
             periodStart = periodStart,
             periodEnd = periodEnd,
             openingCash = openingCash,
