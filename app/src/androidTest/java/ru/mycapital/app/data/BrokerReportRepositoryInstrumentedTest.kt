@@ -195,7 +195,7 @@ class BrokerReportRepositoryInstrumentedTest {
                 assets = listOf(BrokerReportAsset("ABC", "ABC", "RU000A", 0.0, 3.0, 12.0, 36.0))
             )
         )
-        assertEquals(51.63, iisResult.reportCash, 0.000001)
+        assertEquals(51.63, iisResult.resultingCash, 0.000001)
         assertEquals(51.63, dao.getCashBalance()!!, 0.000001)
         assertEquals(7.0, dao.getAsset(assetId)!!.quantity, 0.000001)
 
@@ -206,7 +206,7 @@ class BrokerReportRepositoryInstrumentedTest {
                 assets = listOf(BrokerReportAsset("ABC", "ABC", "RU000A", 0.0, 5.0, 13.0, 65.0))
             )
         )
-        assertEquals(59.63, updatedMain.reportCash, 0.000001)
+        assertEquals(59.63, updatedMain.resultingCash, 0.000001)
         assertEquals(59.63, dao.getCashBalance()!!, 0.000001)
         assertEquals(8.0, dao.getAsset(assetId)!!.quantity, 0.000001)
         assertEquals(13.0, dao.getAsset(assetId)!!.currentPrice, 0.000001)
