@@ -83,7 +83,7 @@ class SberBrokerReportParserTest {
             listOf(summary, misc, assets, cash, flows, trades, tax, tax, tax, securities, signature)
         }
         val accountId = if (tableCount == 9) "TESTIIS03" else "TESTMAIN01"
-        return "<html><head><title>Отчёт брокера\\n$accountId</title></head><body>за период с 30.10.2026 по 30.10.2026${orderedTables.joinToString("")}</body></html>"
+        return "<html><head><title>Отчёт брокера\n$accountId</title></head><body>за период с 30.10.2026 по 30.10.2026${orderedTables.joinToString("")}</body></html>"
     }
 
     @Test
