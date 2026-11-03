@@ -1,7 +1,7 @@
 package ru.mycapital.app
 
 import org.junit.Assert.assertEquals
-import org.junit.AssertNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AssetLogoCatalogTest {
