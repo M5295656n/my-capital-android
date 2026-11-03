@@ -2,8 +2,11 @@ package ru.mycapital.app.data
 
 import androidx.room.withTransaction
 import java.time.ZoneOffset
+import java.util.Locale
 
-internal fun isFullyExecutedBrokerTrade(status: String): Boolean = status.trim() == "И"
+// Sber HTML reports use "ЗИ" for executed trades; retain legacy "И".
+internal fun isFullyExecutedBrokerTrade(status: String): Boolean =
+    status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ")
 
 class PortfolioRepository(private val database: PortfolioDatabase) {
     private val dao = database.portfolioDao()
