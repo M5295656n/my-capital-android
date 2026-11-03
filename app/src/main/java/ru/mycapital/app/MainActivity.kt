@@ -10,11 +10,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -637,25 +640,44 @@ private fun DoubleHeadedEagleIcon(tint: androidx.compose.ui.graphics.Color) {
 
 @Composable
 private fun AssetTypeIcon(assetType: String, ticker: String) {
+    val context = LocalContext.current
+    var logoDomains by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        logoDomains = AssetLogoCatalog.load(context)
+    }
+
     val type = assetType.lowercase()
-    val isBond = type.contains("облигац") || type.contains("офз") || ticker.startsWith("SU", ignoreCase = true)
+    val normalizedTicker = ticker.trim().uppercase()
+    val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
     val isFund = type.contains("фонд") || type.contains("бпиф") || type.contains("etf")
-    val background = when {
-        isBond -> androidx.compose.ui.graphics.Color(0xFFE8EEF8)
-        isFund -> androidx.compose.ui.graphics.Color(0xFFEDE8F8)
-        else -> androidx.compose.ui.graphics.Color(0xFFE4F2EC)
-    }
-    val tint = when {
-        isBond -> androidx.compose.ui.graphics.Color(0xFF254B82)
-        isFund -> androidx.compose.ui.graphics.Color(0xFF67469A)
-        else -> androidx.compose.ui.graphics.Color(0xFF176B55)
-    }
-    Surface(shape = RoundedCornerShape(14.dp), color = background, modifier = Modifier.size(46.dp)) {
+    val domain = if (isBond) null else AssetLogoCatalog.domainFor(normalizedTicker, logoDomains)
+    val blue = androidx.compose.ui.graphics.Color(0xFF173F78)
+    val fallbackTint = if (isFund) androidx.compose.ui.graphics.Color(0xFF67469A)
+        else androidx.compose.ui.graphics.Color(0xFF176B55)
+
+    Surface(
+        shape = CircleShape,
+        color = if (isBond) blue else androidx.compose.ui.graphics.Color(0xFFF0F2F5),
+        modifier = Modifier.size(46.dp)
+    ) {
         Box(contentAlignment = Alignment.Center) {
-            when {
-                isBond -> DoubleHeadedEagleIcon(tint)
-                isFund -> Icon(Icons.Default.DonutLarge, contentDescription = "Фонд", tint = tint, modifier = Modifier.size(26.dp))
-                else -> Icon(Icons.Default.ShowChart, contentDescription = "Акция", tint = tint, modifier = Modifier.size(27.dp))
+            if (isBond) {
+                DoubleHeadedEagleIcon(androidx.compose.ui.graphics.Color.White)
+            } else {
+                // The monogram remains visible if the network image is unavailable.
+                Text(
+                    normalizedTicker.take(2).ifBlank { "?" },
+                    color = fallbackTint,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                if (domain != null) {
+                    AsyncImage(
+                        model = AssetLogoCatalog.faviconUrl(domain),
+                        contentDescription = "Логотип $ticker",
+                        modifier = Modifier.fillMaxSize().padding(5.dp).clip(CircleShape)
+                    )
+                }
             }
         }
     }
