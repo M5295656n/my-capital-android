@@ -47,7 +47,7 @@ internal fun calculateAverageCostFromCompleteHistory(
             }
         }
 
-    if (kotlin.math.abs(quantity - expectedQuantity) > max(epsilon, expectedQuantity * 0.000001)) {
+    if (kotlin.math.abs(quantity - expectedQuantity) > maxOf(epsilon, expectedQuantity * 0.000001)) {
         return null
     }
     return if (quantity > epsilon) totalCost / quantity else 0.0
