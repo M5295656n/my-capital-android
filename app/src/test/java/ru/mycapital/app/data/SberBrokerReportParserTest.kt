@@ -72,7 +72,7 @@ class SberBrokerReportParserTest {
             <table>
               <tr><td>Год</td><td>Лимит, руб.</td><td>Дата операции</td><td>Сумма, руб.</td><td>Основание операции</td><td>Остаток лимита</td></tr>
               <tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
-              <tr><td></td><td></td><td>23.10.2026</td><td>70.00</td><td>Зачисление д/с на ИИС</td><td></td>
+              <tr><td></td><td></td><td>23.10.2026</td><td>70.00</td><td>Зачисление д/с на ИИС</td><td></td></tr>
               <tr><td></td><td></td><td>23.10.2026</td><td>100.00</td><td>Перевод д/с между договорами</td><td></td></tr>
             </table>
         """.trimIndent()
