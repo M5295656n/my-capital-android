@@ -9,6 +9,13 @@ class MoexIssClientTest {
         assertEquals(813.98, normalizeMoexPrice(81.398, "Облигация", 1_000.0, 0.0), 0.0001)
     }
 
+    @Test fun prefersOfficialCurrentBondPriceAndNeverUsesPreviousDayMarketPrice() {
+        assertEquals(81.40, selectBondQuotePrice(81.10, 81.25, 81.40)!!, 0.0001)
+        assertEquals(81.25, selectBondQuotePrice(81.10, 81.25, null)!!, 0.0001)
+        assertEquals(81.10, selectBondQuotePrice(81.10, null, null)!!, 0.0001)
+        assertEquals(null, selectBondQuotePrice(null, null, null))
+    }
+
     @Test fun selectsMainTradingBoardForEachAssetType() {
         assertEquals(listOf("TQOB", "TQCB"), preferredMoexBoards("Облигация"))
         assertEquals(listOf("TQBR"), preferredMoexBoards("Акция"))
