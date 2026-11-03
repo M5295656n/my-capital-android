@@ -182,7 +182,7 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
             }
         }
     }
@@ -808,11 +808,47 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
     }
 }
 
+private data class RealizedTradingResult(val profit: Double, val unmatchedQuantity: Double)
+
+/** FIFO matching over recorded trades only; unmatched sales are surfaced, never guessed. */
+private fun calculateRealizedTradingResult(operations: List<OperationEntity>): RealizedTradingResult {
+    data class Lot(var quantity: Double, val unitCost: Double)
+    val lotsByTicker = mutableMapOf<String, ArrayDeque<Lot>>()
+    var profit = 0.0
+    var unmatched = 0.0
+    operations.asSequence()
+        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+        .sortedBy { it.operationDate }
+        .forEach { operation ->
+            val ticker = operation.ticker?.trim()?.uppercase().orEmpty()
+            if (ticker.isBlank() || operation.quantity <= 0.0) return@forEach
+            val lots = lotsByTicker.getOrPut(ticker) { ArrayDeque() }
+            if (operation.operationType == "Покупка") {
+                val unitCost = (operation.quantity * operation.price + operation.commission) / operation.quantity
+                lots.addLast(Lot(operation.quantity, unitCost))
+            } else {
+                var remaining = operation.quantity
+                val netSalePerUnit = (operation.quantity * operation.price - operation.commission) / operation.quantity
+                while (remaining > 0.0000001 && lots.isNotEmpty()) {
+                    val lot = lots.first()
+                    val matched = minOf(remaining, lot.quantity)
+                    profit += matched * (netSalePerUnit - lot.unitCost)
+                    remaining -= matched
+                    lot.quantity -= matched
+                    if (lot.quantity <= 0.0000001) lots.removeFirst()
+                }
+                unmatched += remaining
+            }
+        }
+    return RealizedTradingResult(profit, unmatched)
+}
+
 @Composable
 private fun AnalyticsScreen(
     assets: List<AssetEntity>,
     marketValue: Double,
     cashBalance: Double,
+    operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
     dao: ru.mycapital.app.data.PortfolioDao,
@@ -820,6 +856,7 @@ private fun AnalyticsScreen(
 ) {
     val invested = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = marketValue - invested
+    val realizedResult = calculateRealizedTradingResult(operations)
     val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
     val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
@@ -870,6 +907,24 @@ private fun AnalyticsScreen(
                     )
                     Text("К себестоимости остатков: ${String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent)}")
                     Text("Показатель относится только к текущим остаткам бумаг и не включает выплаты или результат закрытых позиций.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Реализованный результат сделок", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        (if (realizedResult.profit > 0.0) "+" else "") + "${money(realizedResult.profit)} ₽",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (realizedResult.profit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                    if (realizedResult.unmatchedQuantity > 0.0000001) {
+                        Text("Истории покупок не хватает для расчёта по ${String.format(java.util.Locale("ru", "RU"), "%.4f", realizedResult.unmatchedQuantity)} шт. продаж. Это частичный результат по FIFO, а не полный итог.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text("Расчёт по FIFO на основании записанных покупок и продаж, с учётом комиссий. Внесённые вручную начальные остатки без истории покупок не позволяют восстановить прошлую себестоимость.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
