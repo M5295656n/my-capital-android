@@ -183,6 +183,12 @@ object SberBrokerReportParser {
             )
         }.toMutableList()
 
+        // These totals must describe only the actual cash-operation table.
+        // IIS contribution register rows are tax-register data and are appended below
+        // for history import; they must not distort the account cash reconciliation.
+        val statementCashCredits = cashFlows.sumOf { it.credit }
+        val statementCashDebits = cashFlows.sumOf { it.debit }
+
         // IIS-3 reports list contributions in a separate register, not necessarily in
         // the general cash-operation table. Import those rows as cash flows as well.
         // Transfers between the user's own agreements remain INTERNAL_TRANSFER and are
@@ -283,8 +289,8 @@ object SberBrokerReportParser {
             periodStart = periodStart,
             periodEnd = periodEnd,
             openingCash = openingCash,
-            cashCredits = cashFlows.sumOf { it.credit },
-            cashDebits = cashFlows.sumOf { it.debit },
+            cashCredits = statementCashCredits,
+            cashDebits = statementCashDebits,
             closingCash = closingCash,
             assets = assets,
             cashFlows = cashFlows,
