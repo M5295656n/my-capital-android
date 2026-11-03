@@ -128,7 +128,7 @@ internal fun AccountsScreen(
 }
 
 private fun formatMoney(value: Double): String =
-    String.format(Locale("ru", "RU"), "%,.2f", value).replace(',', ' ')
+    String.format(Locale("ru", "RU"), "%,.2f", value)
 
 private fun formatQuantity(value: Double): String =
     String.format(Locale("ru", "RU"), "%.4f", value).trimEnd('0').trimEnd(',')
