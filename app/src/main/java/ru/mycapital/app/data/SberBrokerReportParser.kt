@@ -181,6 +181,49 @@ object SberBrokerReportParser {
                 rowKey = "SBER:CASH:$canonical:$occurrence",
                 ticker = tickerFor(description)
             )
+        }.toMutableList()
+
+        // IIS-3 reports list contributions in a separate register, not necessarily in
+        // the general cash-operation table. Import those rows as cash flows as well.
+        // Transfers between the user's own agreements remain INTERNAL_TRANSFER and are
+        // ignored by the repository's external-cashflow importer.
+        val iisContributionTable = tables.indices.firstNotNullOfOrNull { tableIndex ->
+            val index = headerIndex(tableIndex, setOf("Дата операции", "Сумма, руб.", "Основание операции"))
+            if (index >= 0) tableIndex to index else null
+        }
+        iisContributionTable?.let { (tableIndex, headerRowIndex) ->
+            val contributionRows = rows(tableIndex)
+            val header = contributionRows[headerRowIndex]
+            val contributionDateIndex = header.indexOf("Дата операции")
+            val amountIndex = header.indexOf("Сумма, руб.")
+            val reasonIndex = header.indexOf("Основание операции")
+            val generalFlowCounts = cashFlows.groupingBy {
+                "${it.date}:${it.description}:${it.credit}:${it.debit}"
+            }.eachCount()
+            val iisOccurrences = mutableMapOf<String, Int>()
+            contributionRows.drop(headerRowIndex + 1).forEach { row ->
+                val dateText = row.getOrNull(contributionDateIndex).orEmpty()
+                if (!datePattern.matches(dateText)) return@forEach
+                val description = row.getOrNull(reasonIndex).orEmpty()
+                val amount = number(row.getOrNull(amountIndex), "сумма операции по ИИС")
+                require(amount >= 0.0) { "В отчёте найдена отрицательная сумма операции по ИИС." }
+                if (amount == 0.0 || description.isBlank()) return@forEach
+                val date = LocalDate.parse(dateText, dateFormat)
+                val canonical = "${date}:$description:$amount:0.0"
+                val occurrence = iisOccurrences.getOrDefault(canonical, 0)
+                iisOccurrences[canonical] = occurrence + 1
+                // If the same row is already present in the general cash-flow table,
+                // skip only the matching occurrence; preserve legitimate repeated rows. 
+                if (occurrence < generalFlowCounts.getOrDefault(canonical, 0)) return@forEach
+                cashFlows += BrokerReportCashFlow(
+                    date = date,
+                    description = description,
+                    credit = amount,
+                    debit = 0.0,
+                    rowKey = "SBER:IIS:CASH:$canonical:$occurrence",
+                    ticker = tickerFor(description)
+                )
+            }
         }
 
         val assetsTable = locate(setOf("Наименование", "ISIN ценной бумаги", "Количество, шт", "Рыночная цена"))

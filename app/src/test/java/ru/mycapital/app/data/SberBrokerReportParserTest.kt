@@ -57,16 +57,42 @@ class SberBrokerReportParserTest {
               <tr><td>ОФЗ 26228</td><td>SU26228RMFS9</td><td>RU000A000003</td><td>Минфин</td><td>Облигация</td><td>26228</td></tr>
             </table>
         """.trimIndent()
-        val required = listOf(assets, cash, flows, trades, securities)
-        val dummies = (0 until (tableCount - required.size)).joinToString("") { "<table><tr><td>Дополнительная таблица $it</td></tr></table>" }
-        return "<html><head><title>Отчёт брокера\nTESTACCOUNT</title></head><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
+        // Mirror the observed Sber report sequences: regular brokerage reports include
+        // three tax tables before the securities directory; IIS-3 includes a contribution
+        // table before holdings and has a shorter tax section.
+        val summary = """
+            <table>
+              <tr><td>Торговая площадка</td><td>Начало периода</td><td>Конец периода</td><td>Изменение за период</td><td>Плановые показатели</td></tr>
+              <tr><td>Ценные бумаги</td><td>Денежные средства</td><td>Всего</td></tr>
+              <tr><td>Основной рынок</td><td>100</td><td>635.73</td></tr>
+            </table>
+        """.trimIndent()
+        val misc = """<table><tr><td>Описание</td><td>Сумма</td><td>Валюта</td></tr><tr><td>1</td><td>2</td><td>3</td></tr></table>"""
+        val iisContribution = """
+            <table>
+              <tr><td>Год</td><td>Лимит, руб.</td><td>Дата операции</td><td>Сумма, руб.</td><td>Основание операции</td><td>Остаток лимита</td></tr>
+              <tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
+              <tr><td></td><td></td><td>23.10.2026</td><td>70.00</td><td>Зачисление д/с на ИИС</td><td></td></tr>
+              <tr><td></td><td></td><td>23.10.2026</td><td>70.00</td><td>Зачисление д/с на ИИС</td><td></td></tr>
+              <tr><td></td><td></td><td>23.10.2026</td><td>100.00</td><td>Перевод д/с между договорами</td><td></td></tr>
+            </table>
+        """.trimIndent()
+        val tax = """<table><tr><td>Наименование клиента</td><td>Код дохода</td><td>Сумма дохода, руб.</td></tr><tr><td>1</td><td>2</td><td>3</td></tr></table>"""
+        val signature = """<table><tr><td>Подпись Руководителя (уполномоченного лица)</td></tr></table>"""
+        val orderedTables = if (tableCount == 9) {
+            listOf(summary, misc, iisContribution, assets, cash, flows, trades, securities, signature)
+        } else {
+            listOf(summary, misc, assets, cash, flows, trades, tax, tax, tax, securities, signature)
+        }
+        val accountId = if (tableCount == 9) "TESTIIS03" else "TESTMAIN01"
+        return "<html><head><title>Отчёт брокера\n$accountId</title></head><body>за период с 30.10.2026 по 30.10.2026${orderedTables.joinToString("")}</body></html>"
     }
 
     @Test
     fun parsesBothRegularAndIisReportLayouts() {
         listOf(11, 9).forEach { count ->
             val report = parseWithDiagnostics(sampleHtml(tableCount = count))
-            assertEquals("TESTACCOUNT", report.accountId)
+            assertEquals(if (count == 9) "TESTIIS03" else "TESTMAIN01", report.accountId)
             assertEquals(428.73, report.openingCash, 0.001)
             assertEquals(635.73, report.closingCash, 0.001)
             assertEquals("TEST", report.assets.single().ticker)
@@ -75,6 +101,23 @@ class SberBrokerReportParserTest {
             assertEquals(0.42, report.trades.single().totalFee, 0.001)
             assertEquals("SBER:123456", report.trades.single().sourceKey)
         }
+    }
+
+    @Test
+    fun importsIisContributionRegisterAsCashFlows() {
+        val report = parseWithDiagnostics(sampleHtml(tableCount = 9))
+        val iisDeposits = report.cashFlows.filter { it.description == "Зачисление д/с на ИИС" }
+        val iisTransfer = report.cashFlows.single { it.description == "Перевод д/с между договорами" }
+
+        assertEquals(2, iisDeposits.size)
+        assertEquals(setOf(BrokerCashFlowKind.DEPOSIT), iisDeposits.map { it.kind }.toSet())
+        assertEquals(listOf(70.0, 70.0), iisDeposits.map { it.credit })
+        assertEquals(0.0, iisDeposits.first().debit, 0.001)
+        assertNotEquals(iisDeposits[0].rowKey, iisDeposits[1].rowKey)
+        assertEquals(true, iisDeposits.all { it.rowKey.startsWith("SBER:IIS:CASH:") })
+        assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, iisTransfer.kind)
+        assertEquals(100.0, iisTransfer.credit, 0.001)
+        assertEquals(0.0, iisTransfer.debit, 0.001)
     }
 
     @Test
