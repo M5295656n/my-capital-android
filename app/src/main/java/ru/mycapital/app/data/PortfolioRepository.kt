@@ -12,7 +12,12 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
     private val dao = database.portfolioDao()
 
 
-    data class BrokerHistoryImportResult(val imported: Int, val duplicates: Int, val unsettledSkipped: Int)
+    data class BrokerHistoryImportResult(
+        val imported: Int,
+        val duplicates: Int,
+        val unsettledSkipped: Int,
+        val payoutsImported: Int
+    )
 
 
     data class BrokerSnapshotReconciliationResult(
@@ -102,6 +107,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         var imported = 0
         var duplicates = 0
         var unsettledSkipped = 0
+        var payoutsImported = 0
         database.withTransaction {
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
@@ -135,8 +141,30 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                         "Сумма зачисления по брокерскому отчёту; налоговая разбивка не указана"
                     else -> "Импорт из брокерского отчёта: ${flow.description}"
                 }
-                val scopedSourceKey = "SBER:${report.accountId}:CASH:${flow.rowKey
-                    .removePrefix("SBER:CASH:").removePrefix("CASH:")}"
+                val scopedFlowKey = flow.rowKey.removePrefix("SBER:CASH:").removePrefix("CASH:")
+                val scopedSourceKey = "SBER:${report.accountId}:CASH:$scopedFlowKey"
+                if (payout) {
+                    // A credited broker-report row is evidence of receipt. The report
+                    // supplies the net credit, but may not disclose gross or withheld tax.
+                    // Keep that net amount separately instead of inventing a gross/tax split.
+                    val payoutId = dao.insertPayout(
+                        PayoutEntity(
+                            assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
+                            ticker = ticker ?: "—",
+                            payoutType = operationType,
+                            amountPerUnit = 0.0,
+                            quantity = 0.0,
+                            totalAmount = 0.0,
+                            taxAmount = 0.0,
+                            expectedDate = null,
+                            actualDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                            status = "RECEIVED",
+                            sourceKey = "SBER:${report.accountId}:PAYOUT:$scopedFlowKey",
+                            reportedNetAmount = amount
+                        )
+                    )
+                    if (payoutId != -1L) payoutsImported++
+                }
                 val row = OperationEntity(
                     assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
                     operationType = operationType,
@@ -190,7 +218,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 }
             }
         }
-        return BrokerHistoryImportResult(imported, duplicates, unsettledSkipped)
+        return BrokerHistoryImportResult(imported, duplicates, unsettledSkipped, payoutsImported)
     }
 
     suspend fun recordTrade(
