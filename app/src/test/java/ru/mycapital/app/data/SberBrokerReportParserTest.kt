@@ -157,7 +157,7 @@ class SberBrokerReportParserTest {
         val coupon = report.cashFlows.single { it.kind == BrokerCashFlowKind.COUPON }
         assertEquals("T", dividend.ticker)
         assertEquals("SU26228RMFS9", coupon.ticker)
-        assertEquals(report.cashFlows.map { it.rowKey }, SberBrokerReportParser.parse(sampleHtml()).cashFlows.map { it.rowKey })
+        assertEquals(report.cashFlows.map { it.rowKey }, SberBrokerReportParser.parse(sampleHtml(includeMatchingIisRegisterRows = false)).cashFlows.map { it.rowKey })
         val duplicateDeposits = report.cashFlows.filter { it.kind == BrokerCashFlowKind.DEPOSIT }
         assertEquals(2, duplicateDeposits.size)
         assertNotEquals(duplicateDeposits[0].rowKey, duplicateDeposits[1].rowKey)
