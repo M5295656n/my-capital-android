@@ -68,6 +68,39 @@ class BrokerReportRepositoryInstrumentedTest {
         assertNotNull(dao.getOperationBySourceKey("SBER:101"))
     }
 
+
+    @Test
+    fun payoutImportsUseCreditedNetAmountsAndIgnoreInternalTransfers() = runBlocking {
+        dao.ensureCashBalance(CashBalanceEntity(balance = 250.0))
+        val report = report(
+            cashFlows = listOf(
+                BrokerReportCashFlow(LocalDate.parse("2026-10-20"),
+                    "Выплата дивидендов Т-Технологии. Налог удержан.", 8.40, 0.0, "DIV:1", "T"),
+                BrokerReportCashFlow(LocalDate.parse("2026-10-14"),
+                    "Выплата купонов ОФЗ 26228, номер купона 15", 38.15, 0.0, "COUPON:1", "SU26228RMFS9"),
+                BrokerReportCashFlow(LocalDate.parse("2026-10-14"),
+                    "Перевод д/с с договора 403RY0J на договор S25F9ZU", 0.0, 800.0, "TRANSFER:1")
+            )
+        )
+
+        val first = repository.importBrokerReportHistory(report)
+        val second = repository.importBrokerReportHistory(report)
+        val operations = dao.observeOperations().first()
+
+        assertEquals(2, first.imported)
+        assertEquals(0, first.duplicates)
+        assertEquals(0, second.imported)
+        assertEquals(2, second.duplicates)
+        assertEquals(250.0, dao.getCashBalance()!!, 0.000001)
+        assertEquals(2, operations.size)
+        assertEquals(setOf("Дивиденд", "Купон"), operations.map { it.operationType }.toSet())
+        assertEquals(8.40, operations.single { it.operationType == "Дивиденд" }.price, 0.000001)
+        assertEquals(38.15, operations.single { it.operationType == "Купон" }.price, 0.000001)
+        assertEquals("T", operations.single { it.operationType == "Дивиденд" }.ticker)
+        assertEquals("SU26228RMFS9", operations.single { it.operationType == "Купон" }.ticker)
+        assertEquals(null, dao.getOperationBySourceKey("TRANSFER:1"))
+    }
+
     @Test
     fun snapshotReconciliationSetsAbsoluteCashAndOnlyUpdatesMatchedAssets() = runBlocking {
         val assetId = dao.insertAsset(
