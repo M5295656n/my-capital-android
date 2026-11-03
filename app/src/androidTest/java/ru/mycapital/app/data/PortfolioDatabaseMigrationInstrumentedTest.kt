@@ -52,7 +52,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
         }
 
         val database = Room.databaseBuilder(context, PortfolioDatabase::class.java, databaseName)
-            .addMigrations(PortfolioDatabase.MIGRATION_6_7)
+            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -65,6 +65,8 @@ class PortfolioDatabaseMigrationInstrumentedTest {
             assertEquals("Старая операция", oldOperation.single().note)
             assertEquals(null, oldOperation.single().sourceKey)
             assertEquals(123.45, dao.getCashBalance()!!, 0.000001)
+            assertEquals(0, dao.getBrokerAccountCashAccounts().size)
+            assertEquals(0, dao.getBrokerAccountAssets("403RY0J").size)
 
             val imported = OperationEntity(
                 assetId = null,
