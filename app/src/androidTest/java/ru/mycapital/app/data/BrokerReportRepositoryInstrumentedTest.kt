@@ -44,7 +44,7 @@ class BrokerReportRepositoryInstrumentedTest {
         dao.ensureCashBalance(CashBalanceEntity(balance = 100.0))
         val report = report(
             cashFlows = listOf(
-                BrokerReportCashFlow(LocalDate.parse("2026-10-30"), "Пополнение", 50.0, 0.0, "CASH:1")
+                BrokerReportCashFlow(LocalDate.parse("2026-10-30"), "Зачисление д/с", 50.0, 0.0, "CASH:1")
             ),
             trades = listOf(
                 trade("101", "И"),
