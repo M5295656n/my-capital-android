@@ -19,6 +19,16 @@ internal fun preferredMoexBoards(assetType: String): List<String> = when {
     else -> emptyList()
 }
 
+/**
+ * Prefer MOEX's official current price (weighted average of the final 10 minutes),
+ * then the session weighted average, then the last trade. MARKETPRICE is deliberately
+ * excluded because MOEX defines it as the previous day's market price.
+ */
+internal fun selectBondQuotePrice(last: Double?, weightedAverage: Double?, officialCurrent: Double?): Double? =
+    officialCurrent?.takeIf { it.isFinite() && it > 0.0 }
+        ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }
+        ?: last?.takeIf { it.isFinite() && it > 0.0 }
+
 /** MOEX bond prices are quoted as a percentage of face value; add accrued coupon interest to get dirty price. */
 internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Double?, accruedInterest: Double? = 0.0): Double {
     if (!assetType.contains("облигац", ignoreCase = true)) return price
@@ -102,11 +112,15 @@ class MoexIssClient {
                 preferredBoards.flatMap { board -> matchingRows.filter { it.second == board } }
             } else matchingRows
             for ((row, board) in selectedRows) {
-                val price = value(row, "LAST")
-                    ?: value(row, "WAPRICE")
-                    ?: value(row, "LCURRENTPRICE")
-                    ?: value(row, "MARKETPRICE")
-                    ?: continue
+                val price = if (market == "bonds") {
+                    selectBondQuotePrice(
+                        last = value(row, "LAST"),
+                        weightedAverage = value(row, "WAPRICE"),
+                        officialCurrent = value(row, "LCURRENTPRICE")
+                    )
+                } else {
+                    value(row, "LAST") ?: value(row, "WAPRICE") ?: value(row, "LCURRENTPRICE")
+                } ?: continue
                 val accruedInterest = if (market == "bonds") {
                     val accruedIndex = indexes["ACCRUEDINT"]
                         ?: throw IOException("MOEX ISS не вернул поле ACCRUEDINT для облигации $ticker")
