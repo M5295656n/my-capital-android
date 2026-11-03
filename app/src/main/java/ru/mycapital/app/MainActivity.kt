@@ -193,7 +193,7 @@ private fun MyCapitalApp() {
                 scope.launch {
                     try {
                         val result = withContext(Dispatchers.IO) { repository.reconcileBrokerReportSnapshot(reportToReconcile) }
-                        importResultMessage = "Сверка завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Денежный остаток установлен по отчёту: ${money(result.reportCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Средняя цена не менялась; отсутствующие в отчёте активы не удалялись."
+                        importResultMessage = "Сверка договора ${reportToReconcile.accountId} завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Общий денежный остаток после учёта договора: ${money(result.reportCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Остатки ранее сверенных договоров сохранены; средняя цена не менялась."
                         importedReport = null
                     } catch (error: Exception) {
                         importError = error.message ?: "Не удалось сверить портфель."
