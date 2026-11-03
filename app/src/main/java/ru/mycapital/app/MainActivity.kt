@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
@@ -210,7 +211,7 @@ private fun MyCapitalApp() {
         ) { padding ->
             when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
@@ -509,11 +510,19 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
 }
 
 @Composable
-private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -> Unit, onDeleteAsset: (AssetEntity) -> Unit, modifier: Modifier = Modifier) {
+private fun AssetsScreen(
+    assets: List<AssetEntity>,
+    operations: List<OperationEntity>,
+    onEditAsset: (AssetEntity) -> Unit,
+    onDeleteAsset: (AssetEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedAssetForHistory by remember { mutableStateOf<AssetEntity?>(null) }
     Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(20.dp))
         Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Локальный список вашего портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Нажмите на актив, чтобы посмотреть историю его покупок.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Добавление актива задаёт начальную позицию и не списывает деньги. Для новых покупок сначала внесите свободные деньги.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         if (assets.isEmpty()) {
@@ -523,12 +532,16 @@ private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
                 items(assets, key = { it.id }) { asset ->
-                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Card(
+                        Modifier.fillMaxWidth().clickable { selectedAssetForHistory = asset },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
                         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                                 Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("${asset.assetType} · ${quantity(asset.quantity)} шт.")
+                                Text("Нажмите, чтобы открыть историю покупок", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
@@ -550,6 +563,79 @@ private fun AssetsScreen(assets: List<AssetEntity>, onEditAsset: (AssetEntity) -
             }
         }
     }
+    selectedAssetForHistory?.let { asset ->
+        AssetPurchaseHistoryDialog(
+            asset = asset,
+            operations = operations,
+            onDismiss = { selectedAssetForHistory = null }
+        )
+    }
+}
+
+@Composable
+private fun AssetPurchaseHistoryDialog(
+    asset: AssetEntity,
+    operations: List<OperationEntity>,
+    onDismiss: () -> Unit
+) {
+    val purchases = remember(asset.id, asset.ticker, operations) {
+        operations.filter { operation ->
+            operation.operationType == "Покупка" &&
+                operation.quantity > 0.0 &&
+                (operation.assetId == asset.id ||
+                    operation.ticker?.equals(asset.ticker, ignoreCase = true) == true)
+        }.sortedBy { it.operationDate }
+    }
+    val purchasedQuantity = purchases.sumOf { it.quantity }
+    val totalCost = purchases.sumOf { it.quantity * it.price + it.commission }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("История покупок · ${asset.ticker}")
+                Text(asset.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (purchases.isEmpty()) {
+                    Text("Покупки этого актива не найдены. История появится после ручного добавления сделок или импорта брокерского отчёта.")
+                } else {
+                    Text("Покупок: ${purchases.size} · Куплено всего: ${quantity(purchasedQuantity)} шт.")
+                    Text("Сумма покупок с комиссиями: ${money(totalCost)} ₽", fontWeight = FontWeight.SemiBold)
+                    HorizontalDivider()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(purchases, key = { it.id }) { purchase ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU"))
+                                        .format(java.util.Date(purchase.operationDate)),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text("${quantity(purchase.quantity)} шт. × ${money(purchase.price)} ₽")
+                                val total = purchase.quantity * purchase.price + purchase.commission
+                                Text(
+                                    "Комиссия: ${money(purchase.commission)} ₽ · Итого: ${money(total)} ₽",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                    Text(
+                        "Показаны все зарегистрированные покупки, включая бумаги, которые могли быть проданы позднее. Если история неполная, более ранние приобретения здесь не появятся.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
 }
 
 private const val ALL_HISTORY_ACCOUNTS = "ALL"
