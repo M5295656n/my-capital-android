@@ -2,18 +2,30 @@ package ru.mycapital.app.data
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Locale
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.TimeZone
+import java.time.ZoneOffset
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 internal fun isEventDateUpcoming(date: LocalDate, today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): Boolean =
     !date.isBefore(today)
+
+/**
+ * Returns only a true payment-date column. Registry-close and record dates are
+ * not payment dates and must never be shown to the user as expected cash dates.
+ */
+internal fun paymentDateColumn(isBond: Boolean, columnIndexes: Map<String, Int>): Int? {
+    val candidates = if (isBond) listOf("coupondate", "paymentdate") else listOf("paymentdate")
+    return candidates.firstNotNullOfOrNull { columnIndexes[it] }
+}
+
+internal fun parseMoexEventDate(dateText: String): LocalDate? {
+    if (!dateText.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) return null
+    return runCatching { LocalDate.parse(dateText) }.getOrNull()
+}
 
 class UnsupportedCorporateEventsInstrumentException(message: String) : IOException(message)
 
@@ -61,23 +73,20 @@ class CorporateEventsClient {
                 ?: throw IOException("В таблице MOEX ISS отсутствуют столбцы")
             val rows = table.optJSONArray("data")
                 ?: throw IOException("В таблице MOEX ISS отсутствуют данные")
-            val indexes = (0 until columns.length()).associate { columns.getString(it).lowercase(Locale.ROOT) to it }
-            val dateFields = if (isBond) listOf("coupondate", "paymentdate") else
-                listOf("paymentdate", "registryclosedate", "recorddate", "date")
-            val dateIndex = dateFields.firstNotNullOfOrNull { indexes[it] } ?: return emptyList()
+            val indexes = (0 until columns.length()).associate {
+                columns.getString(it).lowercase(Locale.ROOT) to it
+            }
+            val dateIndex = paymentDateColumn(isBond, indexes) ?: return emptyList()
             val amountIndex = listOf("value", "issuevalue", "couponvalue")
                 .firstNotNullOfOrNull { indexes[it] } ?: return emptyList()
-            val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-                isLenient = false
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-                        val events = mutableListOf<ImportedPayoutEvent>()
+
+            val events = mutableListOf<ImportedPayoutEvent>()
             for (i in 0 until rows.length()) {
                 val row = rows.optJSONArray(i) ?: continue
                 if (dateIndex >= row.length() || amountIndex >= row.length()) continue
-                val dateText = row.optString(dateIndex).takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) } ?: continue
-                val localDate = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: continue
-                val date = runCatching { formatter.parse(dateText)?.time }.getOrNull() ?: continue
+                val dateText = row.optString(dateIndex)
+                val localDate = parseMoexEventDate(dateText) ?: continue
+                val date = localDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
                 val amount = if (row.isNull(amountIndex)) Double.NaN else row.optDouble(amountIndex, Double.NaN)
                 if (!amount.isFinite() || amount <= 0.0 || !isEventDateUpcoming(localDate)) continue
                 val type = if (isBond) "Купон" else "Дивиденд"
