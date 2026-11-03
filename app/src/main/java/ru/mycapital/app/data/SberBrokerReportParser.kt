@@ -108,6 +108,7 @@ object SberBrokerReportParser {
         // normalize whitespace and accept both е/ё in the Russian word "отчёт".
         val title = document.selectFirst("title")?.text().orEmpty()
             .replace('ё', 'е')
+            .replace('Ё', 'Е')
             .replace(Regex("\\s+"), " ")
             .trim()
         val accountId = Regex("(?i)отчет\\s+брокера\\s+([A-Z0-9-]+)")
