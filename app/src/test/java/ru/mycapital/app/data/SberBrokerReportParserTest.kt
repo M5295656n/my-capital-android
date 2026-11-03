@@ -2,7 +2,6 @@ package ru.mycapital.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -98,7 +97,6 @@ class SberBrokerReportParserTest {
         assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, classifyBrokerCashFlow("Перевод д/с с договора A на договор B"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Комиссия Биржи от 01.10.2026"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Сделка от 01.10.2026"))
-        assertNull(null as String?)
     }
 
     @Test
