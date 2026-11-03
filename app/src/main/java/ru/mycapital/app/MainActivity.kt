@@ -214,7 +214,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
             }
         }
@@ -911,6 +911,7 @@ private fun PayoutsScreen(
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
     onConfirmReceipt: (PayoutEntity) -> Unit,
+    onRefreshEvents: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val visiblePayouts = payouts.filter { payout ->
@@ -925,14 +926,33 @@ private fun PayoutsScreen(
     }
     val expected = visiblePayouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
     Column(modifier.fillMaxSize().padding(20.dp)) {
-        Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onRefreshEvents) {
+                Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
+            }
+        }
         Spacer(Modifier.height(8.dp))
         AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Получено после налога", money(received) + " ₽", Modifier.weight(1f))
-            MetricCard("Ожидается до налога", money(expected) + " ₽", Modifier.weight(1f))
+        Card(shape = RoundedCornerShape(18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                Text("Всего получено после налога", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(money(received) + " ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Card(shape = RoundedCornerShape(16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ожидается", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(money(expected) + " ₽", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+                Text("До налога", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
         }
         Spacer(Modifier.height(12.dp))
         PayoutForecastCard(visiblePayouts)
