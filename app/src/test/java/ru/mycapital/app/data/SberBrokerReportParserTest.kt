@@ -12,7 +12,8 @@ class SberBrokerReportParserTest {
         cashCredit: String = "107.00",
         closingQuantity: String = "3",
         closingValue: String = "33",
-        tradeCode: String = "TEST"
+        tradeCode: String = "TEST",
+        includeMatchingIisRegisterRows: Boolean = true
     ): String {
         val assets = """
             <table>
@@ -40,6 +41,10 @@ class SberBrokerReportParserTest {
               <tr><td>30.10.2026</td><td>Основной рынок</td><td>Перевод д/с с договора 403RY0J на договор S25F9ZU</td><td>RUB</td><td>0.00</td><td>13.00</td></tr>
               <tr><td>30.10.2026</td><td>Основной рынок</td><td>Сделка от 29.10.2026</td><td>RUB</td><td>0.00</td><td>20.00</td></tr>
               <tr><td>30.10.2026</td><td>Основной рынок</td><td>Комиссия Брокера от 29.10.2026</td><td>RUB</td><td>0.00</td><td>0.10</td></tr>
+              ${if (includeMatchingIisRegisterRows) """
+                <tr><td>23.10.2026</td><td>Основной рынок</td><td>Зачисление д/с</td><td>RUB</td><td>70.00</td><td>0.00</td></tr>
+                <tr><td>23.10.2026</td><td>Основной рынок</td><td>Перевод д/с с договора MAIN на договор IIS</td><td>RUB</td><td>100.00</td><td>0.00</td></tr>
+              """ else ""}
             </table>
         """.trimIndent()
         val trades = """
@@ -112,7 +117,7 @@ class SberBrokerReportParserTest {
 
     @Test
     fun importsIisContributionRegisterAsCashFlows() {
-        val report = parseWithDiagnostics(sampleHtml(tableCount = 9))
+        val report = parseWithDiagnostics(sampleHtml(tableCount = 9, includeMatchingIisRegisterRows = false))
         assertEquals(253.55, report.cashCredits, 0.001)
         assertEquals(33.10, report.cashDebits, 0.001)
         val iisDeposits = report.cashFlows.filter { it.description == "Зачисление д/с на ИИС" }
@@ -127,6 +132,20 @@ class SberBrokerReportParserTest {
         assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, iisTransfer.kind)
         assertEquals(100.0, iisTransfer.credit, 0.001)
         assertEquals(0.0, iisTransfer.debit, 0.001)
+    }
+
+    @Test
+    fun deduplicatesIisContributionRegisterAgainstGeneralCashFlowsByDateAmountAndKind() {
+        val report = parseWithDiagnostics(sampleHtml(tableCount = 9))
+
+        // The general table describes these as generic deposits/transfers, while the
+        // IIS register adds "на ИИС" / "между договорами" to the descriptions.
+        assertEquals(423.55, report.cashCredits, 0.001)
+        assertEquals(1, report.cashFlows.count { it.description == "Зачисление д/с на ИИС" })
+        assertEquals(1, report.cashFlows.count {
+            it.date == LocalDate.parse("2026-10-23") && it.kind == BrokerCashFlowKind.INTERNAL_TRANSFER
+        })
+        assertEquals(0, report.cashFlows.count { it.description == "Перевод д/с между договорами" })
     }
 
     @Test
