@@ -51,6 +51,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM payouts WHERE sourceKey = :sourceKey LIMIT 1")
     suspend fun getPayoutBySourceKey(sourceKey: String): PayoutEntity?
 
+    @Query("SELECT * FROM payouts WHERE id = :payoutId LIMIT 1")
+    suspend fun getPayoutById(payoutId: Long): PayoutEntity?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPayout(payout: PayoutEntity): Long
 
