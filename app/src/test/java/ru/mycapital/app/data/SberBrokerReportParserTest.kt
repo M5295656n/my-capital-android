@@ -58,7 +58,7 @@ class SberBrokerReportParserTest {
         """.trimIndent()
         val required = listOf(assets, cash, flows, trades, securities)
         val dummies = (0 until (tableCount - required.size)).joinToString("") { "<table><tr><td>Дополнительная таблица $it</td></tr></table>" }
-        return "<html><head><title>Отчет брокера TESTACCOUNT</title></head><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
+        return "<html><head><title>Отчёт брокера\nTESTACCOUNT</title></head><body>за период с 30.10.2026 по 30.10.2026$dummies${required.joinToString("")}</body></html>"
     }
 
     @Test
