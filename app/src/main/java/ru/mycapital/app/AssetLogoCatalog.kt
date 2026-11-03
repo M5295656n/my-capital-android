@@ -37,16 +37,18 @@ internal object AssetLogoCatalog {
         "https://www.google.com/s2/favicons?domain=${domain}&sz=128"
 
     suspend fun load(context: Context): Map<String, String> = loadMutex.withLock {
-        memoryCache?.let { return@withLock it }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val cached = parseCatalog(prefs.getString(KEY_DOMAINS, null))
         val isFresh = System.currentTimeMillis() - prefs.getLong(KEY_UPDATED_AT, 0L) < MAX_AGE_MS
-        if (cached.isNotEmpty() && isFresh) {
-            memoryCache = cached
-            return cached
+        if (isFresh) {
+            memoryCache?.let { return@withLock it }
+            if (cached.isNotEmpty()) {
+                memoryCache = cached
+                return@withLock cached
+            }
         }
 
-        return try {
+        return@withLock try {
             val request = Request.Builder().url(MANIFEST_URL).build()
             val response = client.newCall(request).execute()
             response.use {
