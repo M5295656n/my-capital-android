@@ -29,24 +29,24 @@ class CorporateEventsClientDateTest {
     @Test
     fun stockDividendsRequireActualPaymentDateColumn() {
         val columns = mapOf("registryclosedate" to 0, "recorddate" to 1, "value" to 2)
-        assertNull(paymentDateColumn(isBond = false, columns))
+        assertNull(paymentDateColumn(isBond = false, columnIndexes = columns))
     }
 
     @Test
     fun stockDividendsUsePaymentDateWhenPresent() {
         val columns = mapOf("registryclosedate" to 0, "paymentdate" to 1, "value" to 2)
-        assertEquals(1, paymentDateColumn(isBond = false, columns))
+        assertEquals(1, paymentDateColumn(isBond = false, columnIndexes = columns))
     }
 
     @Test
     fun bondCouponsPreferCouponDate() {
         val columns = mapOf("paymentdate" to 0, "coupondate" to 1)
-        assertEquals(1, paymentDateColumn(isBond = true, columns))
+        assertEquals(1, paymentDateColumn(isBond = true, columnIndexes = columns))
     }
 
     @Test
     fun bondCouponsCanUsePaymentDateFallback() {
-        assertEquals(0, paymentDateColumn(isBond = true, mapOf("paymentdate" to 0)))
+        assertEquals(0, paymentDateColumn(isBond = true, columnIndexes = mapOf("paymentdate" to 0)))
     }
 
     @Test
