@@ -33,6 +33,21 @@ interface PortfolioDao {
     @Query("SELECT * FROM assets WHERE UPPER(ticker) = UPPER(:ticker) LIMIT 1")
     suspend fun getAssetByTicker(ticker: String): AssetEntity?
 
+    @Query("SELECT * FROM broker_accounts ORDER BY displayName")
+    fun observeBrokerAccounts(): Flow<List<BrokerAccountEntity>>
+
+    @Query("SELECT * FROM broker_account_cash ORDER BY accountId")
+    fun observeBrokerAccountCashAccounts(): Flow<List<BrokerAccountCashEntity>>
+
+    @Query("SELECT * FROM broker_account_assets ORDER BY accountId, ticker")
+    fun observeAllBrokerAccountAssets(): Flow<List<BrokerAccountAssetEntity>>
+
+    @Query("SELECT * FROM broker_accounts WHERE accountId = :accountId LIMIT 1")
+    suspend fun getBrokerAccount(accountId: String): BrokerAccountEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBrokerAccount(account: BrokerAccountEntity)
+
     @Query("SELECT * FROM broker_account_cash WHERE accountId = :accountId LIMIT 1")
     suspend fun getBrokerAccountCash(accountId: String): BrokerAccountCashEntity?
 
