@@ -125,6 +125,20 @@ class SberBrokerReportParserTest {
     }
 
     @Test
+    fun convertsBondMarketAndTradePricesFromPercentToRubles() {
+        val html = sampleHtml(
+            tradePrice = "92.74",
+            tradeCode = "TEST",
+            closingQuantity = "1",
+            closingValue = "926.97"
+        ).replace("<td>Акция</td><td>1</td>", "<td>Государственная облигация</td><td>1</td>")
+            .replace("<td>473.40</td>", "<td>927.40</td>")
+        val report = parseWithDiagnostics(html)
+        assertEquals(926.97, report.assets.single().closingPrice, 0.001)
+        assertEquals(92.74, report.trades.single().price, 0.001)
+    }
+
+    @Test
     fun mapsIsinInTradeCodeColumnToExchangeTicker() {
         val report = parseWithDiagnostics(sampleHtml(tradeCode = "RU000A100A82"))
         assertEquals("SU26228RMFS5", report.trades.single().ticker)
