@@ -64,7 +64,7 @@ class SberBrokerReportParserTest {
     @Test
     fun parsesBothRegularAndIisReportLayouts() {
         listOf(11, 9).forEach { count ->
-            val report = SberBrokerReportParser.parse(sampleHtml(tableCount = count))
+            val report = parseWithDiagnostics(sampleHtml(tableCount = count))
             assertEquals("TESTACCOUNT", report.accountId)
             assertEquals(428.73, report.openingCash, 0.001)
             assertEquals(635.73, report.closingCash, 0.001)
@@ -78,7 +78,7 @@ class SberBrokerReportParserTest {
 
     @Test
     fun parsesPayoutTickersAndStableCashFlowKeys() {
-        val report = SberBrokerReportParser.parse(sampleHtml())
+        val report = parseWithDiagnostics(sampleHtml())
         val dividend = report.cashFlows.single { it.kind == BrokerCashFlowKind.DIVIDEND }
         val coupon = report.cashFlows.single { it.kind == BrokerCashFlowKind.COUPON }
         assertEquals("T", dividend.ticker)
@@ -113,6 +113,16 @@ class SberBrokerReportParserTest {
     @Test
     fun rejectsMalformedPositionQuantityInsteadOfTreatingItAsZero() {
         assertParseFails(sampleHtml(closingQuantity = "не число"))
+    }
+
+
+    private fun parseWithDiagnostics(html: String): SberBrokerReport {
+        try {
+            return SberBrokerReportParser.parse(html)
+        } catch (error: Exception) {
+            System.err.println("SBER_PARSER_FAILURE: ${error.javaClass.simpleName}: ${error.message}")
+            throw error
+        }
     }
 
     private fun assertParseFails(html: String) {
