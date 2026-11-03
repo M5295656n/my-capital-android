@@ -154,7 +154,9 @@ class BrokerReportRepositoryInstrumentedTest {
             closingCash = 42.0,
             assets = listOf(
                 BrokerReportAsset("ABC", "ABC", "RU000A", 2.0, 4.0, 12.0, 48.0),
-                BrokerReportAsset("Unknown", "XYZ", "RU000B", 0.0, 1.0, 5.0, 5.0)
+                BrokerReportAsset("Unknown", "XYZ", "RU000B", 0.0, 1.0, 5.0, 5.0),
+                // Sber can list fully sold securities with zero closing quantity.
+                BrokerReportAsset("Closed unknown", "OLD", "RU000C", 1.0, 0.0, 47.19, 0.0)
             )
         )
 
