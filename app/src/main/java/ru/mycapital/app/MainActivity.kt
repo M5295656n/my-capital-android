@@ -530,44 +530,38 @@ private fun AssetsScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedAssetForHistory by remember { mutableStateOf<AssetEntity?>(null) }
-    Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Spacer(Modifier.height(20.dp))
-        Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Локальный список вашего портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Нажмите на актив, чтобы посмотреть историю его покупок.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Добавление актива задаёт начальную позицию и не списывает деньги. Для новых покупок сначала внесите свободные деньги.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
+        Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
         if (assets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Пока нет активов. Нажмите +, чтобы добавить первый.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
+            ) {
                 items(assets, key = { it.id }) { asset ->
                     Card(
                         Modifier.fillMaxWidth().clickable { selectedAssetForHistory = asset },
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AssetTypeIcon(asset.assetType, asset.ticker)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                                Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${asset.assetType} · ${quantity(asset.quantity)} шт.")
-                                Text("Нажмите, чтобы открыть историю покупок", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                Text("${quantity(asset.quantity)} шт. · ${asset.assetType}", style = MaterialTheme.typography.bodySmall)
                             }
-                            Column(horizontalAlignment = Alignment.End) {
+                            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
                                 Text("Средняя ${money(asset.averagePrice)} ₽", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton(onClick = { onEditAsset(asset) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Изменить")
-                                }
-                                TextButton(onClick = { onDeleteAsset(asset) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                                    Icon(Icons.Default.Delete, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Удалить")
-                                }
                             }
                         }
                     }
@@ -582,6 +576,32 @@ private fun AssetsScreen(
             accounts = accounts,
             onDismiss = { selectedAssetForHistory = null }
         )
+    }
+}
+
+@Composable
+private fun AssetTypeIcon(assetType: String, ticker: String) {
+    val type = assetType.lowercase()
+    val isBond = type.contains("облигац") || type.contains("офз") || ticker.startsWith("SU", ignoreCase = true)
+    val isFund = type.contains("фонд") || type.contains("бпиф") || type.contains("etf")
+    val background = when {
+        isBond -> androidx.compose.ui.graphics.Color(0xFFE8EEF8)
+        isFund -> androidx.compose.ui.graphics.Color(0xFFEDE8F8)
+        else -> androidx.compose.ui.graphics.Color(0xFFE4F2EC)
+    }
+    val tint = when {
+        isBond -> androidx.compose.ui.graphics.Color(0xFF254B82)
+        isFund -> androidx.compose.ui.graphics.Color(0xFF67469A)
+        else -> androidx.compose.ui.graphics.Color(0xFF176B55)
+    }
+    Surface(shape = RoundedCornerShape(14.dp), color = background, modifier = Modifier.size(46.dp)) {
+        Box(contentAlignment = Alignment.Center) {
+            when {
+                isBond -> Text("⚜", color = tint, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                isFund -> Icon(Icons.Default.DonutLarge, contentDescription = "Фонд", tint = tint, modifier = Modifier.size(26.dp))
+                else -> Icon(Icons.Default.ShowChart, contentDescription = "Акция", tint = tint, modifier = Modifier.size(27.dp))
+            }
+        }
     }
 }
 
