@@ -61,7 +61,7 @@ class SberBrokerReportParserTest {
               <tr><td>1</td></tr>
               <tr><td>Тестовая акция</td><td>TEST</td><td>RU000A000001</td><td>Эмитент</td><td>Акция</td><td>1</td></tr>
               <tr><td>Т-Технологии</td><td>T</td><td>RU000A000002</td><td>Эмитент</td><td>Акция</td><td>2</td></tr>
-              <tr><td>ОФЗ 26228</td><td>SU26228RMFS9</td><td>RU000A000003</td><td>Минфин</td><td>Облигация</td><td>26228</td></tr>
+              <tr><td>ОФЗ 26228</td><td>SU26228RMFS5</td><td>RU000A100A82</td><td>Минфин</td><td>Облигация</td><td>26228</td></tr>
             </table>
         """.trimIndent()
         // Mirror the observed Sber report sequences: regular brokerage reports include
@@ -112,8 +112,8 @@ class SberBrokerReportParserTest {
 
     @Test
     fun mapsIsinInTradeCodeColumnToExchangeTicker() {
-        val report = parseWithDiagnostics(sampleHtml(tradeCode = "RU000A000003"))
-        assertEquals("SU26228RMFS9", report.trades.single().ticker)
+        val report = parseWithDiagnostics(sampleHtml(tradeCode = "RU000A100A82"))
+        assertEquals("SU26228RMFS5", report.trades.single().ticker)
     }
 
     @Test
@@ -156,7 +156,7 @@ class SberBrokerReportParserTest {
         val dividend = report.cashFlows.single { it.kind == BrokerCashFlowKind.DIVIDEND }
         val coupon = report.cashFlows.single { it.kind == BrokerCashFlowKind.COUPON }
         assertEquals("T", dividend.ticker)
-        assertEquals("SU26228RMFS9", coupon.ticker)
+        assertEquals("SU26228RMFS5", coupon.ticker)
         assertEquals(report.cashFlows.map { it.rowKey }, SberBrokerReportParser.parse(sampleHtml(includeMatchingIisRegisterRows = false)).cashFlows.map { it.rowKey })
         val duplicateDeposits = report.cashFlows.filter { it.kind == BrokerCashFlowKind.DEPOSIT }
         assertEquals(2, duplicateDeposits.size)
