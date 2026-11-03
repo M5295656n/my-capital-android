@@ -109,8 +109,8 @@ private fun MyCapitalApp() {
             scope.launch {
                 try {
                     val parsed = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
-                            SberBrokerReportParser.parse(reader.readText())
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            SberBrokerReportParser.parse(input)
                         } ?: error("Не удалось открыть выбранный файл.")
                     }
                     importedReport = parsed
