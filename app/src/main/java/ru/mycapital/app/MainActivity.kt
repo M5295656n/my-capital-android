@@ -81,6 +81,7 @@ private fun MyCapitalApp() {
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
     var showAddPayout by remember { mutableStateOf(false) }
+    var payoutToConfirm by remember { mutableStateOf<PayoutEntity?>(null) }
     var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
     var isParsingReport by remember { mutableStateOf(false) }
@@ -172,7 +173,7 @@ private fun MyCapitalApp() {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, dao, Modifier.padding(padding))
             }
         }
@@ -245,6 +246,26 @@ private fun MyCapitalApp() {
                         showAddPayout = false
                     } catch (error: Exception) {
                         errorMessage = error.message ?: "Не удалось сохранить выплату"
+                    }
+                }
+            }
+        )
+    }
+    if (payoutToConfirm != null) {
+        ReceivePayoutDialog(
+            payout = payoutToConfirm!!,
+            onDismiss = { payoutToConfirm = null },
+            onConfirm = { tax ->
+                val payout = payoutToConfirm!!
+                scope.launch {
+                    try {
+                        val credited = withContext(Dispatchers.IO) {
+                            repository.confirmPayoutReceived(payout.id, tax)
+                        }
+                        if (!credited) errorMessage = "Эта выплата уже была подтверждена ранее."
+                        payoutToConfirm = null
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "Не удалось подтвердить выплату"
                     }
                 }
             }
@@ -439,7 +460,11 @@ private fun OperationsScreen(operations: List<OperationEntity>, onAddCashFlow: (
 
 
 @Composable
-private fun PayoutsScreen(payouts: List<PayoutEntity>, modifier: Modifier = Modifier) {
+private fun PayoutsScreen(
+    payouts: List<PayoutEntity>,
+    onConfirmReceipt: (PayoutEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val received = payouts.filter { it.status == "RECEIVED" }.sumOf { it.totalAmount - it.taxAmount }
     val expected = payouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
     Column(modifier.fillMaxSize().padding(20.dp)) {
@@ -467,13 +492,57 @@ private fun PayoutsScreen(payouts: List<PayoutEntity>, modifier: Modifier = Modi
                             }
                             Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
                             Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
-                            payout.expectedDate?.let { Text("Дата события: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            payout.expectedDate?.let {
+                                Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            payout.actualDate?.let {
+                                Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (payout.status == "EXPECTED") {
+                                TextButton(onClick = { onConfirmReceipt(payout) }) {
+                                    Text("Подтвердить получение")
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ReceivePayoutDialog(
+    payout: PayoutEntity,
+    onDismiss: () -> Unit,
+    onConfirm: (Double) -> Unit
+) {
+    var taxText by remember(payout.id) { mutableStateOf(money(payout.taxAmount)) }
+    val tax = parseDecimalInput(taxText) ?: -1.0
+    val valid = tax.isFinite() && tax >= 0.0 && tax <= payout.totalAmount
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Подтвердить получение") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${payout.ticker} · ${payout.payoutType}")
+                Text("Начислено: ${money(payout.totalAmount)} ₽")
+                OutlinedTextField(
+                    value = taxText,
+                    onValueChange = { taxText = it },
+                    label = { Text("Фактически удержанный налог, ₽") },
+                    singleLine = true
+                )
+                if (valid) Text("Будет зачислено: ${money(payout.totalAmount - tax)} ₽")
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onConfirm(tax) }) { Text("Подтвердить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
