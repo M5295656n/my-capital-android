@@ -182,7 +182,7 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
             }
         }
     }
@@ -813,12 +813,18 @@ private fun AnalyticsScreen(
     assets: List<AssetEntity>,
     marketValue: Double,
     cashBalance: Double,
+    payouts: List<PayoutEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
     dao: ru.mycapital.app.data.PortfolioDao,
     modifier: Modifier = Modifier
 ) {
     val invested = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = marketValue - invested
+    val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
+    val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
+    val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
+    val payoutIncome = receivedDividends + receivedCoupons
+    val unrealizedPlusPayouts = unrealized + payoutIncome
     val totalValue = marketValue + cashBalance
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     val groups = assets.groupBy { it.assetType.ifBlank { "Прочее" } }
@@ -863,7 +869,31 @@ private fun AnalyticsScreen(
                         color = if (unrealized >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
                     Text("К себестоимости остатков: ${String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent)}")
-                    Text("Расчёт не включает полученные дивиденды и купоны.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Показатель относится только к текущим остаткам бумаг и не включает выплаты или результат закрытых позиций.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Полученные дивиденды и купоны", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Дивиденды")
+                        Text("${money(receivedDividends)} ₽", fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Купоны")
+                        Text("${money(receivedCoupons)} ₽", fontWeight = FontWeight.SemiBold)
+                    }
+                    HorizontalDivider()
+                    Text("Нереализованный результат + выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        (if (unrealizedPlusPayouts > 0) "+" else "") + "${money(unrealizedPlusPayouts)} ₽",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (unrealizedPlusPayouts >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                    Text("Суммы выплат учитываются после налога, если он известен. При импорте брокерского отчёта используется фактически зачисленная чистая сумма. Реализованный результат продаж здесь не учтён.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
