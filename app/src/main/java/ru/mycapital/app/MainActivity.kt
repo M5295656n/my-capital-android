@@ -591,6 +591,10 @@ private fun AssetPurchaseHistoryDialog(
     }
     val purchasedQuantity = purchases.sumOf { it.quantity }
     val totalCost = purchases.sumOf { it.quantity * it.price + it.commission }
+    val lotBalances = remember(asset.id, operations) { calculateRemainingPurchaseLots(operations) }
+    val remainingQuantity = purchases.sumOf { purchase ->
+        lotBalances.remainingByOperationId[purchase.id] ?: 0.0
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -605,6 +609,7 @@ private fun AssetPurchaseHistoryDialog(
                     Text("Покупки этого актива не найдены. История появится после ручного добавления сделок или импорта брокерского отчёта.")
                 } else {
                     Text("Покупок: ${purchases.size} · Куплено всего: ${quantity(purchasedQuantity)} шт.")
+                    Text("Осталось по FIFO: ${quantity(remainingQuantity)} шт.", fontWeight = FontWeight.SemiBold)
                     Text("Сумма покупок с комиссиями: ${money(totalCost)} ₽", fontWeight = FontWeight.SemiBold)
                     HorizontalDivider()
                     LazyColumn(
@@ -628,6 +633,12 @@ private fun AssetPurchaseHistoryDialog(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 val total = purchase.quantity * purchase.price + purchase.commission
+                                val remainingFromPurchase = lotBalances.remainingByOperationId[purchase.id] ?: 0.0
+                                Text(
+                                    "Осталось по этой покупке: ${quantity(remainingFromPurchase)} шт.",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (remainingFromPurchase > 0.0000001) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 Text(
                                     "Комиссия: ${money(purchase.commission)} ₽ · Итого: ${money(total)} ₽",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -638,10 +649,17 @@ private fun AssetPurchaseHistoryDialog(
                         }
                     }
                     Text(
-                        "Показаны все зарегистрированные покупки, включая бумаги, которые могли быть проданы позднее. Если история неполная, более ранние приобретения здесь не появятся.",
+                        "Остаток рассчитан по FIFO только на основании зарегистрированных покупок и продаж в каждом брокерском счёте. При неполной истории или начальных остатках расчёт может отличаться от фактической позиции.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (lotBalances.unmatchedSaleQuantity > 0.0000001) {
+                        Text(
+                            "Есть продажи без соответствующих покупок в истории: ${quantity(lotBalances.unmatchedSaleQuantity)} шт. Учёт лотов неполный.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         },
