@@ -907,10 +907,12 @@ private fun BrokerReportPreviewDialog(
     val completedTrades = report.trades.size - pendingTrades.size
     val currentByTicker = currentAssets.associateBy { it.ticker.uppercase() }
     val knownRows = report.assets.mapNotNull { row ->
-        row.ticker.takeIf { it.isNotBlank() }?.let { ticker -> row to currentByTicker[ticker.uppercase()] }
+        row.ticker.takeIf { it.isNotBlank() }?.let { ticker ->
+            currentByTicker[ticker.uppercase()]?.let { asset -> row to asset }
+        }
     }
     val unknownRows = report.assets.filter { it.ticker.isBlank() || currentByTicker[it.ticker.uppercase()] == null }
-    var showReconcileConfirmation by remember(report.periodEnd) { mutableStateOf(false) }
+    var showReconcileConfirmation by remember(report.accountId, report.periodEnd) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Предварительный просмотр отчёта") },
