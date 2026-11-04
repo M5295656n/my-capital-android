@@ -614,10 +614,15 @@ private fun OverviewScreen(
                         else "История пополнений пока неполная — сумма собственных вложений не определена",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("● Стоимость портфеля", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        Text("┄ Вложенные средства", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Динамика портфеля", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("● Стоимость портфеля", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text("┄ Вложено", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("● Полная доходность", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                     }
+                    Text("Левая шкала — ₽ · правая шкала — %", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (history.size < 2) {
                         Text(
                             "График появится после накопления минимум двух дневных снимков.",
@@ -627,8 +632,11 @@ private fun OverviewScreen(
                     } else {
                         val values = history.map { it.totalValue }
                         val returnValues = history.map { it.nav - 100.0 }
-                        val returnMin = returnValues.minOrNull() ?: 0.0
-                        val returnMax = returnValues.maxOrNull() ?: 0.0
+                        val rawReturnMin = returnValues.minOrNull() ?: 0.0
+                        val rawReturnMax = returnValues.maxOrNull() ?: 0.0
+                        val returnPadding = if (rawReturnMax - rawReturnMin < 0.000001) 1.0 else 0.0
+                        val returnMin = rawReturnMin - returnPadding
+                        val returnMax = rawReturnMax + returnPadding
                         val moscowZone = java.time.ZoneId.of("Europe/Moscow")
                         val investedLine = history.map { point ->
                             val endOfDay = java.time.LocalDate.parse(point.dateKey).plusDays(1)
@@ -639,49 +647,59 @@ private fun OverviewScreen(
                         }
                         val minValue = (values + investedLine).minOrNull() ?: 0.0
                         val maxValue = (values + investedLine).maxOrNull() ?: 1.0
-                        val span = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
                         val portfolioColor = MaterialTheme.colorScheme.primary
                         val investedColor = MaterialTheme.colorScheme.onSurfaceVariant
                         val gridColor = MaterialTheme.colorScheme.outlineVariant
                         val returnColor = MaterialTheme.colorScheme.secondary
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
-                                Text(money(maxValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(128.dp))
-                                Text(money(minValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(
+                                Modifier.width(76.dp).height(190.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(money(maxValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                Text(money(minValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnMax), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                                Spacer(Modifier.height(128.dp))
-                                Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnMin), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            Canvas(Modifier.weight(1f).height(190.dp)) {
+                                val left = 5f
+                                val right = size.width - 5f
+                                val top = 8f
+                                val bottom = size.height - 8f
+                                for (i in 0..3) {
+                                    val y = top + (bottom - top) * i / 3f
+                                    drawLine(gridColor, Offset(left, y), Offset(right, y), 1f)
+                                }
+                                fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean, low: Double, high: Double) {
+                                    val localSpan = (high - low).takeIf { it > 0.000001 } ?: 1.0
+                                    val path = Path()
+                                    series.forEachIndexed { index, value ->
+                                        val x = left + (right - left) * index / (series.size - 1).toFloat()
+                                        val y = bottom - ((value - low) / localSpan).toFloat() * (bottom - top)
+                                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                                    }
+                                    drawPath(
+                                        path, color,
+                                        style = Stroke(width = if (dashed) 3f else 4f, cap = StrokeCap.Round,
+                                            pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(9f, 7f)) else null)
+                                    )
+                                }
+                                drawSeries(values, portfolioColor, false, minValue, maxValue)
+                                drawSeries(investedLine, investedColor, true, minValue, maxValue)
+                                drawSeries(returnValues, returnColor, false, returnMin, returnMax)
+                            }
+                            Column(
+                                Modifier.width(54.dp).height(190.dp),
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("%", style = MaterialTheme.typography.labelSmall, color = returnColor)
+                                Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", rawReturnMax), style = MaterialTheme.typography.labelSmall, color = returnColor, maxLines = 1)
+                                Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", rawReturnMin), style = MaterialTheme.typography.labelSmall, color = returnColor, maxLines = 1)
                             }
                         }
-                        Canvas(Modifier.fillMaxWidth().height(190.dp)) {
-                            val left = 8f
-                            val right = size.width - 8f
-                            val top = 8f
-                            val bottom = size.height - 8f
-                            for (i in 0..3) {
-                                val y = top + (bottom - top) * i / 3f
-                                drawLine(gridColor, Offset(left, y), Offset(right, y), 1f)
-                            }
-                            fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean, low: Double, high: Double) {
-                                val localSpan = (high - low).takeIf { it > 0.000001 } ?: 1.0
-                                val path = Path()
-                                series.forEachIndexed { index, value ->
-                                    val x = left + (right - left) * index / (series.size - 1).toFloat()
-                                    val y = bottom - ((value - low) / localSpan).toFloat() * (bottom - top)
-                                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                                }
-                                drawPath(
-                                    path, color,
-                                    style = Stroke(width = if (dashed) 3f else 4f, cap = StrokeCap.Round,
-                                        pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(9f, 7f)) else null)
-                                )
-                            }
-                            drawSeries(values, portfolioColor, false, minValue, maxValue)
-                            drawSeries(investedLine, investedColor, true, minValue, maxValue)
-                            drawSeries(returnValues, returnColor, false, returnMin, returnMax)
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 76.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(history.first().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(history.last().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
