@@ -185,7 +185,7 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
     val zone = ZoneId.systemDefault()
     val now = YearMonth.now()
     val months = (11 downTo 0).map { now.minusMonths(it.toLong()) }
-    val receivedByMonth = payouts.filter { it.status == "RECEIVED" && it.actualDate != null }
+    val receivedByMonth = payouts.filter { it.status == "RECEIVED" && it.actualDate != null && it.payoutType.contains("див", ignoreCase = true) }
         .groupBy { YearMonth.from(Instant.ofEpochMilli(it.actualDate!!).atZone(zone)) }
         .mapValues { (_, items) -> items.sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) } }
     val values = months.map { receivedByMonth[it] ?: 0.0 }
