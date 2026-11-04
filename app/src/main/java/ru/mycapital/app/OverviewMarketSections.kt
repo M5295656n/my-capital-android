@@ -26,6 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,19 +52,28 @@ internal data class MarketOverviewData(
 
 internal class MarketOverviewClient {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(18, TimeUnit.SECONDS)
-        .callTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
         .build()
 
     suspend fun load(heldTickers: Set<String>): MarketOverviewData = withContext(Dispatchers.IO) {
-        val quotes = listOf(
-            quote("USD000UTSTOM", "USD/RUB"),
-            quote("EUR_RUB__TOM", "EUR/RUB"),
-            quote("CNYRUB_TOM", "CNY/RUB"),
-            quote("GLDRUB_TOM", "GLDRUB")
-        ).filterNotNull()
-        val movers = loadMovers().filter { it.ticker.uppercase() in heldTickers }
+        // MOEX endpoints are independent. Fetch them concurrently so one slow endpoint
+        // cannot keep the dashboard in its loading state for several sequential timeouts.
+        val quotes = coroutineScope {
+            listOf(
+                async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") },
+                async(Dispatchers.IO) { quote("EUR_RUB__TOM", "EUR/RUB") },
+                async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") },
+                async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
+            ).awaitAll().filterNotNull()
+        }
+        val movers = coroutineScope {
+            listOf(
+                async(Dispatchers.IO) { loadMoversFrom("shares", "57") },
+                async(Dispatchers.IO) { loadMoversFrom("bonds", "58") }
+            ).awaitAll().flatten().distinctBy { it.ticker }
+        }.filter { it.ticker.uppercase() in heldTickers }
         MarketOverviewData(
             quotes = quotes,
             gainers = movers.sortedByDescending { it.changePercent }.take(5),
@@ -85,10 +97,7 @@ internal class MarketOverviewClient {
         MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
     }.getOrNull()
 
-    private fun loadMovers(): List<MarketMoverRow> = (loadMoversFrom("shares", "57") + loadMoversFrom("bonds", "58"))
-        .distinctBy { it.ticker }
-
-    private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
+        private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/boardgroups/$boardGroup/securities.json?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,SHORTNAME&marketdata.columns=SECID,LAST,CHANGE"
         val json = getJson(url)
         val securities = json.optJSONObject("securities") ?: return@runCatching emptyList()
