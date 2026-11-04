@@ -266,58 +266,76 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
     }
     val step = stepFactor * magnitude / 4.0
     val axisMax = kotlin.math.ceil(rawMax / step) * step
-    val ticks = (0..4).map { axisMax - step * it }
-    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(modifier) {
-        Row(Modifier.fillMaxWidth().height(122.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Column(
-                Modifier.width(42.dp).fillMaxHeight().padding(vertical = 2.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-                horizontalAlignment = Alignment.End
-            ) {
-                ticks.forEach { tick ->
-                    val tickLabel = when {
-                        tick >= 1_000_000 -> String.format(Locale("ru", "RU"), "%.1fм", tick / 1_000_000.0)
-                        tick >= 10_000 -> String.format(Locale("ru", "RU"), "%.0fк", tick / 1_000.0)
-                        tick >= 1_000 -> String.format(Locale("ru", "RU"), "%.1fк", tick / 1_000.0)
-                        else -> String.format(Locale("ru", "RU"), "%.0f", tick)
-                    }
-                    Text(tickLabel, fontSize = 9.sp, color = labelColor, maxLines = 1)
-                }
+    val tickPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = labelColor.copy(alpha = .88f).toArgb()
+        textAlign = android.graphics.Paint.Align.RIGHT
+        textSize = 8.sp.toPx()
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+    }
+    val xLabelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = labelColor.toArgb()
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = (if (labels.firstOrNull()?.length ?: 0 >= 4) 7.sp else 8.sp).toPx()
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+    }
+    Canvas(modifier.fillMaxWidth().height(142.dp)) {
+        val axisWidth = 31.dp.toPx()
+        val left = axisWidth + 3.dp.toPx()
+        val right = size.width - 2.dp.toPx()
+        val top = 5.dp.toPx()
+        val bottom = size.height - 23.dp.toPx()
+        val chartHeight = bottom - top
+        val chartWidth = (right - left).coerceAtLeast(1f)
+
+        // Four clean intervals from zero to the chart maximum. The Y-axis
+        // labels stay in their own gutter and never collide with X-axis labels.
+        for (line in 0..4) {
+            val fraction = line / 4f
+            val y = bottom - chartHeight * fraction
+            drawLine(axisColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
+            val tick = axisMax * fraction
+            val tickLabel = when {
+                tick >= 1_000_000 -> String.format(Locale("ru", "RU"), "%.1fм", tick / 1_000_000.0)
+                tick >= 10_000 -> String.format(Locale("ru", "RU"), "%.0fк", tick / 1_000.0)
+                tick >= 1_000 -> String.format(Locale("ru", "RU"), "%.1fк", tick / 1_000.0)
+                else -> String.format(Locale("ru", "RU"), "%.0f", tick)
             }
-            Canvas(Modifier.weight(1f).fillMaxHeight()) {
-                val left = 2.dp.toPx()
-                val right = size.width - 2.dp.toPx()
-                val top = 4.dp.toPx()
-                val bottom = size.height - 3.dp.toPx()
-                val chartHeight = bottom - top
-                for (line in 0..4) {
-                    val y = top + chartHeight * line / 4f
-                    drawLine(axisColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
-                }
-                if (values.isNotEmpty()) {
-                    val slot = (right - left) / values.size
-                    values.forEachIndexed { index, value ->
-                        val barHeight = (value / axisMax).toFloat().coerceIn(0f, 1f) * chartHeight
-                        val x = left + slot * index + slot * .22f
-                        drawRoundRect(
-                            barColor,
-                            Offset(x, bottom - barHeight),
-                            androidx.compose.ui.geometry.Size(slot * .56f, barHeight),
-                            androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
-                        )
-                    }
-                }
-            }
+            drawContext.canvas.nativeCanvas.drawText(
+                tickLabel, axisWidth - 3.dp.toPx(),
+                y + tickPaint.textSize * .34f, tickPaint
+            )
         }
-        Row(Modifier.fillMaxWidth().padding(start = 46.dp, top = 3.dp)) {
-            values.forEachIndexed { index, _ ->
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    if (index % 2 == 0 || index == values.lastIndex) {
-                        Text(labels.getOrNull(index).orEmpty(), fontSize = 9.sp,
-                            color = labelColor, maxLines = 1)
-                    }
+
+        if (values.isNotEmpty()) {
+            val slot = chartWidth / values.size
+            values.forEachIndexed { index, value ->
+                val barHeight = (value / axisMax).toFloat().coerceIn(0f, 1f) * chartHeight
+                val barWidth = (slot * .58f).coerceAtMost(12.dp.toPx())
+                val x = left + slot * index + (slot - barWidth) / 2f
+                drawRoundRect(
+                    barColor,
+                    Offset(x, bottom - barHeight),
+                    androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                    androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                )
+            }
+
+            // Keep month captions legible in the narrow dashboard cards:
+            // show every second month (plus the final month), centered below
+            // its corresponding bar instead of squeezing each label into one bar slot.
+            val labelIndexes = if (values.size <= 6) values.indices.toList()
+                else (values.indices step 2).toMutableList().apply {
+                    if (lastOrNull() != values.lastIndex) add(values.lastIndex)
+                }
+            labelIndexes.forEach { index ->
+                val label = labels.getOrNull(index).orEmpty()
+                if (label.isNotBlank()) {
+                    val x = left + chartWidth * (index + .5f) / values.size
+                    drawContext.canvas.nativeCanvas.drawText(
+                        label, x, size.height - 3.dp.toPx(), xLabelPaint
+                    )
                 }
             }
         }
