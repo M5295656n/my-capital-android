@@ -301,10 +301,10 @@ private fun MyCapitalApp() {
         AddPayoutDialog(
             assets = assets,
             onDismiss = { showAddPayout = false },
-            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received ->
+            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received, expectedDate ->
                 scope.launch {
                     try {
-                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received)
+                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received, expectedDate)
                         showAddPayout = false
                     } catch (error: Exception) {
                         errorMessage = error.message ?: "Не удалось сохранить выплату"
@@ -1213,7 +1213,7 @@ private fun ReceivePayoutDialog(
 private fun AddPayoutDialog(
     assets: List<AssetEntity>,
     onDismiss: () -> Unit,
-    onSave: (AssetEntity?, String, Double, Double, Double, Boolean) -> Unit
+    onSave: (AssetEntity?, String, Double, Double, Double, Boolean, Long?) -> Unit
 ) {
     var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
     var payoutType by remember { mutableStateOf("Дивиденд") }
@@ -1258,7 +1258,7 @@ private fun AddPayoutDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received) }) { Text("Сохранить") }
+            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received, expectedDate) }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
