@@ -643,6 +643,7 @@ private fun OverviewScreen(
                         val portfolioColor = MaterialTheme.colorScheme.primary
                         val investedColor = MaterialTheme.colorScheme.onSurfaceVariant
                         val gridColor = MaterialTheme.colorScheme.outlineVariant
+                        val returnColor = MaterialTheme.colorScheme.secondary
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Column {
                                 Text(money(maxValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -680,7 +681,7 @@ private fun OverviewScreen(
                             }
                             drawSeries(values, portfolioColor, false, minValue, maxValue)
                             drawSeries(investedLine, investedColor, true, minValue, maxValue)
-                            drawSeries(returnValues, MaterialTheme.colorScheme.secondary, false, returnMin, returnMax)
+                            drawSeries(returnValues, returnColor, false, returnMin, returnMax)
                         }
                     }
                 }
