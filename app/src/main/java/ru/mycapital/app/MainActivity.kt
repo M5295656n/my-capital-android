@@ -626,6 +626,9 @@ private fun OverviewScreen(
                         )
                     } else {
                         val values = history.map { it.totalValue }
+                        val returnValues = history.map { it.nav - 100.0 }
+                        val returnMin = returnValues.minOrNull() ?: 0.0
+                        val returnMax = returnValues.maxOrNull() ?: 0.0
                         val moscowZone = java.time.ZoneId.of("Europe/Moscow")
                         val investedLine = history.map { point ->
                             val endOfDay = java.time.LocalDate.parse(point.dateKey).plusDays(1)
@@ -649,11 +652,12 @@ private fun OverviewScreen(
                                 val y = top + (bottom - top) * i / 3f
                                 drawLine(gridColor, Offset(left, y), Offset(right, y), 1f)
                             }
-                            fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean) {
+                            fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean, low: Double, high: Double) {
+                                val localSpan = (high - low).takeIf { it > 0.000001 } ?: 1.0
                                 val path = Path()
                                 series.forEachIndexed { index, value ->
                                     val x = left + (right - left) * index / (series.size - 1).toFloat()
-                                    val y = bottom - ((value - minValue) / span).toFloat() * (bottom - top)
+                                    val y = bottom - ((value - low) / localSpan).toFloat() * (bottom - top)
                                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                                 }
                                 drawPath(
@@ -662,8 +666,9 @@ private fun OverviewScreen(
                                         pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(9f, 7f)) else null)
                                 )
                             }
-                            drawSeries(values, portfolioColor, false)
-                            drawSeries(investedLine, investedColor, true)
+                            drawSeries(values, portfolioColor, false, minValue, maxValue)
+                            drawSeries(investedLine, investedColor, true, minValue, maxValue)
+                            drawSeries(returnValues, MaterialTheme.colorScheme.secondary, false, returnMin, returnMax)
                         }
                     }
                 }
