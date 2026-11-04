@@ -2,6 +2,7 @@ package ru.mycapital.app
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -189,7 +190,7 @@ internal fun MarketMoversSection(title: String, rows: List<MarketMoverRow>, posi
 internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
     val zone = ZoneId.systemDefault()
     val now = YearMonth.now()
-    val months = (1..12).map { YearMonth.of(now.year, it) }.filter { !it.isAfter(now) }
+    val months = (1..12).map { YearMonth.of(now.year, it) }.filter { !it.isAfter(now) }.takeLast(6)
     // The dashboard tracks all cash income, not dividends alone: bond coupons
     // are received payouts too and must be included in both monthly and yearly totals.
     val received = payouts.filter {
@@ -200,8 +201,7 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
         received.filter { YearMonth.from(Instant.ofEpochMilli(it.actualDate!!).atZone(zone)) == month }
             .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
     }
-    val firstYear = minOf(2022, received.minOfOrNull { Instant.ofEpochMilli(it.actualDate!!).atZone(zone).year } ?: now.year)
-    val years = (firstYear..now.year).toList()
+    val years = ((now.year - 3)..now.year).toList()
     val yearValues = years.map { year ->
         received.filter { Instant.ofEpochMilli(it.actualDate!!).atZone(zone).year == year }
             .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
@@ -214,10 +214,19 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
 
 @Composable
 private fun DividendChartCard(title: String, subtitle: String, values: List<Double>, labels: List<String>, color: Color, modifier: Modifier = Modifier) {
-    Card(modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .5f))) {
-        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 2, minLines = 2)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    val isGrowth = color == Color(0xFF35CC79)
+    Card(
+        modifier,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .34f)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF101D32))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(if (isGrowth) "↗" else "♔", color = Color(0xFF35A8F5), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, color = Color(0xFFDCE8FF))
+            }
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFFB2C1DA), maxLines = 1)
             DividendBarChart(values = values, labels = labels, barColor = color, modifier = Modifier.fillMaxWidth().height(142.dp))
         }
     }
@@ -267,13 +276,13 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
         normalized <= 5.0 -> 5.0
         else -> 10.0
     }
-    val step = stepFactor * magnitude / 4.0
-    val axisMax = kotlin.math.ceil(rawMax / step) * step
-    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f)
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val step = stepFactor * magnitude / 3.0
+    val axisMax = (kotlin.math.ceil(rawMax / step) * step).coerceAtLeast(1.0)
+    val axisColor = Color(0xFF52627A).copy(alpha = .58f)
+    val labelColor = Color(0xFFC3D0E5)
     val density = LocalDensity.current
     val tickPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-        color = labelColor.copy(alpha = .88f).toArgb()
+        color = labelColor.copy(alpha = .9f).toArgb()
         textAlign = android.graphics.Paint.Align.RIGHT
         textSize = with(density) { 8.sp.toPx() }
         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
@@ -281,65 +290,50 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
     val xLabelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = labelColor.toArgb()
         textAlign = android.graphics.Paint.Align.CENTER
-        textSize = with(density) { (if ((labels.firstOrNull()?.length ?: 0) >= 4) 7.sp else 8.sp).toPx() }
-        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+        textSize = with(density) { 8.sp.toPx() }
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
     Canvas(modifier.fillMaxWidth().height(142.dp)) {
-        val axisWidth = 31.dp.toPx()
+        val axisWidth = 29.dp.toPx()
         val left = axisWidth + 3.dp.toPx()
         val right = size.width - 2.dp.toPx()
         val top = 5.dp.toPx()
-        val bottom = size.height - 23.dp.toPx()
-        val chartHeight = bottom - top
+        val bottom = size.height - 25.dp.toPx()
+        val chartHeight = (bottom - top).coerceAtLeast(1f)
         val chartWidth = (right - left).coerceAtLeast(1f)
 
-        // Four clean intervals from zero to the chart maximum. The Y-axis
-        // labels stay in their own gutter and never collide with X-axis labels.
-        for (line in 0..4) {
-            val fraction = line / 4f
+        // Four evenly spaced positive ticks; zero is the baseline.
+        for (line in 0..3) {
+            val fraction = line / 3f
             val y = bottom - chartHeight * fraction
             drawLine(axisColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
             val tick = axisMax * fraction
             val tickLabel = when {
                 tick >= 1_000_000 -> String.format(Locale("ru", "RU"), "%.1fм", tick / 1_000_000.0)
                 tick >= 10_000 -> String.format(Locale("ru", "RU"), "%.0fк", tick / 1_000.0)
-                tick >= 1_000 -> String.format(Locale("ru", "RU"), "%.1fк", tick / 1_000.0)
+                tick >= 1_000 -> String.format(Locale("ru", "RU"), "%.0f", tick)
                 else -> String.format(Locale("ru", "RU"), "%.0f", tick)
             }
-            drawContext.canvas.nativeCanvas.drawText(
-                tickLabel, axisWidth - 3.dp.toPx(),
-                y + tickPaint.textSize * .34f, tickPaint
-            )
+            drawContext.canvas.nativeCanvas.drawText(tickLabel, axisWidth - 3.dp.toPx(), y + tickPaint.textSize * .34f, tickPaint)
         }
 
         if (values.isNotEmpty()) {
             val slot = chartWidth / values.size
             values.forEachIndexed { index, value ->
                 val barHeight = (value / axisMax).toFloat().coerceIn(0f, 1f) * chartHeight
-                val barWidth = (slot * .58f).coerceAtMost(12.dp.toPx())
+                val barWidth = (slot * .58f).coerceAtMost(14.dp.toPx())
                 val x = left + slot * index + (slot - barWidth) / 2f
-                drawRoundRect(
-                    barColor,
-                    Offset(x, bottom - barHeight),
-                    androidx.compose.ui.geometry.Size(barWidth, barHeight),
-                    androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
-                )
-            }
-
-            // Keep month captions legible in the narrow dashboard cards:
-            // show every second month (plus the final month), centered below
-            // its corresponding bar instead of squeezing each label into one bar slot.
-            val labelIndexes = if (values.size <= 6) values.indices.toList()
-                else (values.indices step 2).toMutableList().apply {
-                    if (lastOrNull() != values.lastIndex) add(values.lastIndex)
+                if (barHeight > 0f) {
+                    drawRoundRect(
+                        barColor,
+                        Offset(x, bottom - barHeight),
+                        androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                        androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                    )
                 }
-            labelIndexes.forEach { index ->
                 val label = labels.getOrNull(index).orEmpty()
                 if (label.isNotBlank()) {
-                    val x = left + chartWidth * (index + .5f) / values.size
-                    drawContext.canvas.nativeCanvas.drawText(
-                        label, x, size.height - 3.dp.toPx(), xLabelPaint
-                    )
+                    drawContext.canvas.nativeCanvas.drawText(label, left + slot * (index + .5f), size.height - 3.dp.toPx(), xLabelPaint)
                 }
             }
         }
