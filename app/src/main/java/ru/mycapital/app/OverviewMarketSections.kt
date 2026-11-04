@@ -209,6 +209,39 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
     }
 }
 
+
+@Composable
+private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
+    val key = ticker.uppercase()
+    val background = when (key) {
+        "USD000UTSTOM" -> Color(0xFF244A87)
+        "EUR_RUB__TOM" -> Color(0xFF2454A6)
+        "CNYRUB_TOM" -> Color(0xFFB52D35)
+        "GLDRUB_TOM" -> Color(0xFFB88B24)
+        "SBER", "SBERP" -> Color(0xFF20A66A)
+        "YDEX" -> Color(0xFFFF4438)
+        "ROSN" -> Color(0xFF252525)
+        "TATN" -> Color(0xFF168A59)
+        "T" -> Color(0xFFFFD400)
+        "LKOH" -> Color(0xFFB51F2A)
+        "GAZP" -> Color(0xFF168BCB)
+        "X5" -> Color(0xFF00A66C)
+        "MOEX" -> Color(0xFF2464A8)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val mark = when (key) {
+        "USD000UTSTOM" -> "$"
+        "EUR_RUB__TOM" -> "€"
+        "CNYRUB_TOM" -> "¥"
+        "GLDRUB_TOM" -> "Au"
+        else -> key.take(3)
+    }
+    Box(modifier.clip(RoundedCornerShape(10.dp)).background(background), contentAlignment = Alignment.Center) {
+        Text(mark, color = if (key == "T") Color(0xFF171717) else Color.White,
+            fontWeight = FontWeight.Bold, fontSize = if (mark.length > 2) 10.sp else 15.sp)
+    }
+}
+
 @Composable
 private fun DividendBarChart(values: List<Double>, labels: List<String>, barColor: Color, modifier: Modifier = Modifier) {
     val maxValue = max(1.0, values.maxOrNull() ?: 0.0)
