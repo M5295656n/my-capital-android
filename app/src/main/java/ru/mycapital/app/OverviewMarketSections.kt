@@ -136,7 +136,7 @@ internal class MarketOverviewClient {
 
 @Composable
 internal fun MarketQuotesSection(marketData: MarketOverviewData) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Мои котировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Все →", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
@@ -144,22 +144,17 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
         if (marketData.quotes.isEmpty()) {
             Text(marketData.error ?: "Загружаем котировки…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         } else {
-            marketData.quotes.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    pair.forEach { quote ->
-                        Card(Modifier.weight(1f), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))) {
-                            Column(Modifier.fillMaxWidth().padding(11.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                MarketInstrumentIcon(quote.ticker, Modifier.size(36.dp))
-                                Text(quote.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                Text(quote.price?.let { "${marketMoney(it)} ₽" } ?: "—", fontWeight = FontWeight.Bold, maxLines = 1)
-                                val change = quote.changePercent
-                                Text(change?.let { "${if (it >= 0) "▲ +" else "▼ "}${percent(it)}%" } ?: "—",
-                                    color = change?.let { if (it >= 0) Color(0xFF55C99A) else Color(0xFFE87979) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.SemiBold)
-                            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                marketData.quotes.take(4).forEach { quote ->
+                    Card(Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            MarketInstrumentIcon(quote.ticker, Modifier.size(29.dp))
+                            Text(quote.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(quote.price?.let { "${marketMoney(it)} ₽" } ?: "—", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            val change = quote.changePercent
+                            Text(change?.let { "${if (it >= 0) "▲" else "▼"}${percent(it)}%" } ?: "—", fontSize = 10.sp, color = change?.let { if (it >= 0) Color(0xFF55C99A) else Color(0xFFE87979) } ?: MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         }
                     }
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
