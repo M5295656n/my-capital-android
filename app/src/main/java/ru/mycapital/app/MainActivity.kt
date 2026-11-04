@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -242,7 +243,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, onOpenSettings = { selected = Screen.More }, onOpenPayouts = { selected = Screen.Payouts }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -464,6 +465,7 @@ private fun OverviewScreen(
     isRefreshing: Boolean,
     quoteRefreshStatus: String?,
     onOpenSettings: () -> Unit,
+    onOpenPayouts: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val portfolioTotal = total + cashBalance
@@ -698,7 +700,7 @@ private fun OverviewScreen(
         }
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().clickable { /* navigate to payouts via bottom tab */ },
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenPayouts),
                 shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
             ) {
@@ -722,7 +724,7 @@ private fun OverviewScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Все  →", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { /* payouts tab is available below */ })
+                Text("Все  →", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable(onClick = onOpenPayouts))
             }
             if (nextPayout == null) {
                 Text("Пока нет ожидаемых выплат с известной датой.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -740,7 +742,7 @@ private fun OverviewScreen(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(nextPayout.ticker, fontWeight = FontWeight.SemiBold)
+                            Text(assets.firstOrNull { it.ticker.equals(nextPayout.ticker, ignoreCase = true) }?.name ?: nextPayout.ticker, fontWeight = FontWeight.SemiBold)
                             Text(if (nextPayout.payoutType.contains("coupon", true) || nextPayout.payoutType.contains("купон", true)) "Купоны" else "Дивиденды", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("≈ ${money(nextPayout.totalAmount)} ₽", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
