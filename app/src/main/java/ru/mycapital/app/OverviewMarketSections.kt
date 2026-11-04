@@ -130,112 +130,82 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Мои котировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("MOEX", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+            Text("Все →", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         }
         if (marketData.quotes.isEmpty()) {
             Text(marketData.error ?: "Загружаем котировки…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         } else {
-            marketData.quotes.forEach { quote ->
-                Card(shape = RoundedCornerShape(15.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                        MarketInstrumentIcon(quote.ticker, Modifier.size(38.dp))
-                        Text(quote.label, Modifier.weight(1f).padding(start = 12.dp), fontWeight = FontWeight.SemiBold)
-                        Text(quote.price?.let { "${marketMoney(it)} ₽" } ?: "—", fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.size(10.dp))
-                        val change = quote.changePercent
-                        Text(change?.let { "${if (it >= 0) "▲" else "▼"} ${percent(it)}%" } ?: "—",
-                            color = change?.let { if (it >= 0) Color(0xFF55C99A) else Color(0xFFE87979) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold)
+            marketData.quotes.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEach { quote ->
+                        Card(Modifier.weight(1f), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))) {
+                            Column(Modifier.fillMaxWidth().padding(11.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                MarketInstrumentIcon(quote.ticker, Modifier.size(36.dp))
+                                Text(quote.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(quote.price?.let { "${marketMoney(it)} ₽" } ?: "—", fontWeight = FontWeight.Bold, maxLines = 1)
+                                val change = quote.changePercent
+                                Text(change?.let { "${if (it >= 0) "▲ +" else "▼ "}${percent(it)}%" } ?: "—",
+                                    color = change?.let { if (it >= 0) Color(0xFF55C99A) else Color(0xFFE87979) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                     }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
     }
 }
-
 @Composable
 internal fun MarketMoversSection(title: String, rows: List<MarketMoverRow>, positive: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        if (rows.isEmpty()) {
-            Text("Нет доступных данных по дневному изменению.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        } else {
-            rows.forEach { row ->
-                val tint = if (positive) Color(0xFF55C99A) else Color(0xFFE87979)
-                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MarketInstrumentIcon(row.ticker, Modifier.size(44.dp))
-                    Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(row.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                        Text(row.ticker, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("${marketMoney(row.price)} ₽", fontWeight = FontWeight.SemiBold)
-                        Text("${if (row.change >= 0) "+" else ""}${marketMoney(row.change)} ₽  ${if (row.change >= 0) "▲" else "▼"} ${percent(row.changePercent)}%",
-                            color = tint, fontWeight = FontWeight.Medium)
-                    }
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .5f))) {
+        Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(if (positive) "↗" else "↘", color = if (positive) Color(0xFF55C99A) else Color(0xFFE87979), fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 2)
+            }
+            if (rows.isEmpty()) {
+                Text("Нет данных по активам портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            } else rows.take(5).forEach { row ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    MarketInstrumentIcon(row.ticker, Modifier.size(27.dp))
+                    Text(row.name, Modifier.weight(1f).padding(start = 6.dp), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    Text("${if (row.changePercent >= 0) "+" else ""}${percent(row.changePercent)}%", color = if (positive) Color(0xFF55C99A) else Color(0xFFE87979), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
-
 @Composable
 internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
     val zone = ZoneId.systemDefault()
     val now = YearMonth.now()
-    val months = (11 downTo 0).map { now.minusMonths(it.toLong()) }
-    val receivedByMonth = payouts.filter { it.status == "RECEIVED" && it.actualDate != null && it.payoutType.contains("див", ignoreCase = true) }
-        .groupBy { YearMonth.from(Instant.ofEpochMilli(it.actualDate!!).atZone(zone)) }
-        .mapValues { (_, items) -> items.sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) } }
-    val values = months.map { receivedByMonth[it] ?: 0.0 }
-    val annual = values.sum()
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Полученные дивиденды", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f))) {
-            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${marketMoney(annual)} ₽ за 12 месяцев", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                DividendBarChart(values = values, labels = months.map { it.monthShortRu() }, barColor = Color(0xFF16B5F4), modifier = Modifier.fillMaxWidth().height(190.dp))
-            }
-        }
-        Text("Рост дивидендов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f))) {
-            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Накопленная сумма с начала периода", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                DividendBarChart(values = values.runningTotals(), labels = months.map { it.monthShortRu() }, barColor = Color(0xFF9A67F5), modifier = Modifier.fillMaxWidth().height(190.dp))
-            }
-        }
+    val months = (1..12).map { YearMonth.of(now.year, it) }.filter { !it.isAfter(now) }
+    val received = payouts.filter { it.status == "RECEIVED" && it.actualDate != null && it.payoutType.contains("див", ignoreCase = true) }
+    val monthValues = months.map { month ->
+        received.filter { YearMonth.from(Instant.ofEpochMilli(it.actualDate!!).atZone(zone)) == month }
+            .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
+    }
+    val firstYear = minOf(2022, received.minOfOrNull { Instant.ofEpochMilli(it.actualDate!!).atZone(zone).year } ?: now.year)
+    val years = (firstYear..now.year).toList()
+    val yearValues = years.map { year ->
+        received.filter { Instant.ofEpochMilli(it.actualDate!!).atZone(zone).year == year }
+            .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        DividendChartCard("Полученные дивиденды", "${marketMoney(monthValues.sum())} ₽ за год", monthValues, months.map { it.monthShortRu() }, Color(0xFF16B5F4), Modifier.weight(1f))
+        DividendChartCard("Рост дивидендов", "По календарным годам", yearValues, years.map(Int::toString), Color(0xFF35CC79), Modifier.weight(1f))
     }
 }
 
-
 @Composable
-private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
-    val key = ticker.uppercase()
-    val bg = when (key) {
-        "USD000UTSTOM" -> Color(0xFF244A87)
-        "EUR_RUB__TOM" -> Color(0xFF2454A6)
-        "CNYRUB_TOM" -> Color(0xFFB52D35)
-        "GLDRUB_TOM" -> Color(0xFFB88B24)
-        "SBER", "SBERP" -> Color(0xFF20A66A)
-        "YDEX" -> Color(0xFFFF4438)
-        "ROSN" -> Color(0xFF252525)
-        "TATN" -> Color(0xFF168A59)
-        "T" -> Color(0xFFFFD400)
-        "LKOH" -> Color(0xFFB51F2A)
-        "GAZP" -> Color(0xFF168BCB)
-        "X5" -> Color(0xFF00A66C)
-        "MOEX" -> Color(0xFF2464A8)
-        else -> MaterialTheme.colorScheme.surface
-    }
-    val mark = when (key) {
-        "USD000UTSTOM" -> "$"
-        "EUR_RUB__TOM" -> "€"
-        "CNYRUB_TOM" -> "¥"
-        "GLDRUB_TOM" -> "Au"
-        else -> key.take(3)
-    }
-    Box(modifier.clip(RoundedCornerShape(10.dp)).background(bg), contentAlignment = Alignment.Center) {
-        Text(mark, color = if (key == "T") Color(0xFF171717) else Color.White, fontWeight = FontWeight.Bold, fontSize = if (mark.length > 2) 10.sp else 15.sp)
+private fun DividendChartCard(title: String, subtitle: String, values: List<Double>, labels: List<String>, color: Color, modifier: Modifier = Modifier) {
+    Card(modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .5f))) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 2, minLines = 2)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            DividendBarChart(values = values, labels = labels, barColor = color, modifier = Modifier.fillMaxWidth().height(142.dp))
+        }
     }
 }
 
