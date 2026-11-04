@@ -171,16 +171,6 @@ private fun MyCapitalApp() {
         .collectAsState(initial = emptyList())
     val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING || it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED } ||
         eventWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING || it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
-    val quoteRefreshStatus = quoteWorkInfos.firstOrNull()?.let { info ->
-        when (info.state) {
-            androidx.work.WorkInfo.State.RUNNING -> "Обновляю котировки MOEX…"
-            androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Обновление котировок ожидает запуска…"
-            androidx.work.WorkInfo.State.SUCCEEDED -> info.outputData.getString("summary") ?: "Обновление котировок завершено."
-            androidx.work.WorkInfo.State.FAILED -> "Не удалось обновить котировки. Проверьте подключение к интернету."
-            androidx.work.WorkInfo.State.CANCELLED -> "Обновление котировок отменено."
-        }
-    }
-
     LaunchedEffect(Unit) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val periodic = PeriodicWorkRequestBuilder<QuoteRefreshWorker>(6, TimeUnit.HOURS)
@@ -254,7 +244,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -474,7 +464,6 @@ private fun OverviewScreen(
     snapshots: List<PortfolioSnapshotEntity>,
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
-    quoteRefreshStatus: String?,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
