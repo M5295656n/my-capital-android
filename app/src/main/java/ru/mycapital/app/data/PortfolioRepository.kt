@@ -472,7 +472,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         amountPerUnit: Double,
         quantity: Double,
         taxAmount: Double,
-        isReceived: Boolean
+        isReceived: Boolean,
+        expectedDate: Long? = null
     ) {
         require(ticker.isNotBlank()) { "Укажите тикер" }
         require(payoutType == "Дивиденд" || payoutType == "Купон") { "Неизвестный тип выплаты" }
@@ -492,8 +493,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     quantity = quantity,
                     totalAmount = gross,
                     taxAmount = taxAmount,
-                    // No expected payment date is collected by the current form; do not invent one.
-                    expectedDate = null,
+                    expectedDate = if (isReceived) null else expectedDate,
                     actualDate = if (isReceived) now else null,
                     status = if (isReceived) "RECEIVED" else "EXPECTED"
                 )
