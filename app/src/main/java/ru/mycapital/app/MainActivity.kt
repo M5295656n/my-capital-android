@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
@@ -737,14 +739,36 @@ private fun OverviewScreen(
             if (allocation.isEmpty()) Text("Добавьте активы или свободные деньги, чтобы увидеть распределение.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             else Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Canvas(Modifier.fillMaxWidth().height(190.dp)) {
+                    val donutRadiusPx = with(androidx.compose.ui.platform.LocalDensity.current) { 82.dp.toPx() }
+                    val donutStrokePx = with(androidx.compose.ui.platform.LocalDensity.current) { 28.dp.toPx() }
+                    Canvas(
+                        Modifier.fillMaxWidth().height(190.dp).pointerInput(allocation) {
+                            detectTapGestures { tap ->
+                                val centerX = size.width / 2f
+                                val centerY = size.height / 2f
+                                val dx = tap.x - centerX
+                                val dy = tap.y - centerY
+                                val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+                                if (distance in (donutRadiusPx - donutStrokePx)..(donutRadiusPx + donutStrokePx)) {
+                                    val angle = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble()))
+                                    val normalizedAngle = ((angle + 90.0 + 360.0) % 360.0)
+                                    var accumulated = 0.0
+                                    val selected = allocation.firstOrNull { slice ->
+                                        accumulated += slice.share * 360.0
+                                        normalizedAngle < accumulated
+                                    }
+                                    selectedAllocation = selected?.label
+                                }
+                            }
+                        }
+                    ) {
                         var start = -90f
                         allocation.forEachIndexed { index, slice ->
                             val sweep = (slice.share * 360.0).toFloat()
                             drawArc(allocationColors[index % allocationColors.size], start, sweep, false,
-                                topLeft = Offset(size.width / 2f - 82.dp.toPx(), size.height / 2f - 82.dp.toPx()),
-                                size = androidx.compose.ui.geometry.Size(164.dp.toPx(), 164.dp.toPx()),
-                                style = Stroke(width = 28.dp.toPx()))
+                                topLeft = Offset(size.width / 2f - donutRadiusPx, size.height / 2f - donutRadiusPx),
+                                size = androidx.compose.ui.geometry.Size(donutRadiusPx * 2f, donutRadiusPx * 2f),
+                                style = Stroke(width = donutStrokePx))
                             start += sweep
                         }
                     }
