@@ -485,7 +485,7 @@ private fun OverviewScreen(
     val loadMarketData: () -> Unit = {
         marketScope.launch {
             marketLoading = true
-            marketData = runCatching { withContext(kotlinx.coroutines.Dispatchers.IO) { MarketOverviewClient().load() } }
+            marketData = runCatching { withContext(kotlinx.coroutines.Dispatchers.IO) { MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()) } }
                 .getOrElse { marketData.copy(error = it.message ?: "Не удалось загрузить рыночные данные") }
             marketLoading = false
         }
@@ -579,14 +579,19 @@ private fun OverviewScreen(
                 }
             }
             if (isRefreshing || marketLoading || pullDistance > 0f) {
-                LinearProgressIndicator(
-                    progress = { if (isRefreshing || marketLoading) 1f else (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                )
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    if (isRefreshing || marketLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        CircularProgressIndicator(
+                            progress = { (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
             }
-            quoteRefreshStatus?.let {
-                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            // Detailed MOEX diagnostics stay out of the dashboard; refresh feedback is the compact spinner above.
         }
         item {
             Row(
@@ -645,8 +650,13 @@ private fun OverviewScreen(
                         )
                     } else {
                         val values = history.map { it.totalValue }
+                        val moscowZone = java.time.ZoneId.of("Europe/Moscow")
                         val investedLine = history.map { point ->
-                            orderedSnapshots.filter { it.dateKey <= point.dateKey }.sumOf { it.externalFlow }
+                            val endOfDay = java.time.LocalDate.parse(point.dateKey).plusDays(1)
+                                .atStartOfDay(moscowZone).toInstant().toEpochMilli()
+                            operations.asSequence()
+                                .filter { it.operationDate < endOfDay && (it.operationType == "Пополнение" || it.operationType == "Вывод") }
+                                .sumOf { if (it.operationType == "Пополнение") it.price else -it.price }
                         }
                         val minValue = (values + investedLine).minOrNull() ?: 0.0
                         val maxValue = (values + investedLine).maxOrNull() ?: 1.0
