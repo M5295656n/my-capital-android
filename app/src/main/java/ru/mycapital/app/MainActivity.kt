@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,6 +48,7 @@ import ru.mycapital.app.data.QuoteRefreshWorker
 import ru.mycapital.app.data.CorporateEventsWorker
 import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
+import java.time.YearMonth
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
@@ -1037,7 +1039,12 @@ private fun PayoutsScreen(
         it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
     }
     val expected = visiblePayouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
-    Column(modifier.fillMaxSize().padding(20.dp)) {
+
+    // One page-level scroll: header, forecast, and payout history move together.
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -1047,16 +1054,13 @@ private fun PayoutsScreen(
                 Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
             }
         }
-        Spacer(Modifier.height(8.dp))
         AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
-        Spacer(Modifier.height(12.dp))
         Card(shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
                 Text("Всего получено после налога", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(money(received) + " ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(Modifier.height(8.dp))
         Card(shape = RoundedCornerShape(16.dp)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1066,57 +1070,55 @@ private fun PayoutsScreen(
                 Text("До налога", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
         }
-        Spacer(Modifier.height(12.dp))
         PayoutForecastCard(visiblePayouts)
-        Spacer(Modifier.height(12.dp))
         if (visiblePayouts.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
                 Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон." else "Для выбранного счёта выплат нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 80.dp)) {
-                items(visiblePayouts, key = { it.id }) { payout ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
-                                    color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (payout.reportedNetAmount != null) {
-                                Text("Зачислено по брокерскому отчёту: ${money(payout.reportedNetAmount)} ₽")
-                                Text("Сумма до налога и удержанный налог в отчёте отдельно не раскрыты",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
-                                Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
-                            }
-                            payout.expectedDate?.let {
-                                Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            payout.actualDate?.let {
-                                Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (payout.status == "EXPECTED") {
-                                TextButton(onClick = { onConfirmReceipt(payout) }) {
-                                    Text("Подтвердить получение")
-                                }
+            Text("История выплат", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            visiblePayouts.forEach { payout ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
+                                color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (payout.reportedNetAmount != null) {
+                            Text("Зачислено по брокерскому отчёту: ${money(payout.reportedNetAmount)} ₽")
+                            Text("Сумма до налога и удержанный налог в отчёте отдельно не раскрыты",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
+                            Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
+                        }
+                        payout.expectedDate?.let {
+                            Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        payout.actualDate?.let {
+                            Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (payout.status == "EXPECTED") {
+                            TextButton(onClick = { onConfirmReceipt(payout) }) {
+                                Text("Подтвердить получение")
                             }
                         }
                     }
                 }
             }
         }
+        Spacer(Modifier.height(72.dp))
     }
 }
 
 @Composable
 private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
-    val forecast = remember(payouts) {
-        calculatePayoutForecast(payouts)
-    }
+    val forecast = remember(payouts) { calculatePayoutForecast(payouts) }
+    var shownMonth by remember { mutableStateOf(YearMonth.now()) }
+    val monthForecast = forecast.monthly.firstOrNull { it.month == shownMonth }
     Card(shape = RoundedCornerShape(16.dp)) {
         Column(
             Modifier.fillMaxWidth().padding(14.dp),
@@ -1138,34 +1140,37 @@ private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
                     Text("${money(forecast.next90Days)} ₽", fontWeight = FontWeight.SemiBold)
                 }
             }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { shownMonth = shownMonth.minusMonths(1) }) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Предыдущий месяц")
+                }
+                Text(
+                    shownMonth.format(java.time.format.DateTimeFormatter.ofPattern("LLLL yyyy", java.util.Locale("ru", "RU")))
+                        .replaceFirstChar { it.titlecase(java.util.Locale("ru", "RU")) },
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.SemiBold
+                )
+                IconButton(onClick = { shownMonth = shownMonth.plusMonths(1) }) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Следующий месяц")
+                }
+            }
+            if (monthForecast == null) {
+                Text("На этот месяц ожидаемых выплат с известной датой нет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${monthForecast.paymentCount} ${if (monthForecast.paymentCount == 1) "выплата" else if (monthForecast.paymentCount in 2..4) "выплаты" else "выплат"}")
+                    Text("${money(monthForecast.amount)} ₽", fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (forecast.monthly.isEmpty()) {
                 Text(
-                    "Нет ожидаемых выплат с будущей датой. Обновите корпоративные события или добавьте выплату вручную.",
+                    "Пока нет ожидаемых выплат с будущей датой. Обновите корпоративные события или добавьте выплату вручную.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                HorizontalDivider()
-                forecast.monthly.take(6).forEach { month ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f)) {
-                            Text(month.displayMonth(), style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "${month.paymentCount} ${if (month.paymentCount == 1) "выплата" else if (month.paymentCount in 2..4) "выплаты" else "выплат"}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Text("${money(month.amount)} ₽", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                if (forecast.monthly.size > 6) {
-                    Text(
-                        "Показаны ближайшие 6 месяцев",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }
