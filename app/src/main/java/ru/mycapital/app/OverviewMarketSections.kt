@@ -201,8 +201,8 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
         Text("Рост дивидендов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f))) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Динамика выплат по месяцам", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                DividendBarChart(values = values, labels = months.map { it.monthShortRu() }, barColor = Color(0xFF9A67F5), modifier = Modifier.fillMaxWidth().height(190.dp))
+                Text("Накопленная сумма с начала периода", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                DividendBarChart(values = values.runningTotals(), labels = months.map { it.monthShortRu() }, barColor = Color(0xFF9A67F5), modifier = Modifier.fillMaxWidth().height(190.dp))
             }
         }
     }
@@ -233,6 +233,8 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
         labels.forEach { Text(it, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
     }
 }
+
+private fun List<Double>.runningTotals(): List<Double> { var total = 0.0; return map { total += it; total } }
 
 private fun YearMonth.monthShortRu(): String = when (monthValue) {
     1 -> "янв"; 2 -> "фев"; 3 -> "мар"; 4 -> "апр"; 5 -> "май"; 6 -> "июн"
