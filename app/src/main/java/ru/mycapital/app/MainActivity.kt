@@ -69,11 +69,12 @@ class MainActivity : ComponentActivity() {
 
 private enum class Screen(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Overview("Обзор", Icons.Default.Home),
-    Assets("Активы", Icons.Default.AccountBalanceWallet),
-    Accounts("Счета", Icons.Default.AccountBalance),
+    Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
-    Operations("Операции", Icons.Default.SwapHoriz),
-    Analytics("Аналитика", Icons.Default.ShowChart)
+    Analytics("Аналитика", Icons.Default.ShowChart),
+    More("Ещё", Icons.Default.MoreHoriz),
+    Accounts("Счета", Icons.Default.AccountBalance),
+    Operations("Операции", Icons.Default.SwapHoriz)
 }
 
 @Composable
@@ -88,6 +89,7 @@ private fun MyCapitalApp() {
     val cashBalance by dao.observeCashBalance().collectAsState(initial = 0.0)
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
+    var moreDestination by remember { mutableStateOf(Screen.More) }
     var showAddAsset by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
     var assetToDelete by remember { mutableStateOf<AssetEntity?>(null) }
@@ -157,6 +159,11 @@ private fun MyCapitalApp() {
     val quoteWorkInfos by WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("moex_quote_refresh_manual")
         .collectAsState(initial = emptyList())
+    val eventWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("moex_events_refresh_manual")
+        .collectAsState(initial = emptyList())
+    val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING || it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED } ||
+        eventWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING || it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
     val quoteRefreshStatus = quoteWorkInfos.firstOrNull()?.let { info ->
         when (info.state) {
             androidx.work.WorkInfo.State.RUNNING -> "Обновляю котировки MOEX…"
@@ -200,8 +207,12 @@ private fun MyCapitalApp() {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val request = OneTimeWorkRequestBuilder<CorporateEventsWorker>().setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "moex_events_refresh_manual", ExistingWorkPolicy.KEEP, request
+            "moex_events_refresh_manual", ExistingWorkPolicy.REPLACE, request
         )
+    }
+    val refreshAllMarketData: () -> Unit = {
+        refreshQuotes()
+        refreshEvents()
     }
 
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
@@ -215,9 +226,9 @@ private fun MyCapitalApp() {
             },
             bottomBar = {
                 NavigationBar {
-                    Screen.entries.forEach { screen ->
+                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
                         NavigationBarItem(
-                            selected = selected == screen,
+                            selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
                             icon = { Icon(screen.icon, contentDescription = screen.title) },
                             label = { Text(screen.title, fontSize = 10.sp) }
@@ -227,12 +238,21 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, quoteRefreshStatus, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.More -> MoreScreen(
+                    isParsingReport = isParsingReport,
+                    isExportingData = isExportingData,
+                    onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
+                    onExportData = { exportPicker.launch("my-capital-export.zip") },
+                    onOpenAccounts = { selected = Screen.Accounts },
+                    onOpenOperations = { selected = Screen.Operations },
+                    modifier = Modifier.padding(padding)
+                )
             }
         }
     }
@@ -428,27 +448,28 @@ private fun MyCapitalApp() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, quoteRefreshStatus: String?, modifier: Modifier = Modifier) {
+private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefresh: () -> Unit, isRefreshing: Boolean, quoteRefreshStatus: String?, modifier: Modifier = Modifier) {
     val assetCount = assets.size
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = total - invested
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     val allocation = calculatePortfolioAllocation(assets, cashBalance)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize()
+    ) {
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Text("Мой капитал", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Ваш инвестиционный портфель", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = onRefreshQuotes) {
-                Icon(Icons.Default.Refresh, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Обновить котировки MOEX")
-            }
+            Text("Потяните вниз, чтобы обновить котировки и выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
             quoteRefreshStatus?.let {
                 Text(
                     it,
@@ -456,16 +477,6 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                     color = if (it.contains("Ошибок:") || it.startsWith("Не удалось")) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            OutlinedButton(onClick = onImportReport, enabled = !isParsingReport) {
-                Icon(Icons.Default.FileOpen, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
-            }
-            OutlinedButton(onClick = onExportData, enabled = !isExportingData) {
-                Icon(Icons.Default.FileDownload, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
             }
         }
         item {
@@ -521,6 +532,59 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 else "Стоимость рассчитана по последней сохранённой цене. Котировки MOEX могут иметь задержку до 15 минут.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+    }
+}
+
+@Composable
+private fun MoreScreen(
+    isParsingReport: Boolean,
+    isExportingData: Boolean,
+    onImportReport: () -> Unit,
+    onExportData: () -> Unit,
+    onOpenAccounts: () -> Unit,
+    onOpenOperations: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Дополнительные инструменты и управление данными", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenAccounts)) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AccountBalance, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Брокерские счета", fontWeight = FontWeight.SemiBold)
+                    Text("Договоры и остатки по счетам", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenOperations)) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.SwapHoriz, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("История операций", fontWeight = FontWeight.SemiBold)
+                    Text("Покупки, продажи, пополнения и выводы", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        Text("Файлы и резервные копии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedButton(onClick = onImportReport, enabled = !isParsingReport, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.FileOpen, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
+        }
+        OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.FileDownload, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
         }
     }
 }
