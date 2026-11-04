@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -593,47 +594,74 @@ private fun OverviewScreen(
         }
         item {
             Card(
+                modifier = Modifier.fillMaxWidth().border(
+                    1.dp, androidx.compose.ui.graphics.Color(0xFF223653), RoundedCornerShape(24.dp)
+                ),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Общая стоимость портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleMedium)
-                        Row(Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = .8f)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Общая стоимость портфеля",
+                            color = androidx.compose.ui.graphics.Color(0xFFB8C9E8),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1
+                        )
+                        Row(
+                            Modifier.clip(RoundedCornerShape(24.dp))
+                                .background(androidx.compose.ui.graphics.Color(0xFF1A2942))
+                                .padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
                             PortfolioHistoryRange.entries.forEach { range ->
                                 val active = selectedRange == range
-                                Text(range.label, modifier = Modifier.clip(RoundedCornerShape(20.dp))
-                                    .background(if (active) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
-                                    .clickable { selectedRange = range }.padding(horizontal = 9.dp, vertical = 7.dp),
-                                    color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.labelMedium, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
+                                Text(
+                                    range.label,
+                                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                                        .background(if (active) androidx.compose.ui.graphics.Color(0xFF1688F8) else androidx.compose.ui.graphics.Color.Transparent)
+                                        .clickable { selectedRange = range }
+                                        .padding(horizontal = 9.dp, vertical = 7.dp),
+                                    color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                                )
                             }
                         }
                     }
-                    Text("${money(portfolioTotal)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "${if (totalProfit >= 0) "+" else ""}${money(totalProfit)} ₽" +
-                            (profitPercent?.let { "  ·  ${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.1f", it)}%" } ?: ""),
+                        "${money(portfolioTotal)} ₽",
+                        modifier = Modifier.padding(top = 2.dp),
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = androidx.compose.ui.graphics.Color(0xFFF5F7FC)
+                    )
+                    Text(
+                        (if (totalProfit >= 0) "▲ +" else "▼ −") + "${money(kotlin.math.abs(totalProfit))} ₽" +
+                            (profitPercent?.let { " (${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f", it)}%)" } ?: ""),
+                        modifier = Modifier.padding(top = 1.dp, bottom = 14.dp),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = if (totalProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        color = if (totalProfit >= 0) androidx.compose.ui.graphics.Color(0xFF25D879) else androidx.compose.ui.graphics.Color(0xFFFF5964)
                     )
-                    Text(
-                        if (netContributions > 0.0) "Вложено собственных средств: ${money(netContributions)} ₽"
-                        else "История пополнений пока неполная — сумма собственных вложений не определена",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text("Динамика портфеля", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("● Стоимость портфеля", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        Text("┄ Вложенные средства", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                     if (history.size < 2) {
-                        Text(
-                            "График появится после накопления минимум двух дневных снимков.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Box(
+                            Modifier.fillMaxWidth().height(190.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "График появится после накопления минимум двух дневных снимков.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
+                            )
+                        }
                     } else {
                         val portfolioValues = history.map { it.totalValue }
                         val moscowZone = java.time.ZoneId.of("Europe/Moscow")
@@ -648,27 +676,38 @@ private fun OverviewScreen(
                         val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
                         val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
                         val axisValues = (0..3).map { maxValue - span * it / 3.0 }
-                        val portfolioColor = MaterialTheme.colorScheme.primary
-                        val investedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f)
+                        val portfolioColor = androidx.compose.ui.graphics.Color(0xFF2698FF)
+                        val investedColor = androidx.compose.ui.graphics.Color(0xFF8798B5)
+                        val gridColor = androidx.compose.ui.graphics.Color(0xFF293A55)
+                        val axisColor = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
+                        val chartDates = listOf(0, (history.lastIndex / 3), (history.lastIndex * 2 / 3), history.lastIndex)
+                            .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(62.dp).height(132.dp),
+                                Modifier.width(66.dp).height(158.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
-                                    Text(money(value), style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                    Text(
+                                        money(value).substringBefore(','),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = axisColor,
+                                        maxLines = 1
+                                    )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(132.dp)) {
-                                val left = 3f
-                                val right = size.width - 3f
-                                val top = 8f
-                                val bottom = size.height - 8f
+                            Canvas(Modifier.weight(1f).height(158.dp)) {
+                                val left = 2f
+                                val right = size.width - 2f
+                                val top = 5f
+                                val bottom = size.height - 5f
                                 for (i in 0..3) {
                                     val y = top + (bottom - top) * i / 3f
                                     drawLine(gridColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
+                                }
+                                chartDates.forEach { index ->
+                                    val x = left + (right - left) * index / history.lastIndex.toFloat()
+                                    drawLine(gridColor.copy(alpha = 0.75f), Offset(x, top), Offset(x, bottom), 1.dp.toPx())
                                 }
                                 fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean) {
                                     if (series.size < 2) return
@@ -678,36 +717,71 @@ private fun OverviewScreen(
                                         val y = bottom - ((value - minValue) / span).toFloat() * (bottom - top)
                                         if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                                     }
-                                    drawPath(path, color, style = Stroke(
-                                        width = if (dashed) 2.5.dp.toPx() else 3.dp.toPx(),
-                                        cap = StrokeCap.Round,
-                                        pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx())) else null
-                                    ))
+                                    drawPath(
+                                        path, color,
+                                        style = Stroke(
+                                            width = if (dashed) 2.5.dp.toPx() else 3.dp.toPx(),
+                                            cap = StrokeCap.Round,
+                                            pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx())) else null
+                                        )
+                                    )
                                 }
                                 drawSeries(portfolioValues, portfolioColor, false)
                                 drawSeries(investedValues, investedColor, true)
-                                val lastX = right
                                 val portfolioY = bottom - ((portfolioValues.last() - minValue) / span).toFloat() * (bottom - top)
                                 val investedY = bottom - ((investedValues.last() - minValue) / span).toFloat() * (bottom - top)
-                                drawCircle(portfolioColor, 4.dp.toPx(), Offset(lastX, portfolioY))
-                                drawCircle(investedColor, 3.dp.toPx(), Offset(lastX, investedY))
+                                drawCircle(portfolioColor, 4.dp.toPx(), Offset(right, portfolioY))
+                                drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
                             Column(
-                                Modifier.width(68.dp).height(132.dp),
+                                Modifier.width(72.dp).height(158.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(money(portfolioValues.last()), color = portfolioColor,
-                                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                                Text(money(investedValues.last()), color = investedColor,
-                                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(
+                                    money(portfolioValues.last()).substringBefore(','),
+                                    color = portfolioColor, style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold, maxLines = 1
+                                )
+                                Text(
+                                    money(investedValues.last()).substringBefore(','),
+                                    color = investedColor, style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold, maxLines = 1
+                                )
                             }
                         }
-                        Row(Modifier.fillMaxWidth().padding(start = 62.dp, end = 68.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(java.time.LocalDate.parse(history.first().dateKey).format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(java.time.LocalDate.parse(history.last().dateKey).format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 66.dp, end = 72.dp, top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            chartDates.forEach { index ->
+                                Text(
+                                    java.time.LocalDate.parse(history[index].dateKey)
+                                        .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = axisColor
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 1.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF2698FF)))
+                            Text("Портфель", color = androidx.compose.ui.graphics.Color(0xFFB8C9E8), style = MaterialTheme.typography.labelMedium)
+                        }
+                        Spacer(Modifier.width(22.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Canvas(Modifier.width(25.dp).height(8.dp)) {
+                                drawLine(
+                                    investedColor, Offset(0f, size.height / 2), Offset(size.width, size.height / 2),
+                                    2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+                                )
+                            }
+                            Text("Вложенные средства", color = androidx.compose.ui.graphics.Color(0xFFB8C9E8), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
