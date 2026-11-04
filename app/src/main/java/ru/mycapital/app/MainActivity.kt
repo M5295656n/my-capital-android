@@ -169,8 +169,10 @@ private fun MyCapitalApp() {
     val eventWorkInfos by WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("moex_events_refresh_manual")
         .collectAsState(initial = emptyList())
-    val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING || it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED } ||
-        eventWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING || it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
+    // Show activity only while a worker is actually executing. ENQUEUED/BLOCKED can
+    // persist while Android waits for network constraints and must not look like a stuck spinner.
+    val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING } ||
+        eventWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING }
     LaunchedEffect(Unit) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val periodic = PeriodicWorkRequestBuilder<QuoteRefreshWorker>(6, TimeUnit.HOURS)
@@ -474,8 +476,13 @@ private fun OverviewScreen(
     val loadMarketData: () -> Unit = {
         marketScope.launch {
             marketLoading = true
-            marketData = runCatching { withContext(kotlinx.coroutines.Dispatchers.IO) { MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()) } }
-                .getOrElse { marketData.copy(error = it.message ?: "Не удалось загрузить рыночные данные") }
+            marketData = runCatching {
+                kotlinx.coroutines.withTimeout(20_000L) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet())
+                    }
+                }
+            }.getOrElse { marketData.copy(error = if (it is kotlinx.coroutines.TimeoutCancellationException) "Загрузка рыночных данных заняла слишком много времени" else (it.message ?: "Не удалось загрузить рыночные данные")) }
             marketLoading = false
         }
     }
@@ -511,8 +518,10 @@ private fun OverviewScreen(
         else -> null
     }
     var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ONE_YEAR) }
+    // Empty snapshots created before the first import are not a meaningful portfolio baseline.
+    // Keep them out of the dashboard chart rather than drawing a misleading jump from zero.
     val history = remember(snapshots, selectedRange) {
-        calculatePortfolioHistoryPoints(snapshots, selectedRange)
+        calculatePortfolioHistoryPoints(snapshots.filter { it.totalValue > 0.0 }, selectedRange)
     }
     val annualizedReturn = remember(history) {
         if (history.size < 2) null else {
