@@ -631,7 +631,7 @@ private fun OverviewScreen(
                                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                                         .background(if (active) androidx.compose.ui.graphics.Color(0xFF1688F8) else androidx.compose.ui.graphics.Color.Transparent)
                                         .clickable { selectedRange = range }
-                                        .padding(horizontal = 5.dp, vertical = 4.dp),
+                                        .padding(horizontal = 5.dp, vertical = 6.dp),
                                     color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
                                     fontSize = 9.sp,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
