@@ -564,9 +564,10 @@ private fun OverviewScreen(
                         val span = (maxV - minV).takeIf { it > 0.0 } ?: 1.0
                         val primary = MaterialTheme.colorScheme.primary
                         val secondary = MaterialTheme.colorScheme.tertiary
+                        val gridColor = MaterialTheme.colorScheme.outlineVariant
                         Canvas(Modifier.fillMaxWidth().height(180.dp)) {
                             val left=8f; val right=size.width-8f; val top=8f; val bottom=size.height-8f
-                            for (i in 0..3) { val y=top+(bottom-top)*i/3f; drawLine(MaterialTheme.colorScheme.outlineVariant, Offset(left,y), Offset(right,y), 1f) }
+                            for (i in 0..3) { val y=top+(bottom-top)*i/3f; drawLine(gridColor, Offset(left,y), Offset(right,y), 1f) }
                             fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color) {
                                 val path=Path()
                                 series.forEachIndexed { i,v ->
@@ -607,18 +608,18 @@ private fun OverviewScreen(
             if (allocation.isEmpty()) Text("Добавьте активы или свободные деньги, чтобы увидеть структуру.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             else Card {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val donutColors = listOf(
+                        MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary,
+                        MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.error,
+                        MaterialTheme.colorScheme.outline
+                    )
                     Canvas(Modifier.fillMaxWidth().height(190.dp)) {
-                        val colors = listOf(
-                            MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary,
-                            MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.error,
-                            MaterialTheme.colorScheme.outline
-                        )
                         var angle = -90f
                         val diameter = minOf(size.width, size.height) - 12.dp.toPx()
                         val topLeft = Offset((size.width-diameter)/2, (size.height-diameter)/2)
                         allocation.forEachIndexed { i, slice ->
                             val sweep = (slice.share * 360.0).toFloat()
-                            drawArc(colors[i % colors.size], angle, sweep, false, topLeft, androidx.compose.ui.geometry.Size(diameter,diameter), style=Stroke(width=30.dp.toPx(),cap=StrokeCap.Butt))
+                            drawArc(donutColors[i % donutColors.size], angle, sweep, false, topLeft, androidx.compose.ui.geometry.Size(diameter,diameter), style=Stroke(width=30.dp.toPx(),cap=StrokeCap.Butt))
                             angle += sweep
                         }
                     }
