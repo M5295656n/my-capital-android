@@ -242,7 +242,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -453,15 +453,36 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefresh: () -> Unit, isRefreshing: Boolean, quoteRefreshStatus: String?, modifier: Modifier = Modifier) {
-    val assetCount = assets.size
+private fun OverviewScreen(
+    assets: List<AssetEntity>,
+    total: Double,
+    cashBalance: Double,
+    payouts: List<PayoutEntity>,
+    snapshots: List<PortfolioSnapshotEntity>,
+    onRefresh: () -> Unit,
+    isRefreshing: Boolean,
+    quoteRefreshStatus: String?,
+    modifier: Modifier = Modifier
+) {
     val portfolioTotal = total + cashBalance
     val invested = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = total - invested
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     val allocation = calculatePortfolioAllocation(assets, cashBalance)
-    var pullDistance by remember { mutableFloatStateOf(0f) }
+    val forecast = remember(payouts) { calculatePayoutForecast(payouts, java.time.LocalDate.now(), java.time.ZoneId.systemDefault()) }
+    val expectedYear = forecast.monthly.filter { !it.month.isBefore(java.time.YearMonth.now()) && it.month.isBefore(java.time.YearMonth.now().plusMonths(12)) }.sumOf { it.amount }
+    var monthlyContributionText by remember { mutableStateOf("5000") }
+    val monthlyContribution = monthlyContributionText.replace(',', '.').toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+    val yieldRate = if (portfolioTotal > 0.0) (expectedYear / portfolioTotal).coerceAtLeast(0.0) else 0.0
+    val projectedYear = expectedYear + monthlyContribution * 6.5 * yieldRate
+    var selectedSlice by remember { mutableStateOf<String?>(null) }
+    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
+    val history = remember(snapshots, selectedRange) { calculatePortfolioHistoryPoints(snapshots, selectedRange) }
+    val latest = snapshots.maxByOrNull { it.dateKey }
+    val previous = snapshots.filter { it.dateKey < (latest?.dateKey ?: "") }.maxByOrNull { it.dateKey }
+    val dailyChange = if (latest != null && previous != null) latest.totalValue - previous.totalValue - latest.externalFlow else null
     val density = androidx.compose.ui.platform.LocalDensity.current
+    var pullDistance by remember { mutableFloatStateOf(0f) }
     val refreshConnection = remember(isRefreshing, onRefresh) {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
@@ -475,90 +496,149 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
             }
         }
     }
-    Box(modifier = modifier.fillMaxSize().nestedScroll(refreshConnection)) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxSize().nestedScroll(refreshConnection),
+        contentPadding = PaddingValues(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("Мой капитал", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Потяните вниз, чтобы обновить котировки и выплаты", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            quoteRefreshStatus?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (it.contains("Ошибок:") || it.startsWith("Не удалось")) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("Обзор", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("Состояние инвестиционного портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (isRefreshing || pullDistance > 0f) {
+                    CircularProgressIndicator(
+                        progress = { if (isRefreshing) 1f else (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
+                        modifier = Modifier.size(26.dp), strokeWidth = 2.dp
+                    )
+                }
             }
+            quoteRefreshStatus?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         item {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)) {
-                Column(Modifier.padding(22.dp)) {
-                    Text("Общая стоимость портфеля", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("${money(portfolioTotal)} ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                    Text("Активов в портфеле: $assetCount", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Стоимость портфеля", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
+                    Text("${money(portfolioTotal)} ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                    if (dailyChange != null) {
+                        Text("За день ${if (dailyChange >= 0) "+" else ""}${money(dailyChange)} ₽", color = MaterialTheme.colorScheme.onPrimary)
+                    } else Text("Изменение за день появится после накопления двух снимков", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Себестоимость остатков", money(invested) + " ₽", Modifier.weight(1f))
-                MetricCard("Нереализованный результат", (if (unrealized > 0) "+" else "") + money(unrealized) + " ₽", Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricCard("Вложено в остатки", "${money(invested + cashBalance)} ₽", Modifier.weight(1f))
+                MetricCard("Результат", "${if (unrealized >= 0) "+" else ""}${money(unrealized)} ₽", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricCard("К результату", String.format(java.util.Locale("ru","RU"), "%.2f%%", returnPercent), Modifier.weight(1f))
+                MetricCard("Свободные деньги", "${money(cashBalance)} ₽", Modifier.weight(1f))
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Результат к себестоимости", String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent), Modifier.weight(1f))
-                MetricCard("Свободные деньги", money(cashBalance) + " ₽", Modifier.weight(1f))
-            }
-        }
-        item {
-            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (allocation.isEmpty()) {
-                Text("Распределение появится после добавления активов или свободных денег.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    allocation.forEach { slice ->
-                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(slice.label, fontWeight = FontWeight.Medium)
-                                Text(
-                                    "${money(slice.value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", slice.share * 100.0)}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            LinearProgressIndicator(
-                                progress = { slice.share.toFloat().coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+            Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Card {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Стоимость и собственные средства", fontWeight = FontWeight.Medium)
+                        Text("${history.size} точек", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        PortfolioHistoryRange.entries.forEach { range ->
+                            FilterChip(selected = selectedRange == range, onClick = { selectedRange = range }, label = { Text(range.label) })
                         }
+                    }
+                    if (history.size < 2) {
+                        Text("График появится после накопления минимум двух дневных снимков портфеля.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        val values = history.map { it.totalValue }
+                        val flows = history.mapIndexed { index, point ->
+                            val base = history.first().totalValue
+                            base + snapshots.filter { it.dateKey <= point.dateKey }.sumOf { it.externalFlow }
+                        }
+                        val all = values + flows
+                        val minV = all.minOrNull() ?: 0.0
+                        val maxV = all.maxOrNull() ?: 1.0
+                        val span = (maxV - minV).takeIf { it > 0.0 } ?: 1.0
+                        val primary = MaterialTheme.colorScheme.primary
+                        val secondary = MaterialTheme.colorScheme.tertiary
+                        Canvas(Modifier.fillMaxWidth().height(180.dp)) {
+                            val left=8f; val right=size.width-8f; val top=8f; val bottom=size.height-8f
+                            for (i in 0..3) { val y=top+(bottom-top)*i/3f; drawLine(MaterialTheme.colorScheme.outlineVariant, Offset(left,y), Offset(right,y), 1f) }
+                            fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color) {
+                                val path=Path()
+                                series.forEachIndexed { i,v ->
+                                    val x=left+(right-left)*i/(series.size-1).toFloat()
+                                    val y=bottom-((v-minV)/span).toFloat()*(bottom-top)
+                                    if(i==0) path.moveTo(x,y) else path.lineTo(x,y)
+                                }
+                                drawPath(path,color,style=Stroke(width=4f,cap=StrokeCap.Round))
+                            }
+                            drawSeries(values,primary); drawSeries(flows,secondary)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Text("● Портфель", color = primary, style = MaterialTheme.typography.labelSmall)
+                            Text("● Вложено (оценка)", color = secondary, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text("Линия вложенных средств — оценка по начальному капиталу и учтённым внешним потокам. Точность зависит от полноты истории снимков.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
         item {
-            Text("Портфель", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                if (assetCount == 0) "Добавьте первый актив во вкладке «Активы»."
-                else "Стоимость рассчитана по последней сохранённой цене. Котировки MOEX могут иметь задержку до 15 минут.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Пассивный доход · 12 месяцев", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Card {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("По текущим активам", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${money(expectedYear)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("Только ожидаемые выплаты с известной датой в ближайшие 12 месяцев.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    HorizontalDivider()
+                    Text("Сценарий с будущими пополнениями", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(value = monthlyContributionText, onValueChange = { monthlyContributionText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } }, label = { Text("Пополнение в месяц, ₽") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("${money(projectedYear)} ₽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text("Оценка: текущий прогноз плюс условный доход от будущих пополнений по текущей прогнозной доходности портфеля. Не является гарантией выплат.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
-    }
-    if (isRefreshing || pullDistance > 0f) {
-        Row(
-            Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (isRefreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else CircularProgressIndicator(progress = { (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) }, Modifier.size(20.dp), strokeWidth = 2.dp)
-            Text(if (isRefreshing) "Обновляю котировки и выплаты…" else "Потяните ещё для обновления", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item {
+            Text("Распределение портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (allocation.isEmpty()) Text("Добавьте активы или свободные деньги, чтобы увидеть структуру.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else Card {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Canvas(Modifier.fillMaxWidth().height(190.dp)) {
+                        val colors = listOf(
+                            MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary,
+                            MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.error,
+                            MaterialTheme.colorScheme.outline
+                        )
+                        var angle = -90f
+                        val diameter = minOf(size.width, size.height) - 12.dp.toPx()
+                        val topLeft = Offset((size.width-diameter)/2, (size.height-diameter)/2)
+                        allocation.forEachIndexed { i, slice ->
+                            val sweep = (slice.share * 360.0).toFloat()
+                            drawArc(colors[i % colors.size], angle, sweep, false, topLeft, androidx.compose.ui.geometry.Size(diameter,diameter), style=Stroke(width=30.dp.toPx(),cap=StrokeCap.Butt))
+                            angle += sweep
+                        }
+                    }
+                    allocation.forEach { slice ->
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { selectedSlice = if (selectedSlice == slice.label) null else slice.label }.padding(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(slice.label, fontWeight = FontWeight.Medium)
+                                Text("${money(slice.value)} ₽ · ${String.format(java.util.Locale("ru","RU"), "%.1f%%", slice.share*100)}")
+                            }
+                            if (selectedSlice == slice.label) {
+                                val members = assets.filter { it.assetType == slice.label }
+                                if (slice.label == "Денежные средства") Text("Свободные деньги: ${money(cashBalance)} ₽", style = MaterialTheme.typography.bodySmall)
+                                else members.forEach { Text("${it.ticker} · ${quantity(it.quantity)} шт.", style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
+                    }
+                    Text("Нажмите на категорию, чтобы раскрыть входящие активы и их количество.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
-    }
     }
 }
 
