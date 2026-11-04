@@ -225,9 +225,9 @@ private fun MyCapitalApp() {
     MaterialTheme(colorScheme = darkColorScheme(
         primary = androidx.compose.ui.graphics.Color(0xFF2588FF),
         secondary = androidx.compose.ui.graphics.Color(0xFF55C99A),
-        background = androidx.compose.ui.graphics.Color(0xFF171922),
-        surface = androidx.compose.ui.graphics.Color(0xFF202331),
-        surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2B2E3A),
+        background = androidx.compose.ui.graphics.Color(0xFF080F1B),
+        surface = androidx.compose.ui.graphics.Color(0xFF101C30),
+        surfaceVariant = androidx.compose.ui.graphics.Color(0xFF14243B),
         onBackground = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
         onSurface = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
         onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFB3B7C4)
@@ -594,28 +594,6 @@ private fun OverviewScreen(
             // Detailed MOEX diagnostics stay out of the dashboard; refresh feedback is the compact spinner above.
         }
         item {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                PortfolioHistoryRange.entries.forEach { range ->
-                    val selected = selectedRange == range
-                    Text(
-                        range.label,
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp))
-                            .background(if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
-                            .clickable { selectedRange = range }
-                            .padding(vertical = 10.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                    )
-                }
-            }
-        }
-        item {
             Card(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
@@ -623,7 +601,16 @@ private fun OverviewScreen(
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Общая стоимость портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleMedium)
-                        Icon(Icons.Default.Visibility, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = .8f)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            PortfolioHistoryRange.entries.forEach { range ->
+                                val active = selectedRange == range
+                                Text(range.label, modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                                    .background(if (active) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
+                                    .clickable { selectedRange = range }.padding(horizontal = 9.dp, vertical = 7.dp),
+                                    color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
+                            }
+                        }
                     }
                     Text("${money(portfolioTotal)} ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     Text(
@@ -693,34 +680,6 @@ private fun OverviewScreen(
                 }
             }
         }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OverviewMetricCard(
-                    title = "Прибыль общая",
-                    value = "${if (totalProfit >= 0) "+" else ""}${money(totalProfit)} ₽",
-                    subtitle = profitPercent?.let { "${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.1f", it)}%" } ?: "Нет полной истории",
-                    modifier = Modifier.weight(1f),
-                    valueColor = if (totalProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-                OverviewMetricCard(
-                    title = "За день",
-                    value = dailyChange?.let { "${if (it >= 0) "+" else ""}${money(it)} ₽" } ?: "—",
-                    subtitle = if (latest != null && previous != null && previous.totalValue > 0.0) {
-                        "${if (dailyChange!! >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f", dailyChange / previous.totalValue * 100.0)}%"
-                    } else "Нет данных",
-                    modifier = Modifier.weight(1f),
-                    valueColor = if ((dailyChange ?: 0.0) >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-                OverviewMetricCard(
-                    title = "Доходность",
-                    value = annualizedReturn?.let { "${String.format(java.util.Locale("ru", "RU"), "%.1f", it)}%" } ?: "—",
-                    subtitle = "годовых",
-                    modifier = Modifier.weight(1f),
-                    valueColor = if ((annualizedReturn ?: 0.0) >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-            }
-        }
-
         item {
             MarketQuotesSection(marketData = marketData)
         }
