@@ -596,7 +596,7 @@ private fun OverviewScreen(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
             ) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Общая стоимость портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleMedium)
                         Row(Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = .8f)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -610,11 +610,11 @@ private fun OverviewScreen(
                             }
                         }
                     }
-                    Text("${money(portfolioTotal)} ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    Text("${money(portfolioTotal)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Text(
                         "${if (totalProfit >= 0) "+" else ""}${money(totalProfit)} ₽" +
                             (profitPercent?.let { "  ·  ${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.1f", it)}%" } ?: ""),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = if (totalProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
@@ -662,14 +662,14 @@ private fun OverviewScreen(
                         val returnColor = MaterialTheme.colorScheme.secondary
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(76.dp).height(190.dp),
+                                Modifier.width(62.dp).height(132.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(money(maxValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                 Text(money(minValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
-                            Canvas(Modifier.weight(1f).height(190.dp)) {
+                            Canvas(Modifier.weight(1f).height(132.dp)) {
                                 val left = 5f
                                 val right = size.width - 5f
                                 val top = 8f
@@ -697,7 +697,7 @@ private fun OverviewScreen(
                                 drawSeries(returnValues, returnColor, false, returnMin, returnMax)
                             }
                             Column(
-                                Modifier.width(54.dp).height(190.dp),
+                                Modifier.width(48.dp).height(132.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
