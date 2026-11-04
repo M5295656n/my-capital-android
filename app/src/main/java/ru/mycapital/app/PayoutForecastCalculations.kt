@@ -28,7 +28,7 @@ internal data class PayoutForecastSummary(
 internal fun calculatePayoutForecast(
     payouts: List<PayoutEntity>,
     today: LocalDate = LocalDate.now(),
-    zoneId: ZoneId = ZoneId.systemDefault()
+    zoneId: ZoneId = ZoneId.of("UTC")
 ): PayoutForecastSummary {
     val datedExpected = payouts.mapNotNull { payout ->
         if (payout.status != "EXPECTED" || payout.expectedDate == null) return@mapNotNull null
