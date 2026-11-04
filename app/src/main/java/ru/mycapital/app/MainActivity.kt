@@ -1220,6 +1220,7 @@ private fun AddPayoutDialog(
     var amountText by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("1") }
     var taxText by remember { mutableStateOf("0") }
+    var expectedDateText by remember { mutableStateOf("") }
     var received by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     val asset = assets.firstOrNull { it.id == assetId }
@@ -1227,7 +1228,9 @@ private fun AddPayoutDialog(
     val quantity = parseDecimalInput(quantityText) ?: 0.0
     val tax = parseDecimalInput(taxText) ?: -1.0
     val gross = amount * quantity
-    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross
+    val parsedExpectedDate = runCatching { java.time.LocalDate.parse(expectedDateText, java.time.format.DateTimeFormatter.ofPattern("dd.MM.uuuu")) }.getOrNull()
+    val expectedDate = parsedExpectedDate?.atStartOfDay(java.time.ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross && (received || expectedDate != null)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Добавить выплату") },
@@ -1249,6 +1252,9 @@ private fun AddPayoutDialog(
                 OutlinedTextField(amountText, { amountText = it }, label = { Text("Сумма на акцию / облигацию, ₽") }, singleLine = true)
                 OutlinedTextField(quantityText, { quantityText = it }, label = { Text("Количество бумаг") }, singleLine = true)
                 OutlinedTextField(taxText, { taxText = it }, label = { Text("Налог, ₽") }, singleLine = true)
+                if (!received) {
+                    OutlinedTextField(expectedDateText, { expectedDateText = it }, label = { Text("Дата выплаты, ДД.ММ.ГГГГ") }, placeholder = { Text("20.01.2027") }, singleLine = true)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = received, onCheckedChange = { received = it })
                     Text("Уже фактически получено")
