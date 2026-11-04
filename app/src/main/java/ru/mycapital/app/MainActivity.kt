@@ -725,10 +725,14 @@ private fun OverviewScreen(
             MarketQuotesSection(marketData = marketData)
         }
         item {
-            MarketMoversSection(title = "Топ роста за день", rows = marketData.gainers, positive = true)
-        }
-        item {
-            MarketMoversSection(title = "Топ падений за день", rows = marketData.losers, positive = false)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) {
+                    MarketMoversSection(title = "Топ роста за день", rows = marketData.gainers, positive = true)
+                }
+                Box(Modifier.weight(1f)) {
+                    MarketMoversSection(title = "Топ падений за день", rows = marketData.losers, positive = false)
+                }
+            }
         }
         item {
             DividendHistorySection(payouts = payouts)
