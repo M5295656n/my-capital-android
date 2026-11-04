@@ -1039,6 +1039,14 @@ private fun PayoutsScreen(
         it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
     }
     val expected = visiblePayouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
+    // Keep the history compact: hide only expected payments dated more than 90 days ahead.
+    // Received payments and overdue/undated expected payments remain visible.
+    val historyCutoff = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90)
+    val historyPayouts = visiblePayouts.filter { payout ->
+        payout.status != "EXPECTED" || payout.expectedDate == null ||
+            !java.time.Instant.ofEpochMilli(payout.expectedDate)
+                .atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
+    }
 
     // One page-level scroll: header, forecast, and payout history move together.
     Column(
@@ -1071,13 +1079,13 @@ private fun PayoutsScreen(
             }
         }
         PayoutForecastCard(visiblePayouts)
-        if (visiblePayouts.isEmpty()) {
+        if (historyPayouts.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон." else "Для выбранного счёта выплат нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат в ближайшие 90 дней. Более поздние ожидаемые выплаты временно скрыты." else "Для выбранного счёта нет выплат в ближайшие 90 дней.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             Text("История выплат", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            visiblePayouts.forEach { payout ->
+            historyPayouts.forEach { payout ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
