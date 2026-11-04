@@ -601,7 +601,7 @@ private fun OverviewScreen(
                 colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(
@@ -613,7 +613,7 @@ private fun OverviewScreen(
                             "Общая стоимость портфеля",
                             modifier = Modifier.weight(1f),
                             color = androidx.compose.ui.graphics.Color(0xFFB8C9E8),
-                            fontSize = 14.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false
@@ -631,9 +631,9 @@ private fun OverviewScreen(
                                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                                         .background(if (active) androidx.compose.ui.graphics.Color(0xFF1688F8) else androidx.compose.ui.graphics.Color.Transparent)
                                         .clickable { selectedRange = range }
-                                        .padding(horizontal = 5.dp, vertical = 6.dp),
+                                        .padding(horizontal = 5.dp, vertical = 4.dp),
                                     color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
@@ -642,15 +642,15 @@ private fun OverviewScreen(
                     Text(
                         "${money(portfolioTotal)} ₽",
                         modifier = Modifier.padding(top = 2.dp),
-                        style = MaterialTheme.typography.headlineLarge,
+                        style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = androidx.compose.ui.graphics.Color(0xFFF5F7FC)
                     )
                     Text(
                         (if (totalProfit >= 0) "▲ +" else "▼ −") + "${money(kotlin.math.abs(totalProfit))} ₽" +
                             (profitPercent?.let { " (${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f", it)}%)" } ?: ""),
-                        modifier = Modifier.padding(top = 1.dp, bottom = 14.dp),
-                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(top = 1.dp, bottom = 8.dp),
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (totalProfit >= 0) androidx.compose.ui.graphics.Color(0xFF25D879) else androidx.compose.ui.graphics.Color(0xFFFF5964)
                     )
@@ -687,7 +687,7 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(66.dp).height(158.dp),
+                                Modifier.width(60.dp).height(132.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
@@ -699,18 +699,18 @@ private fun OverviewScreen(
                                     )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(158.dp)) {
+                            Canvas(Modifier.weight(1f).height(132.dp)) {
                                 val left = 2f
                                 val right = size.width - 2f
                                 val top = 5f
                                 val bottom = size.height - 5f
-                                for (i in 0..3) {
-                                    val y = top + (bottom - top) * i / 3f
+                                for (i in 0..4) {
+                                    val y = top + (bottom - top) * i / 4f
                                     drawLine(gridColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
                                 }
-                                chartDates.forEach { index ->
-                                    val x = left + (right - left) * index / history.lastIndex.toFloat()
-                                    drawLine(gridColor.copy(alpha = 0.75f), Offset(x, top), Offset(x, bottom), 1.dp.toPx())
+                                for (i in 0..5) {
+                                    val x = left + (right - left) * i / 5f
+                                    drawLine(gridColor.copy(alpha = 0.65f), Offset(x, top), Offset(x, bottom), 1.dp.toPx())
                                 }
                                 fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean) {
                                     if (series.size < 2) return
@@ -737,14 +737,14 @@ private fun OverviewScreen(
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
                             Column(
-                                Modifier.width(72.dp).height(158.dp),
+                                Modifier.width(66.dp).height(132.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Box(
                                     Modifier.clip(RoundedCornerShape(6.dp))
                                         .background(portfolioColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
                                 ) {
                                     Text(
                                         money(portfolioValues.last()).substringBefore(','),
@@ -755,7 +755,7 @@ private fun OverviewScreen(
                                 Box(
                                     Modifier.clip(RoundedCornerShape(6.dp))
                                         .background(investedColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
                                 ) {
                                     Text(
                                         money(investedValues.last()).substringBefore(','),
@@ -766,7 +766,7 @@ private fun OverviewScreen(
                             }
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(start = 66.dp, end = 72.dp, top = 4.dp),
+                            Modifier.fillMaxWidth().padding(start = 60.dp, end = 66.dp, top = 3.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             chartDates.forEach { index ->
@@ -780,7 +780,7 @@ private fun OverviewScreen(
                         }
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 1.dp),
+                        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 1.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
