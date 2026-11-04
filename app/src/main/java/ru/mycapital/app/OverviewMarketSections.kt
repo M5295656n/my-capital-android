@@ -23,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -268,6 +270,7 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
     val axisMax = kotlin.math.ceil(rawMax / step) * step
     val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val density = LocalDensity.current
     val tickPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = labelColor.copy(alpha = .88f).toArgb()
         textAlign = android.graphics.Paint.Align.RIGHT
