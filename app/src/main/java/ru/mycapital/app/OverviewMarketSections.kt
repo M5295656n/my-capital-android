@@ -85,8 +85,11 @@ internal class MarketOverviewClient {
         MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
     }.getOrNull()
 
-    private fun loadMovers(): List<MarketMoverRow> = runCatching {
-        val url = "https://iss.moex.com/iss/engines/stock/markets/shares/boardgroups/57/securities.json?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,SHORTNAME&marketdata.columns=SECID,LAST,CHANGE"
+    private fun loadMovers(): List<MarketMoverRow> = (loadMoversFrom("shares", "57") + loadMoversFrom("bonds", "58"))
+        .distinctBy { it.ticker }
+
+    private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
+        val url = "https://iss.moex.com/iss/engines/stock/markets/$market/boardgroups/$boardGroup/securities.json?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,SHORTNAME&marketdata.columns=SECID,LAST,CHANGE"
         val json = getJson(url)
         val securities = json.optJSONObject("securities") ?: return@runCatching emptyList()
         val secCols = securities.optJSONArray("columns") ?: return@runCatching emptyList()
