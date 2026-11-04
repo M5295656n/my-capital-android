@@ -272,8 +272,17 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
             drawRoundRect(barColor, Offset(x, bottom - barHeight), androidx.compose.ui.geometry.Size(slot * .56f, barHeight), androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
         }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        labels.forEach { Text(it, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+    // Keep month labels aligned with their bar slots. On the narrow dashboard cards,
+    // labeling all 12 months makes the text run together; show every other month instead.
+    Row(Modifier.fillMaxWidth()) {
+        values.forEachIndexed { index, _ ->
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                if (index % 2 == 0 || index == values.lastIndex) {
+                    Text(labels.getOrNull(index).orEmpty(), fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
