@@ -190,7 +190,12 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
     val zone = ZoneId.systemDefault()
     val now = YearMonth.now()
     val months = (1..12).map { YearMonth.of(now.year, it) }.filter { !it.isAfter(now) }
-    val received = payouts.filter { it.status == "RECEIVED" && it.actualDate != null && it.payoutType.contains("див", ignoreCase = true) }
+    // The dashboard tracks all cash income, not dividends alone: bond coupons
+    // are received payouts too and must be included in both monthly and yearly totals.
+    val received = payouts.filter {
+        it.status == "RECEIVED" && it.actualDate != null &&
+            (it.payoutType == "Дивиденд" || it.payoutType == "Купон")
+    }
     val monthValues = months.map { month ->
         received.filter { YearMonth.from(Instant.ofEpochMilli(it.actualDate!!).atZone(zone)) == month }
             .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
@@ -202,8 +207,8 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
             .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        DividendChartCard("Полученные дивиденды", "${marketMoney(monthValues.sum())} ₽ за год", monthValues, months.map { it.monthShortRu() }, Color(0xFF16B5F4), Modifier.weight(1f))
-        DividendChartCard("Рост дивидендов", "По календарным годам", yearValues, years.map(Int::toString), Color(0xFF35CC79), Modifier.weight(1f))
+        DividendChartCard("Полученные выплаты", "${marketMoney(monthValues.sum())} ₽ за год", monthValues, months.map { it.monthShortRu() }, Color(0xFF16B5F4), Modifier.weight(1f))
+        DividendChartCard("Выплаты по годам", "Дивиденды и купоны", yearValues, years.map(Int::toString), Color(0xFF35CC79), Modifier.weight(1f))
     }
 }
 
