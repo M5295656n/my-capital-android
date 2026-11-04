@@ -222,7 +222,16 @@ private fun MyCapitalApp() {
         refreshEvents()
     }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
+    MaterialTheme(colorScheme = darkColorScheme(
+        primary = androidx.compose.ui.graphics.Color(0xFF2588FF),
+        secondary = androidx.compose.ui.graphics.Color(0xFF55C99A),
+        background = androidx.compose.ui.graphics.Color(0xFF171922),
+        surface = androidx.compose.ui.graphics.Color(0xFF202331),
+        surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2B2E3A),
+        onBackground = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
+        onSurface = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
+        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFB3B7C4)
+    )) {
         Scaffold(
             floatingActionButton = {
                 if (selected == Screen.Assets || selected == Screen.Operations || selected == Screen.Payouts) {
@@ -245,7 +254,7 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, onOpenSettings = { selected = Screen.More }, onOpenPayouts = { selected = Screen.Payouts }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, quoteRefreshStatus, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
