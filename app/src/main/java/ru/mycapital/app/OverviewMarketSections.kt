@@ -54,14 +54,14 @@ internal class MarketOverviewClient {
         .callTimeout(25, TimeUnit.SECONDS)
         .build()
 
-    suspend fun load(): MarketOverviewData = withContext(Dispatchers.IO) {
+    suspend fun load(heldTickers: Set<String>): MarketOverviewData = withContext(Dispatchers.IO) {
         val quotes = listOf(
             quote("USD000UTSTOM", "USD/RUB"),
             quote("EUR_RUB__TOM", "EUR/RUB"),
             quote("CNYRUB_TOM", "CNY/RUB"),
             quote("GLDRUB_TOM", "GLDRUB")
         ).filterNotNull()
-        val movers = loadMovers()
+        val movers = loadMovers().filter { it.ticker.uppercase() in heldTickers }
         MarketOverviewData(
             quotes = quotes,
             gainers = movers.sortedByDescending { it.changePercent }.take(5),
@@ -138,9 +138,7 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
             marketData.quotes.forEach { quote ->
                 Card(shape = RoundedCornerShape(15.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-                            Text(quote.ticker.take(2), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+                        MarketInstrumentIcon(quote.ticker, Modifier.size(38.dp))
                         Text(quote.label, Modifier.weight(1f).padding(start = 12.dp), fontWeight = FontWeight.SemiBold)
                         Text(quote.price?.let { "${marketMoney(it)} ₽" } ?: "—", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.size(10.dp))
@@ -165,9 +163,7 @@ internal fun MarketMoversSection(title: String, rows: List<MarketMoverRow>, posi
             rows.forEach { row ->
                 val tint = if (positive) Color(0xFF55C99A) else Color(0xFFE87979)
                 Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                        Text(row.ticker.take(4), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                    MarketInstrumentIcon(row.ticker, Modifier.size(44.dp))
                     Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(row.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                         Text(row.ticker, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
