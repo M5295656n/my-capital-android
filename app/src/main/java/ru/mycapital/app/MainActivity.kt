@@ -611,14 +611,17 @@ private fun OverviewScreen(
                     ) {
                         Text(
                             "Общая стоимость портфеля",
+                            modifier = Modifier.weight(1f),
                             color = androidx.compose.ui.graphics.Color(0xFFB8C9E8),
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Row(
-                            Modifier.clip(RoundedCornerShape(24.dp))
+                            Modifier.clip(RoundedCornerShape(20.dp))
                                 .background(androidx.compose.ui.graphics.Color(0xFF1A2942))
-                                .padding(3.dp),
+                                .padding(2.dp),
                             horizontalArrangement = Arrangement.spacedBy(1.dp)
                         ) {
                             PortfolioHistoryRange.entries.forEach { range ->
@@ -628,9 +631,9 @@ private fun OverviewScreen(
                                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                                         .background(if (active) androidx.compose.ui.graphics.Color(0xFF1688F8) else androidx.compose.ui.graphics.Color.Transparent)
                                         .clickable { selectedRange = range }
-                                        .padding(horizontal = 9.dp, vertical = 7.dp),
+                                        .padding(horizontal = 5.dp, vertical = 6.dp),
                                     color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
-                                    style = MaterialTheme.typography.labelMedium,
+                                    fontSize = 10.sp,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
@@ -738,16 +741,28 @@ private fun OverviewScreen(
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    money(portfolioValues.last()).substringBefore(','),
-                                    color = portfolioColor, style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold, maxLines = 1
-                                )
-                                Text(
-                                    money(investedValues.last()).substringBefore(','),
-                                    color = investedColor, style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold, maxLines = 1
-                                )
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(6.dp))
+                                        .background(portfolioColor.copy(alpha = 0.18f))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        money(portfolioValues.last()).substringBefore(','),
+                                        color = portfolioColor, style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold, maxLines = 1
+                                    )
+                                }
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(6.dp))
+                                        .background(investedColor.copy(alpha = 0.18f))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        money(investedValues.last()).substringBefore(','),
+                                        color = investedColor, style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold, maxLines = 1
+                                    )
+                                }
                             }
                         }
                         Row(
