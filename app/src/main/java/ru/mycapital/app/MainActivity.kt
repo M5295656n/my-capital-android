@@ -777,7 +777,7 @@ private fun OverviewScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             Canvas(Modifier.width(25.dp).height(8.dp)) {
                                 drawLine(
-                                    investedColor, Offset(0f, size.height / 2), Offset(size.width, size.height / 2),
+                                    androidx.compose.ui.graphics.Color(0xFF8798B5), Offset(0f, size.height / 2), Offset(size.width, size.height / 2),
                                     2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
                                 )
                             }
