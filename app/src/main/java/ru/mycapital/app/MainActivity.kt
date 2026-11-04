@@ -633,7 +633,7 @@ private fun OverviewScreen(
                                         .clickable { selectedRange = range }
                                         .padding(horizontal = 5.dp, vertical = 6.dp),
                                     color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
-                                    fontSize = 9.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
