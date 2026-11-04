@@ -643,6 +643,18 @@ private fun OverviewScreen(
                         val portfolioColor = MaterialTheme.colorScheme.primary
                         val investedColor = MaterialTheme.colorScheme.onSurfaceVariant
                         val gridColor = MaterialTheme.colorScheme.outlineVariant
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text(money(maxValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(128.dp))
+                                Text(money(minValue) + " ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnMax), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                Spacer(Modifier.height(128.dp))
+                                Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnMin), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            }
+                        }
                         Canvas(Modifier.fillMaxWidth().height(190.dp)) {
                             val left = 8f
                             val right = size.width - 8f
