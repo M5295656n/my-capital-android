@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
@@ -274,13 +275,13 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
     val tickPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = labelColor.copy(alpha = .88f).toArgb()
         textAlign = android.graphics.Paint.Align.RIGHT
-        textSize = 8.sp.toPx()
+        textSize = with(density) { 8.sp.toPx() }
         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
     }
     val xLabelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         color = labelColor.toArgb()
         textAlign = android.graphics.Paint.Align.CENTER
-        textSize = (if (labels.firstOrNull()?.length ?: 0 >= 4) 7.sp else 8.sp).toPx()
+        textSize = with(density) { (if ((labels.firstOrNull()?.length ?: 0) >= 4) 7.sp else 8.sp).toPx() }
         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
     }
     Canvas(modifier.fillMaxWidth().height(142.dp)) {
