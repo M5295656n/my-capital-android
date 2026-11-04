@@ -52,7 +52,7 @@ class MoexIssClient {
         val market = if (assetType.contains("облигац", ignoreCase = true)) "bonds" else "shares"
         val safeTicker = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker.json" +
-            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
+            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE,ACCRUEDINT&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
@@ -70,18 +70,26 @@ class MoexIssClient {
             } catch (error: Exception) {
                 throw IOException("Некорректный JSON от MOEX ISS", error)
             }
-            val faceValue = if (market == "bonds") {
+            val securityFields = if (market == "bonds") {
                 val securities = root.optJSONObject("securities")
                 val securityColumns = securities?.optJSONArray("columns")
                 val securityRows = securities?.optJSONArray("data")
                 val faceIndex = securityColumns?.let { cols -> (0 until cols.length()).firstOrNull { cols.optString(it) == "FACEVALUE" } }
+                val accruedIndex = securityColumns?.let { cols -> (0 until cols.length()).firstOrNull { cols.optString(it) == "ACCRUEDINT" } }
                 val idIndex = securityColumns?.let { cols -> (0 until cols.length()).firstOrNull { cols.optString(it) == "SECID" } }
-                (0 until (securityRows?.length() ?: 0)).firstNotNullOfOrNull { index ->
-                    val securityRow = securityRows?.optJSONArray(index) ?: return@firstNotNullOfOrNull null
-                    if (idIndex != null && securityRow.optString(idIndex) != ticker.trim().uppercase()) return@firstNotNullOfOrNull null
-                    faceIndex?.let { securityRow.optDouble(it, Double.NaN) }?.takeIf { it.isFinite() && it > 0.0 }
+                var face: Double? = null
+                var accrued: Double? = null
+                for (index in 0 until (securityRows?.length() ?: 0)) {
+                    val securityRow = securityRows?.optJSONArray(index) ?: continue
+                    if (idIndex != null && securityRow.optString(idIndex) != ticker.trim().uppercase()) continue
+                    face = faceIndex?.let { securityRow.optDouble(it, Double.NaN) }?.takeIf { it.isFinite() && it > 0.0 }
+                    accrued = accruedIndex?.let { securityRow.optDouble(it, Double.NaN) }?.takeIf { it.isFinite() && it >= 0.0 }
+                    break
                 }
-            } else null
+                face to accrued
+            } else null to null
+            val faceValue = securityFields.first
+            val accruedFromSecurity = securityFields.second
             val table = root.optJSONObject("marketdata")
                 ?: throw IOException("В ответе MOEX ISS отсутствует таблица котировок")
             val columns = table.optJSONArray("columns")
@@ -123,12 +131,11 @@ class MoexIssClient {
                 } ?: continue
                 val accruedInterest = if (market == "bonds") {
                     val accruedIndex = indexes["ACCRUEDINT"]
-                        ?: throw IOException("MOEX ISS не вернул поле ACCRUEDINT для облигации $ticker")
-                    if (accruedIndex >= row.length() || row.isNull(accruedIndex)) {
-                        throw IOException("MOEX ISS не вернул НКД для облигации $ticker; котировка не обновлена.")
-                    }
-                    row.optDouble(accruedIndex, Double.NaN).takeIf { it.isFinite() && it >= 0.0 }
-                        ?: throw IOException("MOEX ISS вернул некорректный НКД для облигации $ticker")
+                    val accruedFromMarketData = accruedIndex?.takeIf { it < row.length() && !row.isNull(it) }
+                        ?.let { row.optDouble(it, Double.NaN) }
+                        ?.takeIf { it.isFinite() && it >= 0.0 }
+                    accruedFromMarketData ?: accruedFromSecurity
+                        ?: throw IOException("MOEX ISS не вернул НКД для облигации $ticker; котировка не обновлена.")
                 } else 0.0
                 val normalizedPrice = try {
                     normalizeMoexPrice(price, assetType, faceValue, accruedInterest)
