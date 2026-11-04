@@ -142,7 +142,7 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
                             Text(quote.ticker.take(2), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                         Text(quote.label, Modifier.weight(1f).padding(start = 12.dp), fontWeight = FontWeight.SemiBold)
-                        Text(quote.price?.let { "${money(it)} ₽" } ?: "—", fontWeight = FontWeight.SemiBold)
+                        Text(quote.price?.let { "${marketMoney(it)} ₽" } ?: "—", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.size(10.dp))
                         val change = quote.changePercent
                         Text(change?.let { "${if (it >= 0) "▲" else "▼"} ${percent(it)}%" } ?: "—",
@@ -173,8 +173,8 @@ internal fun MarketMoversSection(title: String, rows: List<MarketMoverRow>, posi
                         Text(row.ticker, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                     }
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("${money(row.price)} ₽", fontWeight = FontWeight.SemiBold)
-                        Text("${if (row.change >= 0) "+" else ""}${money(row.change)} ₽  ${if (row.change >= 0) "▲" else "▼"} ${percent(row.changePercent)}%",
+                        Text("${marketMoney(row.price)} ₽", fontWeight = FontWeight.SemiBold)
+                        Text("${if (row.change >= 0) "+" else ""}${marketMoney(row.change)} ₽  ${if (row.change >= 0) "▲" else "▼"} ${percent(row.changePercent)}%",
                             color = tint, fontWeight = FontWeight.Medium)
                     }
                 }
@@ -197,7 +197,7 @@ internal fun DividendHistorySection(payouts: List<PayoutEntity>) {
         Text("Полученные дивиденды", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f))) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${money(annual)} ₽ за 12 месяцев", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${marketMoney(annual)} ₽ за 12 месяцев", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 DividendBarChart(values = values, labels = months.map { it.monthShortRu() }, barColor = Color(0xFF16B5F4), modifier = Modifier.fillMaxWidth().height(190.dp))
             }
         }
@@ -244,3 +244,5 @@ private fun YearMonth.monthShortRu(): String = when (monthValue) {
     7 -> "июл"; 8 -> "авг"; 9 -> "сен"; 10 -> "окт"; 11 -> "ноя"; else -> "дек"
 }
 private fun percent(value: Double): String = String.format(Locale("ru", "RU"), "%.2f", value)
+
+private fun marketMoney(value: Double): String = String.format(Locale("ru", "RU"), "%,.2f", value)
