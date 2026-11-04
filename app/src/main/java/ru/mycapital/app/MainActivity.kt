@@ -525,6 +525,24 @@ private fun OverviewScreen(
         .filter { !it.month.isBefore(java.time.YearMonth.now()) && it.month.isBefore(java.time.YearMonth.now().plusMonths(12)) }
         .sumOf { it.amount }
 
+    var monthlyContribution by remember { mutableStateOf("5000") }
+    val contributionValue = monthlyContribution.replace(',', '.').toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+    val impliedYield = if (portfolioTotal > 0.0) (expectedYear / portfolioTotal).coerceIn(0.0, 0.25) else 0.0
+    val projectedYearForecast = expectedYear + contributionValue * 6.5 * impliedYield
+    val allocation = remember(assets, cashBalance) { calculatePortfolioAllocation(assets, cashBalance) }
+    val allocationColors = listOf(
+        androidx.compose.ui.graphics.Color(0xFF4F8CFF), androidx.compose.ui.graphics.Color(0xFF39B98A),
+        androidx.compose.ui.graphics.Color(0xFFFFB547), androidx.compose.ui.graphics.Color(0xFF9B7BDB),
+        androidx.compose.ui.graphics.Color(0xFFEA7185), androidx.compose.ui.graphics.Color(0xFF5CB7C9)
+    )
+    var selectedAllocation by remember { mutableStateOf<String?>(null) }
+    val stockAssets = assets.filter { it.assetType.contains("акц", true) || it.assetType.contains("stock", true) }
+    val sectorGroups = remember(stockAssets) {
+        stockAssets.groupBy { sectorForTicker(it.ticker) }
+            .mapValues { (_, rows) -> rows.sumOf { it.quantity * it.currentPrice } }
+            .toList().sortedByDescending { it.second }
+    }
+
     val density = androidx.compose.ui.platform.LocalDensity.current
     var pullDistance by remember { mutableFloatStateOf(0f) }
     val refreshConnection = remember(isRefreshing, onRefresh) {
@@ -699,59 +717,95 @@ private fun OverviewScreen(
             }
         }
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenPayouts),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-            ) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(42.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Пассивный доход за год", style = MaterialTheme.typography.titleMedium)
-                        Text("${money(expectedYear)} ₽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    }
-                    Text(
-                        if (portfolioTotal > 0.0) "~ ${String.format(java.util.Locale("ru", "RU"), "%.1f", expectedYear / portfolioTotal * 100.0)}% от капитала" else "—",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Icon(Icons.Default.ChevronRight, contentDescription = null)
+            Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Пассивный доход за 12 месяцев", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("${money(expectedYear)} ₽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Ожидаемые дивиденды и купоны по текущим активам", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    HorizontalDivider()
+                    Text("Прогноз с будущими пополнениями", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("${money(projectedYearForecast)} ₽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    OutlinedTextField(value = monthlyContribution, onValueChange = { monthlyContribution = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
+                        label = { Text("План пополнений в месяц, ₽") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Сценарная оценка при сохранении текущей средней доходности выплат; будущие выплаты не гарантированы.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Все  →", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable(onClick = onOpenPayouts))
+            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (allocation.isEmpty()) Text("Добавьте активы или свободные деньги, чтобы увидеть распределение.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Canvas(Modifier.fillMaxWidth().height(190.dp)) {
+                        var start = -90f
+                        allocation.forEachIndexed { index, slice ->
+                            val sweep = (slice.share * 360.0).toFloat()
+                            drawArc(allocationColors[index % allocationColors.size], start, sweep, false,
+                                topLeft = Offset(size.width / 2f - 82.dp.toPx(), size.height / 2f - 82.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(164.dp.toPx(), 164.dp.toPx()),
+                                style = Stroke(width = 28.dp.toPx()))
+                            start += sweep
+                        }
+                    }
+                    allocation.forEachIndexed { index, slice ->
+                        Row(Modifier.fillMaxWidth().clickable { selectedAllocation = if (selectedAllocation == slice.label) null else slice.label }.padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(allocationColors[index % allocationColors.size]))
+                            Spacer(Modifier.width(8.dp))
+                            Text(slice.label, Modifier.weight(1f))
+                            Text("${String.format(java.util.Locale("ru", "RU"), "%.1f", slice.share * 100)}% · ${money(slice.value)} ₽")
+                        }
+                        if (selectedAllocation == slice.label) {
+                            val rows = assets.filter { it.assetType.trim().ifBlank { "Прочее" } == slice.label }
+                            Column(Modifier.fillMaxWidth().padding(start = 20.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (slice.label == "Денежные средства") Text("Свободные деньги: ${money(cashBalance)} ₽")
+                                else rows.forEach { asset ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(asset.name.ifBlank { asset.ticker })
+                                        Text("${quantity(asset.quantity)} шт.")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            if (nextPayout == null) {
-                Text("Пока нет ожидаемых выплат с известной датой.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        val date = java.time.Instant.ofEpochMilli(nextPayout.expectedDate!!)
-                            .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                        Column(
-                            Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)).padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            Text(date.format(java.time.format.DateTimeFormatter.ofPattern("MMM", java.util.Locale("ru", "RU"))), color = MaterialTheme.colorScheme.primary)
+        }
+        item {
+            Text("Структура акций по секторам", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (sectorGroups.isEmpty()) Text("В портфеле пока нет акций с определённым сектором.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else Card(shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    sectorGroups.forEach { (sector, value) ->
+                        val share = if (total > 0.0) value / total else 0.0
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(sector)
+                                Text("${money(value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f", share * 100)}%")
+                            }
+                            LinearProgressIndicator(progress = { share.toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                            Text(stockAssets.filter { sectorForTicker(it.ticker) == sector }.joinToString { it.ticker },
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(assets.firstOrNull { it.ticker.equals(nextPayout.ticker, ignoreCase = true) }?.name ?: nextPayout.ticker, fontWeight = FontWeight.SemiBold)
-                            Text(if (nextPayout.payoutType.contains("coupon", true) || nextPayout.payoutType.contains("купон", true)) "Купоны" else "Дивиденды", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text("≈ ${money(nextPayout.totalAmount)} ₽", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.ChevronRight, contentDescription = null)
                     }
                 }
             }
         }
     }
+}
+
+
+private fun sectorForTicker(ticker: String): String = when (ticker.uppercase()) {
+    "SBER", "SBERP", "T", "VTBR", "MOEX", "BSPB", "CBOM" -> "Финансы"
+    "LKOH", "ROSN", "TATN", "GAZP", "NVTK", "SNGS", "SNGSP", "BANE", "TRNFP" -> "Нефть и газ"
+    "YDEX", "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
+    "GMKN", "NLMK", "CHMF", "MAGN", "RUAL", "ALRS" -> "Металлы и добыча"
+    "MTSS", "RTKM", "VEON" -> "Телеком"
+    "AFLT", "FLOT" -> "Транспорт"
+    "PIKK", "SMLT", "LSRG" -> "Недвижимость"
+    "IRAO", "HYDR", "FEES", "UPRO" -> "Энергетика"
+    else -> "Прочие акции"
 }
 
 @Composable
