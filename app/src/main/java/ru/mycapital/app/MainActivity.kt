@@ -467,10 +467,21 @@ private fun OverviewScreen(
     isRefreshing: Boolean,
     quoteRefreshStatus: String?,
     onOpenSettings: () -> Unit,
-    onOpenPayouts: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val portfolioTotal = total + cashBalance
+    var marketData by remember { mutableStateOf(MarketOverviewData()) }
+    var marketLoading by remember { mutableStateOf(false) }
+    val marketScope = rememberCoroutineScope()
+    val loadMarketData: () -> Unit = {
+        marketScope.launch {
+            marketLoading = true
+            marketData = runCatching { withContext(kotlinx.coroutines.Dispatchers.IO) { MarketOverviewClient().load() } }
+                .getOrElse { marketData.copy(error = it.message ?: "Не удалось загрузить рыночные данные") }
+            marketLoading = false
+        }
+    }
+    LaunchedEffect(Unit) { loadMarketData() }
     val orderedSnapshots = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val latest = orderedSnapshots.lastOrNull()
     val previous = orderedSnapshots.dropLast(1).lastOrNull()
@@ -516,34 +527,6 @@ private fun OverviewScreen(
             } else null
         }
     }
-    val forecast = remember(payouts) {
-        calculatePayoutForecast(payouts, java.time.LocalDate.now(), java.time.ZoneId.systemDefault())
-    }
-    val nextPayout = remember(payouts) {
-        payouts.filter { it.status == "EXPECTED" && it.expectedDate != null && it.expectedDate >= System.currentTimeMillis() }
-            .minByOrNull { it.expectedDate!! }
-    }
-    val expectedYear = forecast.monthly
-        .filter { !it.month.isBefore(java.time.YearMonth.now()) && it.month.isBefore(java.time.YearMonth.now().plusMonths(12)) }
-        .sumOf { it.amount }
-
-    var monthlyContribution by remember { mutableStateOf("5000") }
-    val contributionValue = monthlyContribution.replace(',', '.').toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
-    val impliedYield = if (portfolioTotal > 0.0) (expectedYear / portfolioTotal).coerceIn(0.0, 0.25) else 0.0
-    val projectedYearForecast = expectedYear + contributionValue * 6.5 * impliedYield
-    val allocation = remember(assets, cashBalance) { calculatePortfolioAllocation(assets, cashBalance) }
-    val allocationColors = listOf(
-        androidx.compose.ui.graphics.Color(0xFF4F8CFF), androidx.compose.ui.graphics.Color(0xFF39B98A),
-        androidx.compose.ui.graphics.Color(0xFFFFB547), androidx.compose.ui.graphics.Color(0xFF9B7BDB),
-        androidx.compose.ui.graphics.Color(0xFFEA7185), androidx.compose.ui.graphics.Color(0xFF5CB7C9)
-    )
-    var selectedAllocation by remember { mutableStateOf<String?>(null) }
-    val stockAssets = assets.filter { it.assetType.contains("акц", true) || it.assetType.contains("stock", true) }
-    val sectorGroups = remember(stockAssets) {
-        stockAssets.groupBy { sectorForTicker(it.ticker) }
-            .mapValues { (_, rows) -> rows.sumOf { it.quantity * it.currentPrice } }
-            .toList().sortedByDescending { it.second }
-    }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     var pullDistance by remember { mutableFloatStateOf(0f) }
@@ -560,7 +543,7 @@ private fun OverviewScreen(
                 return androidx.compose.ui.geometry.Offset.Zero
             }
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) onRefresh()
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); loadMarketData() }
                 pullDistance = 0f
                 return Velocity.Zero
             }
@@ -586,9 +569,9 @@ private fun OverviewScreen(
                     Icon(Icons.Default.Settings, contentDescription = "Настройки")
                 }
             }
-            if (isRefreshing || pullDistance > 0f) {
+            if (isRefreshing || marketLoading || pullDistance > 0f) {
                 LinearProgressIndicator(
-                    progress = { if (isRefreshing) 1f else (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
+                    progress = { if (isRefreshing || marketLoading) 1f else (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 )
             }
@@ -718,104 +701,20 @@ private fun OverviewScreen(
                 )
             }
         }
+
         item {
-            Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Пассивный доход за 12 месяцев", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("${money(expectedYear)} ₽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Ожидаемые дивиденды и купоны по текущим активам", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    HorizontalDivider()
-                    Text("Прогноз с будущими пополнениями", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text("${money(projectedYearForecast)} ₽", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    OutlinedTextField(value = monthlyContribution, onValueChange = { monthlyContribution = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
-                        label = { Text("План пополнений в месяц, ₽") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("Сценарная оценка при сохранении текущей средней доходности выплат; будущие выплаты не гарантированы.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            MarketQuotesSection(marketData = marketData)
         }
         item {
-            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (allocation.isEmpty()) Text("Добавьте активы или свободные деньги, чтобы увидеть распределение.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val donutRadiusPx = with(androidx.compose.ui.platform.LocalDensity.current) { 82.dp.toPx() }
-                    val donutStrokePx = with(androidx.compose.ui.platform.LocalDensity.current) { 28.dp.toPx() }
-                    Canvas(
-                        Modifier.fillMaxWidth().height(190.dp).pointerInput(allocation) {
-                            detectTapGestures { tap ->
-                                val centerX = size.width / 2f
-                                val centerY = size.height / 2f
-                                val dx = tap.x - centerX
-                                val dy = tap.y - centerY
-                                val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-                                if (distance in (donutRadiusPx - donutStrokePx)..(donutRadiusPx + donutStrokePx)) {
-                                    val angle = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble()))
-                                    val normalizedAngle = ((angle + 90.0 + 360.0) % 360.0)
-                                    var accumulated = 0.0
-                                    val selected = allocation.firstOrNull { slice ->
-                                        accumulated += slice.share * 360.0
-                                        normalizedAngle < accumulated
-                                    }
-                                    selectedAllocation = selected?.label
-                                }
-                            }
-                        }
-                    ) {
-                        var start = -90f
-                        allocation.forEachIndexed { index, slice ->
-                            val sweep = (slice.share * 360.0).toFloat()
-                            drawArc(allocationColors[index % allocationColors.size], start, sweep, false,
-                                topLeft = Offset(size.width / 2f - donutRadiusPx, size.height / 2f - donutRadiusPx),
-                                size = androidx.compose.ui.geometry.Size(donutRadiusPx * 2f, donutRadiusPx * 2f),
-                                style = Stroke(width = donutStrokePx))
-                            start += sweep
-                        }
-                    }
-                    allocation.forEachIndexed { index, slice ->
-                        Row(Modifier.fillMaxWidth().clickable { selectedAllocation = if (selectedAllocation == slice.label) null else slice.label }.padding(vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(allocationColors[index % allocationColors.size]))
-                            Spacer(Modifier.width(8.dp))
-                            Text(slice.label, Modifier.weight(1f))
-                            Text("${String.format(java.util.Locale("ru", "RU"), "%.1f", slice.share * 100)}% · ${money(slice.value)} ₽")
-                        }
-                        if (selectedAllocation == slice.label) {
-                            val rows = assets.filter { it.assetType.trim().ifBlank { "Прочее" } == slice.label }
-                            Column(Modifier.fillMaxWidth().padding(start = 20.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (slice.label == "Денежные средства") Text("Свободные деньги: ${money(cashBalance)} ₽")
-                                else rows.forEach { asset ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(asset.name.ifBlank { asset.ticker })
-                                        Text("${quantity(asset.quantity)} шт.")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            MarketMoversSection(title = "Топ роста за день", rows = marketData.gainers, positive = true)
         }
         item {
-            Text("Структура акций по секторам", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (sectorGroups.isEmpty()) Text("В портфеле пока нет акций с определённым сектором.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else Card(shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    sectorGroups.forEach { (sector, value) ->
-                        val stocksTotal = sectorGroups.sumOf { it.second }\n                        val share = if (stocksTotal > 0.0) value / stocksTotal else 0.0
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(sector)
-                                Text("${money(value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f", share * 100)}%")
-                            }
-                            LinearProgressIndicator(progress = { share.toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                            Text(stockAssets.filter { sectorForTicker(it.ticker) == sector }.joinToString { it.ticker },
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
+            MarketMoversSection(title = "Топ падений за день", rows = marketData.losers, positive = false)
         }
+        item {
+            DividendHistorySection(payouts = payouts)
+        }
+
     }
 }
 
