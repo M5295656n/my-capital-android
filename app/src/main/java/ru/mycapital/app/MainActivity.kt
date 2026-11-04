@@ -778,7 +778,7 @@ private fun OverviewScreen(
             else Card(shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     sectorGroups.forEach { (sector, value) ->
-                        val share = if (total > 0.0) value / total else 0.0
+                        val stocksTotal = sectorGroups.sumOf { it.second }\n                        val share = if (stocksTotal > 0.0) value / stocksTotal else 0.0
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(sector)
@@ -1836,6 +1836,36 @@ private fun AnalyticsScreen(
         item {
             Text("Аналитика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("Структура и текущий результат портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item {
+            val todayMillis = System.currentTimeMillis()
+            val horizonMillis = todayMillis + TimeUnit.DAYS.toMillis(90)
+            val upcoming = payouts.filter {
+                it.status == "EXPECTED" && it.expectedDate != null &&
+                    it.expectedDate >= todayMillis && it.expectedDate <= horizonMillis
+            }.sortedBy { it.expectedDate }
+            Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (upcoming.isEmpty()) {
+                Text("В ближайшие 90 дней ожидаемых выплат с известной датой нет.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                upcoming.take(8).forEach { payout ->
+                    Card(shape = RoundedCornerShape(16.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val date = java.time.Instant.ofEpochMilli(payout.expectedDate!!)
+                                .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                            Column(Modifier.weight(1f)) {
+                                Text(assets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text("${date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("ru", "RU")))} · ${payout.payoutType}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("≈ ${money(payout.totalAmount)} ₽", fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
         }
         item {
             Card(shape = RoundedCornerShape(18.dp)) {
