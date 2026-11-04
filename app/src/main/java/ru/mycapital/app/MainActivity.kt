@@ -24,6 +24,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -448,7 +452,6 @@ private fun MyCapitalApp() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefresh: () -> Unit, isRefreshing: Boolean, quoteRefreshStatus: String?, modifier: Modifier = Modifier) {
     val assetCount = assets.size
@@ -457,11 +460,22 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
     val unrealized = total - invested
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     val allocation = calculatePortfolioAllocation(assets, cashBalance)
-    PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = onRefresh,
-        modifier = modifier.fillMaxSize()
-    ) {
+    var pullDistance by remember { mutableFloatStateOf(0f) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val refreshConnection = remember(isRefreshing, onRefresh) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (available.y > 0f && !isRefreshing) pullDistance = (pullDistance + available.y).coerceAtMost(with(density) { 120.dp.toPx() })
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) onRefresh()
+                pullDistance = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+    Box(modifier = modifier.fillMaxSize().nestedScroll(refreshConnection)) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -532,6 +546,17 @@ private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance
                 else "Стоимость рассчитана по последней сохранённой цене. Котировки MOEX могут иметь задержку до 15 минут.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+    if (isRefreshing || pullDistance > 0f) {
+        Row(
+            Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (isRefreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            else CircularProgressIndicator(progress = { (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) }, Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text(if (isRefreshing) "Обновляю котировки и выплаты…" else "Потяните ещё для обновления", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     }
