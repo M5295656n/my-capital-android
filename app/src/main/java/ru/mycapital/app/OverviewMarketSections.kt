@@ -253,33 +253,69 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
 
 @Composable
 private fun DividendBarChart(values: List<Double>, labels: List<String>, barColor: Color, modifier: Modifier = Modifier) {
-    val maxValue = max(1.0, values.maxOrNull() ?: 0.0)
-    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .45f)
-    Canvas(modifier) {
-        val left = 8.dp.toPx()
-        val right = size.width - 6.dp.toPx()
-        val top = 10.dp.toPx()
-        val bottom = size.height - 28.dp.toPx()
-        val chartHeight = bottom - top
-        for (line in 0..4) {
-            val y = top + chartHeight * line / 4f
-            drawLine(axisColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
-        }
-        val slot = (right - left) / values.size
-        values.forEachIndexed { index, value ->
-            val barHeight = (value / maxValue).toFloat() * chartHeight
-            val x = left + slot * index + slot * .22f
-            drawRoundRect(barColor, Offset(x, bottom - barHeight), androidx.compose.ui.geometry.Size(slot * .56f, barHeight), androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
-        }
+    val rawMax = max(1.0, values.maxOrNull() ?: 0.0)
+    val magnitude = Math.pow(10.0, kotlin.math.floor(kotlin.math.log10(rawMax)))
+    val normalized = rawMax / magnitude
+    val stepFactor = when {
+        normalized <= 1.0 -> 1.0
+        normalized <= 2.0 -> 2.0
+        normalized <= 5.0 -> 5.0
+        else -> 10.0
     }
-    // Keep month labels aligned with their bar slots. On the narrow dashboard cards,
-    // labeling all 12 months makes the text run together; show every other month instead.
-    Row(Modifier.fillMaxWidth()) {
-        values.forEachIndexed { index, _ ->
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                if (index % 2 == 0 || index == values.lastIndex) {
-                    Text(labels.getOrNull(index).orEmpty(), fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    val step = stepFactor * magnitude / 4.0
+    val axisMax = kotlin.math.ceil(rawMax / step) * step
+    val ticks = (0..4).map { axisMax - step * it }
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().height(122.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                Modifier.width(42.dp).fillMaxHeight().padding(vertical = 2.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.End
+            ) {
+                ticks.forEach { tick ->
+                    val tickLabel = when {
+                        tick >= 1_000_000 -> String.format(Locale("ru", "RU"), "%.1fм", tick / 1_000_000.0)
+                        tick >= 10_000 -> String.format(Locale("ru", "RU"), "%.0fк", tick / 1_000.0)
+                        tick >= 1_000 -> String.format(Locale("ru", "RU"), "%.1fк", tick / 1_000.0)
+                        else -> String.format(Locale("ru", "RU"), "%.0f", tick)
+                    }
+                    Text(tickLabel, fontSize = 9.sp, color = labelColor, maxLines = 1)
+                }
+            }
+            Canvas(Modifier.weight(1f).fillMaxHeight()) {
+                val left = 2.dp.toPx()
+                val right = size.width - 2.dp.toPx()
+                val top = 4.dp.toPx()
+                val bottom = size.height - 3.dp.toPx()
+                val chartHeight = bottom - top
+                for (line in 0..4) {
+                    val y = top + chartHeight * line / 4f
+                    drawLine(axisColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
+                }
+                if (values.isNotEmpty()) {
+                    val slot = (right - left) / values.size
+                    values.forEachIndexed { index, value ->
+                        val barHeight = (value / axisMax).toFloat().coerceIn(0f, 1f) * chartHeight
+                        val x = left + slot * index + slot * .22f
+                        drawRoundRect(
+                            barColor,
+                            Offset(x, bottom - barHeight),
+                            androidx.compose.ui.geometry.Size(slot * .56f, barHeight),
+                            androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
+                        )
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(start = 46.dp, top = 3.dp)) {
+            values.forEachIndexed { index, _ ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    if (index % 2 == 0 || index == values.lastIndex) {
+                        Text(labels.getOrNull(index).orEmpty(), fontSize = 9.sp,
+                            color = labelColor, maxLines = 1)
+                    }
                 }
             }
         }
