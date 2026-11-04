@@ -481,6 +481,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         require(quantity > 0.0) { "Количество должно быть больше нуля" }
         val gross = amountPerUnit * quantity
         require(taxAmount >= 0.0 && taxAmount <= gross) { "Налог должен быть от нуля до суммы выплаты" }
+        if (!isReceived) require(expectedDate != null) { "Укажите дату ожидаемой выплаты" }
         val now = System.currentTimeMillis()
 
         database.withTransaction {
