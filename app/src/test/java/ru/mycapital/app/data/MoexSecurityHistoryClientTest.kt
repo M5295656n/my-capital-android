@@ -3,6 +3,7 @@ package ru.mycapital.app.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 import java.time.LocalDate
 
 class MoexSecurityHistoryClientTest {
@@ -17,7 +18,6 @@ class MoexSecurityHistoryClientTest {
                 "2026-09-18 00:00:00" to 131.5
             )
         )
-
         assertEquals(2, points.size)
         assertEquals(LocalDate.parse("2026-09-15"), points[0].date)
         assertEquals(128.3, points[0].close, 0.000001)
@@ -38,15 +38,59 @@ class MoexSecurityHistoryClientTest {
     }
 
     @Test
-    fun rejectsBondHistoryUntilHistoricalNominalAndAccruedInterestAreAvailable() {
-        val error = runCatching {
-            MoexSecurityHistoryClient().getDailyCloses(
-                "SU26238RMFS4",
-                "Облигация",
-                LocalDate.parse("2026-01-01"),
-                LocalDate.parse("2026-02-01")
+    fun accruedInterestUsesActualCouponPeriodDays() {
+        val coupons = listOf(
+            MoexBondCoupon(LocalDate.parse("2026-03-01"), 50.0),
+            MoexBondCoupon(LocalDate.parse("2026-06-01"), 50.0)
+        )
+        val accrued = calculateBondAccruedInterest(LocalDate.parse("2026-04-01"), coupons)
+        assertEquals(50.0 * 31.0 / 92.0, accrued!!, 0.000001)
+    }
+
+    @Test
+    fun firstCouponCanUseExplicitStartDate() {
+        val coupons = listOf(
+            MoexBondCoupon(
+                couponDate = LocalDate.parse("2026-06-01"),
+                value = 50.0,
+                startDate = LocalDate.parse("2026-03-01")
             )
-        }.exceptionOrNull()
-        assertTrue(error is IllegalArgumentException)
+        )
+        assertEquals(
+            50.0 * 31.0 / 92.0,
+            calculateBondAccruedInterest(LocalDate.parse("2026-04-01"), coupons)!!,
+            0.000001
+        )
+    }
+
+    @Test
+    fun dirtyPriceConvertsPercentOfNominalAndAddsAccruedInterest() {
+        assertEquals(967.5, calculateBondDirtyPrice(95.5, 1_000.0, 12.5), 0.000001)
+    }
+
+    @Test
+    fun parsesBondCouponAndAmortizationSchedules() {
+        val json = JSONObject(
+            """{
+              "coupons":{"columns":["coupondate","startdate","value"],"data":[["2026-06-01","2026-03-01",50.0]]},
+              "amortizations":{"columns":["amortdate","value"],"data":[["2026-05-01",100.0]]}
+            }"""
+        )
+        val coupons = parseBondCoupons(json)
+        val amortizations = parseBondAmortizations(json)
+        assertEquals(1, coupons.size)
+        assertEquals(LocalDate.parse("2026-03-01"), coupons.single().startDate)
+        assertEquals(1, amortizations.size)
+        assertEquals(100.0, amortizations.single().value, 0.000001)
+    }
+
+    @Test
+    fun parsesBondFaceValueAndCurrencyFromSecurityDescription() {
+        val json = JSONObject(
+            """{"description":{"columns":["name","value"],"data":[["FACEVALUE","1000"],["FACEUNIT","RUB"]]}}"""
+        )
+        val terms = parseBondTerms(json)
+        assertEquals(1_000.0, terms.faceValue, 0.000001)
+        assertEquals("RUB", terms.faceUnit)
     }
 }
