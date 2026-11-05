@@ -1,0 +1,88 @@
+package ru.mycapital.app
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import ru.mycapital.app.data.AssetEntity
+import ru.mycapital.app.data.MoexDailyClose
+import ru.mycapital.app.data.OperationEntity
+import java.time.LocalDate
+import java.time.ZoneOffset
+
+class PortfolioMarketHistoryTest {
+    private fun operation(
+        id: Long,
+        type: String,
+        date: String,
+        quantity: Double,
+        price: Double,
+        commission: Double = 0.0,
+        ticker: String = "SBER"
+    ) = OperationEntity(
+        id = id,
+        assetId = 1L,
+        operationType = type,
+        ticker = ticker,
+        quantity = quantity,
+        price = price,
+        commission = commission,
+        operationDate = LocalDate.parse(date).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+    )
+
+    @Test
+    fun chartStartsFromFirstPurchaseWithoutAnyDailySnapshots() = kotlinx.coroutines.runBlocking {
+        val firstBuy = LocalDate.parse("2026-01-02")
+        val nextDay = LocalDate.parse("2026-01-05")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 101.0, currentPrice = 110.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-01-01", 1.0, 1_000.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-01-02", 1.0, 100.0, 1.0)
+            ),
+            currentCash = 899.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = nextDay
+        ) { _, _, _, _ ->
+            listOf(MoexDailyClose(firstBuy, 100.0), MoexDailyClose(nextDay, 110.0))
+        }
+
+        assertEquals(firstBuy, result.firstPurchaseDate)
+        assertEquals(2, result.points.size)
+        assertEquals("2026-01-02", result.points.first().dateKey)
+        assertEquals(999.0, result.points.first().totalValue, 0.000001)
+        assertEquals(1_000.0, result.points.first().investedCapital, 0.000001)
+        assertEquals(1_009.0, result.points.last().totalValue, 0.000001)
+        assertTrue(result.unavailableTickers.isEmpty())
+    }
+
+    @Test
+    fun reverseLedgerRestoresSharesBeforeLaterSaleAndRemovesSaleCashEffect() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-02-02")
+        val sellDate = LocalDate.parse("2026-02-03")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 0.0, averagePrice = 0.0, currentPrice = 110.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-02-01", 1.0, 500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-02-02", 2.0, 100.0, 1.0),
+                operation(3, "Продажа", "2026-02-03", 2.0, 110.0, 1.0)
+            ),
+            currentCash = 518.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = sellDate
+        ) { _, _, _, _ ->
+            listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(sellDate, 110.0))
+        }
+
+        assertEquals(2, result.points.size)
+        assertEquals(499.0, result.points[0].totalValue, 0.000001)
+        assertEquals(518.0, result.points[1].totalValue, 0.000001)
+        assertFalse(result.unavailableTickers.contains("SBER"))
+    }
+}
