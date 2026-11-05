@@ -1,6 +1,5 @@
 package ru.mycapital.app
 
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -8,9 +7,7 @@ import org.junit.Test
 class OverviewMarketQuoteTest {
     @Test
     fun euroRateShowsChangeAgainstPreviousPublishedRate() {
-        val json = JSONObject(
-            """{"Valute":{"EUR":{"Value":91.5,"Previous":90.0}}}"""
-        )
+        val json = """{"Valute":{"EUR":{"Value":91.5,"Previous":90.0}}}"""
 
         val quote = parseEuroRateJson(json)
 
@@ -20,9 +17,7 @@ class OverviewMarketQuoteTest {
 
     @Test
     fun euroRateShowsNegativeChange() {
-        val json = JSONObject(
-            """{"Valute":{"EUR":{"Value":89.1,"Previous":90.0}}}"""
-        )
+        val json = """{"Valute":{"EUR":{"Value":89.1,"Previous":90.0}}}"""
 
         val quote = parseEuroRateJson(json)
 
@@ -31,9 +26,7 @@ class OverviewMarketQuoteTest {
 
     @Test
     fun missingPreviousRateDoesNotInventPercentage() {
-        val json = JSONObject(
-            """{"Valute":{"EUR":{"Value":91.5}}}"""
-        )
+        val json = """{"Valute":{"EUR":{"Value":91.5}}}"""
 
         val quote = parseEuroRateJson(json)
 
