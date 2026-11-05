@@ -28,7 +28,9 @@ data class OperationEntity(
     val commission: Double = 0.0,
     val operationDate: Long = System.currentTimeMillis(),
     val note: String = "",
-    val sourceKey: String? = null
+    val sourceKey: String? = null,
+    // Brokerage agreement for imported history; null keeps legacy/manual portfolio-wide entries.
+    val accountId: String? = null
 )
 
 @Entity(tableName = "payouts", indices = [Index(value = ["sourceKey"], unique = true)])
