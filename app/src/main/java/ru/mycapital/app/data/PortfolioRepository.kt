@@ -231,7 +231,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     commission = 0.0,
                     operationDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = note,
-                    sourceKey = scopedSourceKey
+                    sourceKey = scopedSourceKey,
+                    accountId = report.accountId
                 )
                 // Older app versions used an unscoped key. Respect it during upgrade
                 // so re-importing an old statement cannot create a duplicate.
@@ -265,7 +266,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     commission = trade.totalFee,
                     operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
-                    sourceKey = scopedSourceKey
+                    sourceKey = scopedSourceKey,
+                    accountId = report.accountId
                 )
                 if (dao.getOperationBySourceKey(trade.sourceKey) != null) {
                     duplicates++
