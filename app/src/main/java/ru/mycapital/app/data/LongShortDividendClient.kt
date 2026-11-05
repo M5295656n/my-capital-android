@@ -88,7 +88,7 @@ private fun parseCsvRows(rawText: String): List<List<String>> {
     // Detect the delimiter from the header rather than silently parsing every line as one cell.
     val text = rawText.removePrefix("\uFEFF").removePrefix("sep=,").removePrefix("sep=;").removePrefix("sep=\\t")
     val header = text.lineSequence().firstOrNull().orEmpty()
-    val delimiter = listOf(',', ';', '\\t').maxByOrNull { candidate ->
+    val delimiter = listOf(',', ';', '\t').maxByOrNull { candidate ->
         header.count { it == candidate }
     } ?: ','
     val rows = mutableListOf<List<String>>()
