@@ -86,6 +86,13 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE payouts ADD COLUMN recordDate INTEGER")
+                database.execSQL("ALTER TABLE payouts ADD COLUMN sourceName TEXT")
+            }
+        }
+
         @Volatile private var INSTANCE: PortfolioDatabase? = null
 
         fun getInstance(context: Context): PortfolioDatabase =
