@@ -808,9 +808,10 @@ private fun OverviewScreen(
                             color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
                         )
                     }
-                    if (historyResult.firstPurchaseDate != null) {
+                    val firstPurchaseDate = historyResult.firstPurchaseDate
+                    if (firstPurchaseDate != null) {
                         Text(
-                            "История с первой покупки: ${historyResult.firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
+                            "История с первой покупки: ${firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
                             modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
