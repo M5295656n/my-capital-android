@@ -67,3 +67,16 @@
 - Package: ru.mycapital.app; versionName 0.3.7; versionCode 19 — проверены по бинарному AndroidManifest.xml и конфигурации Gradle.
 - APK v2 signing block inspected; certificate SHA-256 fingerprint 77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66 — совпадает с постоянным сертификатом предыдущих подтверждённых релизов.
 - Итог: versionCode увеличен с 18 до 19, подпись прежняя; APK предназначен для установки поверх предыдущей версии.
+
+## v0.3.8 — versionCode 20 — 2026-11-05
+- Статус: **готовый Release APK; CI, unit tests, сборка, подпись и artifact проверены**.
+- Ветка: main; commit сборки: 7111e9846bb019d8fd3feb1019340b422a007fb8.
+- GitHub Actions: run #429, ID 42071749653; https://github.com/M5295656n/my-capital-android/actions/runs/42071749653
+- CI: completed / success; job build — success; unit tests — **102 passed, 0 failed, 0 errors, 0 skipped** (23 XML test suites); signed release APK build — success; artifact upload — success; Room instrumentation — skipped by agreed rule.
+- Artifact: my-capital-release-apk, ID 13436827218, ZIP size 13,053,301 bytes, ZIP SHA-256 9577b5f73d4f2c7a8c60d06e80eee947a9c7833b872d9adb1fb181001bb44047.
+- Test artifact: unit-test-results, ID 13437022110, ZIP size 17,057 bytes, ZIP SHA-256 e20ba35fa91cb6e922710ec6d62196423ed60b2033c2938f1ee3bc40363e291f.
+- Извлечённый файл: MyCapital-0.3.8.apk; local path /mnt/data/MyCapital-0.3.8.apk; size 13,577,772 bytes; APK SHA-256 da5803b4777263b5311193f214f5a7e8817597a283d30071eb980d16f5553930.
+- Package: ru.mycapital.app; versionName 0.3.8; versionCode 20 — проверены по бинарному AndroidManifest.xml.
+- APK v2 signing block inspected; certificate SHA-256 fingerprint 77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66 — совпадает с постоянным сертификатом предыдущих подтверждённых релизов.
+- Основные исправления: немедленная синхронизация дивидендов при загрузке/изменении состава портфеля вместо ожидания первого 24-часового периодического запуска; диагностика количества записей источника и совпадений с тикерами портфеля на экране «Выплаты»; поддержка CSV с разделителями comma/semicolon/tab; дивидендные прогнозы с отсечкой дальше 90 дней больше не скрываются вместе с дальними купонами; разрешено подтверждение фактического получения для объявленных/рекомендованных/прогнозных дивидендов.
+- Итог: versionCode увеличен с 19 до 20, подпись прежняя; APK предназначен для установки поверх предыдущей версии.
