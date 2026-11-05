@@ -1677,9 +1677,10 @@ private fun PayoutsScreen(
     val historyCutoff = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90)
     val historyPayouts = visiblePayouts.filter { payout ->
         val date = payout.recordDate ?: payout.expectedDate
-        !isUpcomingDividendStatus(payout.status) || date == null ||
+        (!(isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED")) || date == null ||
             !java.time.Instant.ofEpochMilli(date).atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
-    }
+    }.sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
+        .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
 
     // One page-level scroll: header, forecast, and payout history move together.
     Column(
