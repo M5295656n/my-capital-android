@@ -164,7 +164,6 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Мои котировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Все →", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         }
         if (marketData.quotes.isEmpty()) {
             Text(marketData.error ?: "Загружаем котировки…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
