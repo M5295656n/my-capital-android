@@ -28,12 +28,8 @@ internal data class PortfolioMarketHistoryResult(
 
 /**
  * Rebuilds historical portfolio value from the trade ledger and MOEX daily closes.
- * Holdings and cash are reverse-reconciled from today's broker snapshot, so a
- * second daily portfolio snapshot is not required. External deposits/withdrawals
- * are kept separate from investment return.
- *
- * Bonds are intentionally excluded until historical clean price + accrued coupon
- * valuation is implemented; the result reports excluded tickers explicitly.
+ * Shares/funds use RUB closes; bonds use dirty RUB prices per bond (clean quote
+ * converted from percent of face value plus accrued coupon interest).
  */
 internal suspend fun buildPortfolioMarketHistory(
     assets: List<AssetEntity>,
@@ -71,7 +67,8 @@ internal suspend fun buildPortfolioMarketHistory(
     }
     val supported = relevant.filter { (_, asset) ->
         val type = asset.assetType.lowercase()
-        type.contains("акци") || type.contains("фонд") || type.contains("пай")
+        type.contains("акци") || type.contains("фонд") || type.contains("пай") ||
+            type.contains("облиг") || type.contains("офз")
     }
     val unavailable = relevant.map { it.first }.filter { ticker ->
         supported.none { it.first == ticker }
@@ -99,7 +96,7 @@ internal suspend fun buildPortfolioMarketHistory(
 
     val dates = pricesByTicker.values.flatMap { it.keys }.distinct().sorted()
     if (dates.isEmpty()) {
-        return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailable.sorted())
+        return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailableConcurrent.toList().sorted())
     }
 
     val operationsByTicker = operations.groupBy { it.ticker?.trim()?.uppercase().orEmpty() }
@@ -196,4 +193,3 @@ private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
         else -> 0.0
     }
 }
-
