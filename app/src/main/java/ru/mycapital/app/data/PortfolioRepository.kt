@@ -220,6 +220,14 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     )
                 )
             }
+            dao.upsertBrokerCashOpening(
+                BrokerCashOpeningEntity(
+                    accountId = report.accountId,
+                    periodStart = report.periodStart.toString(),
+                    openingCash = report.openingCash,
+                    periodEnd = report.periodEnd.toString()
+                )
+            )
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
                 val kind = flow.kind
