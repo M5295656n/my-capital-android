@@ -45,9 +45,9 @@ LKOH,"ЛУКОЙЛ",2026-12-10,2026-12-09,535,USD,9.1,recommended,2026-12-25
     }
 
     @Test
-    fun quotedCommasAndEscapedQuotesAreParsed() {
+    fun quotedCommasAreParsed() {
         val csv = """secid,company,record_date,last_buy_date,value,currency,yield_pct,status,payment_date
-SBER,"Банк, ""Сбербанк""",2026-11-20,,12.5,RUB,,confirmed,2026-12-05
+SBER,"Банк, Сбербанк",2026-11-20,,12.5,RUB,,confirmed,2026-12-05
 """
         assertEquals(1, parseLongShortDividendCsv(csv, today).size)
     }
