@@ -29,24 +29,26 @@ internal fun reconstructPortfolioLedger(
     operations: List<OperationEntity>,
     throughDate: LocalDate
 ): List<PortfolioLedgerDay>? {
-    if (openingCash == null || !openingCash.isFinite() || openingCash < 0.0 || periodStart == null) {
+    val initialCash = openingCash ?: return null
+    val startDate = periodStart ?: return null
+    if (!initialCash.isFinite() || initialCash < 0.0 || startDate.isAfter(throughDate)) {
         return null
     }
 
     val dated = operations.map { operation ->
         operation to Instant.ofEpochMilli(operation.operationDate).atZone(ZoneOffset.UTC).toLocalDate()
-    }.filter { (_, date) -> !date.isBefore(periodStart) && !date.isAfter(throughDate) }
+    }.filter { (_, date) -> !date.isBefore(startDate) && !date.isAfter(throughDate) }
         .sortedWith(compareBy<Pair<OperationEntity, LocalDate>> { it.second }.thenBy { it.first.id })
 
     val firstPurchaseDate: LocalDate = dated.firstOrNull { it.first.operationType == "Покупка" }?.second
         ?: return emptyList()
     if (firstPurchaseDate.isAfter(throughDate)) return emptyList()
 
-    var cash = openingCash
+    var cash = initialCash
     val quantities = linkedMapOf<String, Double>()
     val byDate = dated.groupBy { it.second }
     val result = mutableListOf<PortfolioLedgerDay>()
-    var date = periodStart
+    var date = startDate
 
     while (!date.isAfter(throughDate)) {
         var externalFlow = 0.0
