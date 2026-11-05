@@ -80,6 +80,8 @@ internal fun writePortfolioExportZip(
                     payout.taxAmount,
                     payout.reportedNetAmount?.toString().orEmpty(),
                     payout.expectedDate?.let(::exportDate).orEmpty(),
+                    payout.recordDate?.let(::exportDate).orEmpty(),
+                    payout.sourceName.orEmpty(),
                     payout.actualDate?.let(::exportDate).orEmpty(),
                     payout.status
                 )
