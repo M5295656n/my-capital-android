@@ -87,6 +87,7 @@ internal suspend fun buildPortfolioMarketHistory(
                     unavailableConcurrent.add(ticker)
                     emptyList()
                 }
+                if (closes.isEmpty()) unavailableConcurrent.add(ticker)
                 ticker to closes.associate { it.date to it.close }.toSortedMap()
             }
         }.map { it.await() }.toMap()
@@ -119,7 +120,10 @@ internal suspend fun buildPortfolioMarketHistory(
                         else -> 0.0
                     }
                 }
-            val quantityAtClose = (asset.quantity - futureTradeDelta).coerceAtLeast(0.0)
+            val quantityAtClose = asset.quantity - futureTradeDelta
+            if (quantityAtClose < -0.0000001) {
+                unavailableConcurrent.add(ticker)
+            }
             if (quantityAtClose > 0.0000001) {
                 val historicalPrice = pricesByTicker[ticker]?.entries?.lastOrNull { !it.key.isAfter(date) }?.value
                 if (historicalPrice != null) marketValue += quantityAtClose * historicalPrice
