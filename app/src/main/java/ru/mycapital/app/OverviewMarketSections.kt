@@ -69,7 +69,7 @@ internal class MarketOverviewClient {
         val quotes = coroutineScope {
             listOf(
                 async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") },
-                async(Dispatchers.IO) { quote("EUR_RUB__TOM", "EUR/RUB") },
+                async(Dispatchers.IO) { cbrEuroQuote() },
                 async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") },
                 async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
             ).awaitAll().filterNotNull()
@@ -89,7 +89,7 @@ internal class MarketOverviewClient {
     }
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? = runCatching {
-        val market = if (ticker == "USD000UTSTOM" || ticker == "EUR_RUB__TOM" || ticker == "CNYRUB_TOM") "currency/selt" else "currency/selt"
+        val market = if (ticker == "USD000UTSTOM" || ticker == "CNYRUB_TOM") "currency/selt" else "currency/selt"
         val url = "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE"
         val json = getJson(url)
         val table = json.optJSONObject("marketdata") ?: return@runCatching null
@@ -103,7 +103,26 @@ internal class MarketOverviewClient {
         MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
     }.getOrNull()
 
-        private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
+        // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the official
+    // Bank of Russia rate instead of showing an unavailable or stale MOEX quote.
+    private fun cbrEuroQuote(): MarketQuoteRow? = runCatching {
+        val request = Request.Builder()
+            .url("https://www.cbr.ru/scripts/XML_daily.asp")
+            .header("User-Agent", "MyCapital-Android/0.3")
+            .build()
+        val xml = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
+            response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
+        }
+        val valueText = Regex("""<Valute\\s+ID="R01239">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
+            .find(xml)?.groupValues?.getOrNull(1)
+            ?: return@runCatching null
+        val value = valueText.replace(",", ".").toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it > 0.0 } ?: return@runCatching null
+        MarketQuoteRow("EUR_RUB_CBR", "EUR/RUB", value, null)
+    }.getOrNull()
+
+    private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/boardgroups/$boardGroup/securities.json?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,SHORTNAME&marketdata.columns=SECID,LAST,CHANGE"
         val json = getJson(url)
         val securities = json.optJSONObject("securities") ?: return@runCatching emptyList()
@@ -238,7 +257,7 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
     val key = ticker.uppercase()
     val background = when (key) {
         "USD000UTSTOM" -> Color(0xFF244A87)
-        "EUR_RUB__TOM" -> Color(0xFF2454A6)
+        "EUR_RUB__TOM", "EUR_RUB_CBR" -> Color(0xFF2454A6)
         "CNYRUB_TOM" -> Color(0xFFB52D35)
         "GLDRUB_TOM" -> Color(0xFFB88B24)
         "SBER", "SBERP" -> Color(0xFF20A66A)
@@ -254,7 +273,7 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
     }
     val mark = when (key) {
         "USD000UTSTOM" -> "$"
-        "EUR_RUB__TOM" -> "€"
+        "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
         "CNYRUB_TOM" -> "¥"
         "GLDRUB_TOM" -> "Au"
         else -> key.take(3)
