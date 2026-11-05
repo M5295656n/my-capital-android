@@ -57,6 +57,12 @@ interface PortfolioDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertBrokerAccountCash(snapshot: BrokerAccountCashEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBrokerCashOpening(opening: BrokerCashOpeningEntity)
+
+    @Query("SELECT * FROM broker_cash_opening WHERE accountId = :accountId ORDER BY periodStart ASC")
+    suspend fun getBrokerCashOpenings(accountId: String): List<BrokerCashOpeningEntity>
+
     @Query("SELECT * FROM broker_account_assets WHERE accountId = :accountId")
     suspend fun getBrokerAccountAssets(accountId: String): List<BrokerAccountAssetEntity>
 
@@ -68,6 +74,9 @@ interface PortfolioDao {
 
     @Query("SELECT * FROM operations ORDER BY operationDate DESC")
     fun observeOperations(): Flow<List<OperationEntity>>
+
+    @Query("SELECT * FROM operations WHERE assetId = :assetId ORDER BY operationDate ASC, id ASC")
+    suspend fun getOperationsForAsset(assetId: Long): List<OperationEntity>
 
     @Insert
     suspend fun insertOperation(operation: OperationEntity): Long
