@@ -69,6 +69,12 @@ interface PortfolioDao {
     @Query("SELECT * FROM operations ORDER BY operationDate DESC")
     fun observeOperations(): Flow<List<OperationEntity>>
 
+    @Query("SELECT * FROM operations WHERE accountId = :accountId ORDER BY operationDate ASC, id ASC")
+    suspend fun getOperationsForAccount(accountId: String): List<OperationEntity>
+
+    @Query("SELECT * FROM operations WHERE accountId IS NULL ORDER BY operationDate ASC, id ASC")
+    suspend fun getUnassignedOperations(): List<OperationEntity>
+
     @Insert
     suspend fun insertOperation(operation: OperationEntity): Long
 
