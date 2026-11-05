@@ -24,14 +24,14 @@ internal data class PayoutForecastSummary(
     val monthly: List<MonthlyPayoutForecast>
 )
 
-/** Forecasts only expected payouts with a known payment date; received and overdue events are excluded. */
+/** Forecasts announced, board-recommended, provider-forecast and legacy expected payouts with known dates. */
 internal fun calculatePayoutForecast(
     payouts: List<PayoutEntity>,
     today: LocalDate = LocalDate.now(),
     zoneId: ZoneId = ZoneId.of("UTC")
 ): PayoutForecastSummary {
     val datedExpected = payouts.mapNotNull { payout ->
-        if (payout.status != "EXPECTED" || payout.expectedDate == null) return@mapNotNull null
+        if (!(payout.status == "EXPECTED" || isUpcomingDividendStatus(payout.status)) || payout.expectedDate == null) return@mapNotNull null
         val date = Instant.ofEpochMilli(payout.expectedDate).atZone(zoneId).toLocalDate()
         if (date.isBefore(today)) return@mapNotNull null
         date to payout.totalAmount
