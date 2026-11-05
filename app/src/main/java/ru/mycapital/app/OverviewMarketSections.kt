@@ -89,10 +89,10 @@ internal class MarketOverviewClient {
         // cannot keep the dashboard in its loading state for several sequential timeouts.
         val quotes = coroutineScope {
             listOf(
-                async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") },
+                async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") ?: cbrCurrencyQuote("USD", "R01235") },
                 async(Dispatchers.IO) { cbrEuroQuote() },
-                async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") },
-                async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
+                async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") ?: cbrCurrencyQuote("CNY", "R01375") },
+                async(Dispatchers.IO) { quote("GLDRUB_TOM", "Золото/RUB") }
             ).awaitAll().filterNotNull()
         }
         val movers = coroutineScope {
@@ -110,8 +110,7 @@ internal class MarketOverviewClient {
     }
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? = runCatching {
-        val market = if (ticker == "USD000UTSTOM" || ticker == "CNYRUB_TOM") "currency/selt" else "currency/selt"
-        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE"
+        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE"
         val json = getJson(url)
         val table = json.optJSONObject("marketdata") ?: return@runCatching null
         val columns = table.optJSONArray("columns") ?: return@runCatching null
@@ -124,7 +123,18 @@ internal class MarketOverviewClient {
         MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
     }.getOrNull()
 
-        // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the official
+        // Fallback for USD/CNY when MOEX does not publish a usable LAST price.
+    // The official CBR fixing is still preferable to hiding the entire quote card.
+    private fun cbrCurrencyQuote(label: String, cbrId: String): MarketQuoteRow? = runCatching {
+        val xml = getXml("https://www.cbr.ru/scripts/XML_daily.asp")
+        val valueText = Regex("""<Valute[^>]*ID="$cbrId">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
+            .find(xml)?.groupValues?.getOrNull(1) ?: return@runCatching null
+        val value = valueText.replace(",", ".").toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it > 0.0 } ?: return@runCatching null
+        MarketQuoteRow("CBR_$label", "$label/RUB", value, null)
+    }.getOrNull()
+
+    // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the official
     // Bank of Russia rate instead of showing an unavailable or stale MOEX quote.
     private fun cbrEuroQuote(): MarketQuoteRow? = runCatching {
         val xml = getXml("https://www.cbr.ru/scripts/XML_daily.asp")
