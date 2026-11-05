@@ -87,8 +87,7 @@ class MoexSecurityHistoryClient {
                 .filter { !it.date.isAfter(candle.date) }
                 .sumOf { it.value }
             if (nominal <= 0.0) return@mapNotNull null
-            val cleanPriceRub = nominal * candle.close / 100.0
-            val dirtyPriceRub = cleanPriceRub + accrued
+            val dirtyPriceRub = calculateBondDirtyPrice(candle.close, nominal, accrued)
             if (dirtyPriceRub.isFinite() && dirtyPriceRub > 0.0) {
                 MoexDailyClose(candle.date, dirtyPriceRub)
             } else null
@@ -140,7 +139,7 @@ class MoexSecurityHistoryClient {
     }
 }
 
-private data class MoexBondTerms(val faceValue: Double, val faceUnit: String)
+internal data class MoexBondTerms(val faceValue: Double, val faceUnit: String)
 
 internal fun parseBondTerms(json: JSONObject): MoexBondTerms {
     val description = json.optJSONObject("description")
