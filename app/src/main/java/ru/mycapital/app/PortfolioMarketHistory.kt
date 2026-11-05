@@ -75,7 +75,7 @@ internal suspend fun buildPortfolioMarketHistory(
     val unavailableConcurrent = ConcurrentHashMap.newKeySet<String>().also { it.addAll(unavailable) }
 
     if (supported.isEmpty()) {
-        return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailable.sorted())
+        return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailableConcurrent.toList().sorted())
     }
 
     val pricesByTicker = kotlinx.coroutines.coroutineScope {
@@ -188,16 +188,3 @@ private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
     }
 }
 
-private fun externalFlowForDate(operations: List<OperationEntity>, date: LocalDate): Double {
-    val start = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-    val end = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-    return operations.asSequence()
-        .filter { it.operationDate >= start && it.operationDate < end }
-        .sumOf {
-            when (it.operationType) {
-                "Пополнение" -> it.quantity * it.price
-                "Вывод" -> -it.quantity * it.price
-                else -> 0.0
-            }
-        }
-}
