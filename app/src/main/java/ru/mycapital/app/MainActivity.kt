@@ -724,7 +724,7 @@ private fun OverviewScreen(
                                 axisValues.forEach { value ->
                                     Text(
                                         money(value).substringBefore(','),
-                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 9.sp,
                                         color = axisColor,
                                         maxLines = 1
                                     )
@@ -776,7 +776,7 @@ private fun OverviewScreen(
                                 Text(
                                     java.time.LocalDate.parse(history[index].dateKey)
                                         .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
                                     color = axisColor
                                 )
                             }
@@ -786,7 +786,7 @@ private fun OverviewScreen(
                         Text(
                             "Нет исторических котировок для: ${historyResult.unavailableTickers.joinToString()}. Эти позиции не включены в историческую оценку.",
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
                             color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
                         )
                     }
