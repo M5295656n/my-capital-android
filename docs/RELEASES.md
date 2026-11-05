@@ -55,3 +55,15 @@
 - APK v2 signing block inspected; certificate SHA-256 fingerprint `77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66` — **совпадает с постоянным ключом подтверждённого предыдущего релиза**.
 - Итог: релиз подписан прежним сертификатом, versionCode увеличен с 17 до 18; предназначен для установки поверх предыдущей версии.
 
+
+## v0.3.7 — versionCode 19 — 2026-11-05
+- Статус: **готовый Release APK; CI, unit tests, сборка, подпись и artifact проверены**.
+- Ветка: main; commit сборки: 0a8dd621c21e109461c19af8253d6747c8cbc24e.
+- GitHub Actions: run #419, ID 42050758470; https://github.com/M5295656n/my-capital-android/actions/runs/42050758470
+- CI: completed / success; job build — success; unit tests — **100 passed, 0 failed, 0 errors, 0 skipped** (23 XML test suites); signed release APK build — success; artifact upload — success; Room instrumentation — skipped by agreed rule.
+- Artifact: my-capital-release-apk, ID 13426956352, ZIP size 13,051,238 bytes, ZIP SHA-256 6106ca40ffcb7ef6deb4b627e75c025ba6e263586789d2cf626c45f3510e345f.
+- Test artifact: unit-test-results, ID 13426941256, ZIP size 16,997 bytes, ZIP SHA-256 03dfeaf6c12cf4512031525ab785587e18e570d7828fda34ef60d1374be4454e.
+- Извлечённый файл: MyCapital-0.3.7.apk; local path /mnt/data/MyCapital-0.3.7.apk; size 13,577,772 bytes; APK SHA-256 ab40ec1ee6e47866d613db91129ff638f08251ae9bd6d972b52901cf11f002a2.
+- Package: ru.mycapital.app; versionName 0.3.7; versionCode 19 — проверены по бинарному AndroidManifest.xml и конфигурации Gradle.
+- APK v2 signing block inspected; certificate SHA-256 fingerprint 77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66 — совпадает с постоянным сертификатом предыдущих подтверждённых релизов.
+- Итог: versionCode увеличен с 18 до 19, подпись прежняя; APK предназначен для установки поверх предыдущей версии.
