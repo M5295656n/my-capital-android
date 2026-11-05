@@ -2,7 +2,8 @@
 
 Этот файл — постоянный реестр релизов. Новую запись добавлять после каждой сборки; старые записи не удалять и не заменять. Всегда различать успешную CI-сборку, скачанный artifact и фактически проверенный APK.
 
-## Последний подтверждённый релиз до текущей задачи
+## Последний подтверждённый релиз
+
 
 ### v0.3.5 — versionCode 17
 - Дата: 2026-11-05
@@ -41,3 +42,16 @@
 3. Сохранять предыдущие записи; не перезаписывать последний известный хороший APK.
 4. Выдавать только Release APK, не Debug APK.
 5. Передавать APK только после успешного CI, проверки package/versionCode и подписи; для установки поверх предыдущей версии сравнивать certificate fingerprint.
+
+## v0.3.6 — versionCode 18 — 2026-11-05
+- Статус: **готовый Release APK; CI и все обязательные проверки завершены успешно**.
+- Ветка: `main`; commit сборки: `166c3cdc211fcd11ab70deb76f7be6f71f31589a`.
+- GitHub Actions: run #415, ID `42042714624`; https://github.com/M5295656n/my-capital-android/actions/runs/42042714624
+- CI: `completed / success`; job `build` — success; unit tests — **95 passed, 0 failed, 0 errors**; signed release APK build — success; upload — success; Room instrumentation — skipped by agreed rule.
+- Предыдущий run #414 (ID `42041978309`, code commit `d78442e0ef441a71a35d209d22a8e62c5d4e23e7`) первоначально выявил 3 теста, падавших из-за Android `org.json.JSONObject` stub в JVM. Парсер переведён на безопасный разбор строки JSON; повторные 95 тестов прошли успешно. Run #415 повторно проверил итоговый main и собрал релиз после настройки пропуска CI для docs-only commits.
+- Artifact: `my-capital-release-apk`, ID `13421703266`, ZIP size 13,042,462 bytes, ZIP SHA-256 `bc1963cad8e9f77c16f05ac2361bad616a5b369d79be2d91dab2d50386203f9f`.
+- Извлечённый файл: `MyCapital-0.3.6.apk`; local path `/mnt/data/MyCapital-0.3.6.apk`; size 13,577,772 bytes; APK SHA-256 `03159718f40890fee288cf030a4b3521e5b29515c9166740a8e55cf8bf9c5cbb`.
+- Package: `ru.mycapital.app`; versionName `0.3.6`; versionCode `18` (source configuration checked).
+- APK v2 signing block inspected; certificate SHA-256 fingerprint `77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66` — **совпадает с постоянным ключом подтверждённого предыдущего релиза**.
+- Итог: релиз подписан прежним сертификатом, versionCode увеличен с 17 до 18; предназначен для установки поверх предыдущей версии.
+
