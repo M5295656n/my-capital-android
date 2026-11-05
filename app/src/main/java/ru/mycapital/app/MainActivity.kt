@@ -1034,14 +1034,16 @@ private fun AssetDetailScreen(
         payouts.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
     }
     LaunchedEffect(Unit) { logos = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) } }
-    LaunchedEffect(asset.ticker, asset.assetType, period) {
+    val firstTradeDate = trades.firstOrNull()?.operationDate?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+    LaunchedEffect(asset.ticker, asset.assetType, period, firstTradeDate) {
         loading = true
         error = null
         try {
+            val today = java.time.LocalDate.now()
             val days = when (period) { "1М" -> 31L; "3М" -> 92L; "6М" -> 183L; "1Г" -> 366L; else -> 3650L }
+            val fromDate = if (period == "Всё") (firstTradeDate ?: today.minusYears(10)) else today.minusDays(days)
             candles = withContext(Dispatchers.IO) {
-                val today = java.time.LocalDate.now()
-                MoexSecurityHistoryClient().getDailyCloses(asset.ticker, asset.assetType, today.minusDays(days), today)
+                MoexSecurityHistoryClient().getDailyCloses(asset.ticker, asset.assetType, fromDate, today)
             }
             if (candles.isEmpty()) error = "Нет истории котировок"
         } catch (e: Exception) {
@@ -1064,8 +1066,10 @@ private fun AssetDetailScreen(
     val value = asset.quantity * price
     val sales = trades.filter { it.operationType == "Продажа" }.sumOf { it.quantity * it.price - it.commission }
     val purchases = trades.filter { it.operationType == "Покупка" }.sumOf { it.quantity * it.price + it.commission }
-    val profit = value + sales + received - purchases
-    val totalReturn = if (purchases > 0.0) profit / purchases * 100.0 else null
+    val tradedQuantity = trades.sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
+    val historyComplete = trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001 && kotlin.math.abs(tradedQuantity - asset.quantity) <= maxOf(0.000001, asset.quantity * 0.00001)
+    val profit = if (historyComplete) value + sales + received - purchases else null
+    val totalReturn = if (historyComplete && purchases > 0.0) profit!! / purchases * 100.0 else null
     val cashFlows = buildList {
         trades.forEach { op ->
             val amount = op.quantity * op.price + op.commission
@@ -1074,7 +1078,7 @@ private fun AssetDetailScreen(
         actual.forEach { p -> (p.actualDate ?: p.expectedDate)?.let { add(it to (p.reportedNetAmount ?: p.totalAmount - p.taxAmount)) } }
         add(System.currentTimeMillis() to value)
     }
-    val annualized = annualizedReturnPercent(cashFlows)
+    val annualized = if (historyComplete) annualizedReturnPercent(cashFlows) else null
     val nextPayout = assetPayouts.filter { it.actualDate == null && (it.expectedDate ?: Long.MAX_VALUE) >= System.currentTimeMillis() }
         .minByOrNull { it.expectedDate ?: Long.MAX_VALUE }
     val bond = asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true)
@@ -1135,7 +1139,7 @@ private fun AssetDetailScreen(
             AssetDetailMetric("Доля в портфеле", if (portfolioValue > 0.0) String.format(java.util.Locale("ru", "RU"), "%.2f%%", value / portfolioValue * 100.0) else "Не рассчитано")
         }
         AssetDetailSection("Прибыль") {
-            AssetDetailMetric("Общая прибыль", "${if (profit >= 0) "+" else ""}${money(profit)} ₽")
+            AssetDetailMetric("Общая прибыль", profit?.let { "${if (it >= 0) "+" else ""}${money(it)} ₽" } ?: "Недостаточно данных по истории операций")
             AssetDetailMetric("Общая доходность", totalReturn?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Не рассчитано")
             AssetDetailMetric("Прибыль / убыток за день", change?.let { "${if (it >= 0) "+" else ""}${money(it * asset.quantity)} ₽" } ?: "Нет данных")
             AssetDetailMetric("Получено начислений", "${money(received)} ₽")
