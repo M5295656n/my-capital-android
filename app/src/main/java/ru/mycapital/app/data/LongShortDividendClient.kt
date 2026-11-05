@@ -25,7 +25,7 @@ internal fun parseLongShortDividendCsv(
     val rows = parseCsvRows(csv)
     if (rows.isEmpty()) throw IOException("Пустая выгрузка дивидендов Long/Short")
     val headers = rows.first().mapIndexed { index, value ->
-        value.trim().removePrefix("\uFEFF").lowercase(Locale.ROOT) to index
+        value.trim().removePrefix("\uFEFF").removeSurrounding("\"").lowercase(Locale.ROOT) to index
     }.toMap()
     fun index(name: String): Int = headers[name] ?: throw IOException("В CSV дивидендов отсутствует столбец $name")
     val tickerIndex = index("secid")
@@ -83,7 +83,14 @@ private fun parseDividendDate(value: String): LocalDate? {
         }.getOrNull()
 }
 
-private fun parseCsvRows(text: String): List<List<String>> {
+private fun parseCsvRows(rawText: String): List<List<String>> {
+    // The publisher may serve CSV with comma, semicolon (locale export), or tab delimiters.
+    // Detect the delimiter from the header rather than silently parsing every line as one cell.
+    val text = rawText.removePrefix("\uFEFF").removePrefix("sep=,").removePrefix("sep=;").removePrefix("sep=\\t")
+    val header = text.lineSequence().firstOrNull().orEmpty()
+    val delimiter = listOf(',', ';', '\\t').maxByOrNull { candidate ->
+        header.count { it == candidate }
+    } ?: ','
     val rows = mutableListOf<List<String>>()
     var row = mutableListOf<String>()
     val field = StringBuilder()
@@ -97,7 +104,7 @@ private fun parseCsvRows(text: String): List<List<String>> {
                 i++
             }
             char == '"' -> quoted = !quoted
-            char == ',' && !quoted -> {
+            char == delimiter && !quoted -> {
                 row += field.toString()
                 field.setLength(0)
             }
