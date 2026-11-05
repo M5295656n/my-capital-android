@@ -82,10 +82,7 @@ class MoexSecurityHistoryClient {
         val candles = loadCandles(ticker, "bonds", fromDate, tillDate)
         val dirtyPrices = candles.mapNotNull { candle ->
             val accrued = calculateBondAccruedInterest(candle.date, coupons) ?: return@mapNotNull null
-            val nominal = terms.faceValue - amortizations
-                .asSequence()
-                .filter { !it.date.isAfter(candle.date) }
-                .sumOf { it.value }
+            val nominal = historicalBondFaceValue(terms.faceValue, amortizations, candle.date, tillDate)
             if (nominal <= 0.0) return@mapNotNull null
             val dirtyPriceRub = calculateBondDirtyPrice(candle.close, nominal, accrued)
             if (dirtyPriceRub.isFinite() && dirtyPriceRub > 0.0) {
@@ -225,6 +222,23 @@ internal fun calculateBondAccruedInterest(
     val accruedDays = ChronoUnit.DAYS.between(periodStart, date)
     if (totalDays <= 0L || accruedDays < 0L || accruedDays > totalDays) return null
     return next.value * accruedDays.toDouble() / totalDays.toDouble()
+}
+
+/**
+ * FACEVALUE in MOEX instrument metadata is today's outstanding nominal.
+ * Reconstruct a past nominal by adding back amortizations paid after the
+ * historical date, but not payments later than the current valuation date.
+ */
+internal fun historicalBondFaceValue(
+    currentFaceValue: Double,
+    amortizations: List<MoexBondAmortization>,
+    historicalDate: LocalDate,
+    currentDate: LocalDate
+): Double {
+    require(currentFaceValue.isFinite() && currentFaceValue > 0.0)
+    return currentFaceValue + amortizations.asSequence()
+        .filter { it.date.isAfter(historicalDate) && !it.date.isAfter(currentDate) }
+        .sumOf { it.value }
 }
 
 internal fun calculateBondDirtyPrice(
