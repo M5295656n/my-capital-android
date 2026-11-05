@@ -85,15 +85,21 @@ internal fun parseDailyCandles(json: String): List<MoexDailyClose> {
     val beginIndex = indexes["begin"] ?: throw IOException("MOEX ISS не вернул дату свечи")
     val closeIndex = indexes["close"] ?: throw IOException("MOEX ISS не вернул цену закрытия")
 
-    return buildList {
+    val rawRows = buildList {
         for (index in 0 until rows.length()) {
             val row = rows.optJSONArray(index) ?: continue
             if (row.isNull(beginIndex) || row.isNull(closeIndex)) continue
-            val dateText = row.optString(beginIndex).take(10)
-            val close = row.optDouble(closeIndex, Double.NaN)
-            if (!close.isFinite() || close <= 0.0) continue
-            val date = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: continue
-            add(MoexDailyClose(date, close))
+            add(row.optString(beginIndex) to row.optDouble(closeIndex, Double.NaN))
         }
-    }.distinctBy { it.date }.sortedBy { it.date }
+    }
+    return parseDailyCandleRows(rawRows)
+}
+
+internal fun parseDailyCandleRows(rows: List<Pair<String, Double?>>): List<MoexDailyClose> =
+    rows.mapNotNull { (dateText, close) ->
+        val date = runCatching { LocalDate.parse(dateText.take(10)) }.getOrNull()
+            ?: return@mapNotNull null
+        if (close == null || !close.isFinite() || close <= 0.0) return@mapNotNull null
+        MoexDailyClose(date, close)
+    }.distinctBy { it.date }.sortedBy { it.date
 }
