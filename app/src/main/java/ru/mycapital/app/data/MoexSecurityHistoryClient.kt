@@ -7,18 +7,31 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 
 data class MoexDailyClose(
     val date: LocalDate,
+    /** For shares: RUB per share. For bonds: dirty RUB price per bond (clean price + accrued coupon). */
     val close: Double
 )
 
+internal data class MoexBondCoupon(
+    val couponDate: LocalDate,
+    val value: Double,
+    val startDate: LocalDate? = null
+)
+
+internal data class MoexBondAmortization(
+    val date: LocalDate,
+    val value: Double
+)
+
 /**
- * Public delayed daily candles from MOEX ISS. This client deliberately supports
- * shares and exchange-traded funds only. Bond candles are percentage-of-face
- * quotations and must not be valued as rubles without historical face value and
- * accrued coupon interest.
+ * Delayed daily candles and instrument data from MOEX ISS.
+ * Bond candles are quoted as a percentage of face value; they are converted
+ * into dirty RUB prices per bond using the face value, amortizations and
+ * accrued coupon interest reconstructed from the published coupon schedule.
  */
 class MoexSecurityHistoryClient {
     private val client = OkHttpClient.Builder()
@@ -36,12 +49,63 @@ class MoexSecurityHistoryClient {
         require(ticker.matches(Regex("[A-Za-z0-9._-]{1,32}"))) { "Некорректный тикер" }
         require(fromDate <= tillDate) { "Начальная дата позже конечной" }
         val type = assetType.lowercase()
-        require(type.contains("акци") || type.contains("фонд") || type.contains("пай")) {
-            "Историческая оценка облигаций пока не поддерживается"
+        return when {
+            type.contains("акци") || type.contains("фонд") || type.contains("пай") ->
+                loadCandles(ticker, "shares", fromDate, tillDate)
+            type.contains("облиг") || type.contains("офз") ->
+                loadBondCloses(ticker, fromDate, tillDate)
+            else -> throw IllegalArgumentException("Тип актива не поддерживается историческим графиком")
+        }
+    }
+
+    private fun loadBondCloses(
+        ticker: String,
+        fromDate: LocalDate,
+        tillDate: LocalDate
+    ): List<MoexDailyClose> {
+        val safeTicker = encodeTicker(ticker)
+        val description = getJson(
+            "https://iss.moex.com/iss/securities/$safeTicker.json?iss.meta=off&iss.only=description&description.columns=name,value"
+        )
+        val terms = parseBondTerms(description)
+        require(terms.faceUnit.equals("RUB", ignoreCase = true) || terms.faceUnit.equals("SUR", ignoreCase = true)) {
+            "Историческая оценка облигаций в валюте, отличной от RUB, пока не поддерживается"
         }
 
-        val market = "shares"
-        val safeTicker = URLEncoder.encode(ticker.trim().uppercase(), StandardCharsets.UTF_8.name())
+        val schedule = getJson(
+            "https://iss.moex.com/iss/securities/$safeTicker/bondization.json?iss.meta=off&iss.only=coupons,amortizations&limit=unlimited"
+        )
+        val coupons = parseBondCoupons(schedule)
+        require(coupons.isNotEmpty()) { "MOEX ISS не вернул график купонов для $ticker" }
+        val amortizations = parseBondAmortizations(schedule)
+
+        val candles = loadCandles(ticker, "bonds", fromDate, tillDate)
+        val dirtyPrices = candles.mapNotNull { candle ->
+            val accrued = calculateBondAccruedInterest(candle.date, coupons) ?: return@mapNotNull null
+            val nominal = terms.faceValue - amortizations
+                .asSequence()
+                .filter { !it.date.isAfter(candle.date) }
+                .sumOf { it.value }
+            if (nominal <= 0.0) return@mapNotNull null
+            val cleanPriceRub = nominal * candle.close / 100.0
+            val dirtyPriceRub = cleanPriceRub + accrued
+            if (dirtyPriceRub.isFinite() && dirtyPriceRub > 0.0) {
+                MoexDailyClose(candle.date, dirtyPriceRub)
+            } else null
+        }
+        if (dirtyPrices.isEmpty()) {
+            throw IOException("Не удалось рассчитать историческую цену $ticker: нет полного графика купонов для периода")
+        }
+        return dirtyPrices
+    }
+
+    private fun loadCandles(
+        ticker: String,
+        market: String,
+        fromDate: LocalDate,
+        tillDate: LocalDate
+    ): List<MoexDailyClose> {
+        val safeTicker = encodeTicker(ticker)
         val baseUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker/candles.json"
         val result = linkedMapOf<LocalDate, MoexDailyClose>()
         var start = 0
@@ -49,17 +113,7 @@ class MoexSecurityHistoryClient {
         repeat(50) {
             val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start" +
                 "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
-            val request = Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .header("User-Agent", "MyCapital-Android/0.1")
-                .build()
-
-            val page = client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
-                val body = response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS")
-                parseDailyCandles(body)
-            }
+            val page = parseDailyCandles(getJson(url))
             if (page.isEmpty()) return result.values.sortedBy { it.date }
             page.forEach { result[it.date] = it }
             if (page.size < 500) return result.values.sortedBy { it.date }
@@ -67,15 +121,126 @@ class MoexSecurityHistoryClient {
         }
         return result.values.sortedBy { it.date }
     }
+
+    private fun getJson(url: String): JSONObject {
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .header("User-Agent", "MyCapital-Android/0.2.8")
+            .build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
+            val body = response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS")
+            try {
+                JSONObject(body)
+            } catch (error: Exception) {
+                throw IOException("Некорректный JSON от MOEX ISS", error)
+            }
+        }
+    }
 }
 
-internal fun parseDailyCandles(json: String): List<MoexDailyClose> {
-    val root = try {
-        JSONObject(json)
-    } catch (error: Exception) {
-        throw IOException("Некорректный JSON от MOEX ISS", error)
+private data class MoexBondTerms(val faceValue: Double, val faceUnit: String)
+
+internal fun parseBondTerms(json: JSONObject): MoexBondTerms {
+    val description = json.optJSONObject("description")
+        ?: throw IOException("MOEX ISS не вернул спецификацию облигации")
+    val columns = description.optJSONArray("columns")
+        ?: throw IOException("В спецификации облигации отсутствуют столбцы")
+    val rows = description.optJSONArray("data")
+        ?: throw IOException("В спецификации облигации отсутствуют данные")
+    val indexes = (0 until columns.length()).associate { columns.getString(it).lowercase() to it }
+    val nameIndex = indexes["name"] ?: throw IOException("В спецификации облигации нет названий полей")
+    val valueIndex = indexes["value"] ?: throw IOException("В спецификации облигации нет значений полей")
+    val fields = (0 until rows.length()).mapNotNull { index ->
+        val row = rows.optJSONArray(index) ?: return@mapNotNull null
+        if (row.isNull(nameIndex) || row.isNull(valueIndex)) return@mapNotNull null
+        row.optString(nameIndex).uppercase() to row.optString(valueIndex)
+    }.toMap()
+    val faceValue = fields["FACEVALUE"]?.toDoubleOrNull()
+        ?: fields["INITIALFACEVALUE"]?.toDoubleOrNull()
+        ?: throw IOException("MOEX ISS не вернул номинал облигации")
+    val faceUnit = fields["FACEUNIT"]?.takeIf(String::isNotBlank)
+        ?: throw IOException("MOEX ISS не вернул валюту номинала облигации")
+    if (!faceValue.isFinite() || faceValue <= 0.0) throw IOException("Некорректный номинал облигации")
+    return MoexBondTerms(faceValue, faceUnit)
+}
+
+internal fun parseBondCoupons(json: JSONObject): List<MoexBondCoupon> =
+    parseBondScheduleRows(json, "coupons", "coupondate", "value").mapNotNull { row ->
+        val date = row.first ?: return@mapNotNull null
+        val value = row.second ?: return@mapNotNull null
+        val start = row.third
+        if (!value.isFinite() || value <= 0.0) null else MoexBondCoupon(date, value, start)
+    }.distinctBy { it.couponDate }.sortedBy { it.couponDate }
+
+internal fun parseBondAmortizations(json: JSONObject): List<MoexBondAmortization> =
+    parseBondScheduleRows(json, "amortizations", "amortdate", "value").mapNotNull { row ->
+        val date = row.first ?: return@mapNotNull null
+        val value = row.second ?: return@mapNotNull null
+        if (!value.isFinite() || value <= 0.0) null else MoexBondAmortization(date, value)
+    }.distinctBy { it.date }.sortedBy { it.date }
+
+private fun parseBondScheduleRows(
+    json: JSONObject,
+    blockName: String,
+    dateColumn: String,
+    valueColumn: String
+): List<Triple<LocalDate?, Double?, LocalDate?>> {
+    val block = json.optJSONObject(blockName) ?: return emptyList()
+    val columns = block.optJSONArray("columns") ?: return emptyList()
+    val rows = block.optJSONArray("data") ?: return emptyList()
+    val indexes = (0 until columns.length()).associate { columns.getString(it).lowercase() to it }
+    val dateIndex = indexes[dateColumn] ?: return emptyList()
+    val valueIndex = indexes[valueColumn] ?: return emptyList()
+    val startIndex = indexes["startdate"]
+    return buildList {
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONArray(index) ?: continue
+            val date = if (row.isNull(dateIndex)) null else runCatching {
+                LocalDate.parse(row.optString(dateIndex).take(10))
+            }.getOrNull()
+            val value = if (row.isNull(valueIndex)) null else row.optString(valueIndex).toDoubleOrNull()
+            val startDate = if (startIndex == null || row.isNull(startIndex)) null else runCatching {
+                LocalDate.parse(row.optString(startIndex).take(10))
+            }.getOrNull()
+            add(Triple(date, value, startDate))
+        }
     }
-    val candles = root.optJSONObject("candles")
+}
+
+/**
+ * Coupon value is the scheduled cash payment per bond. Accrued coupon interest
+ * is accrued linearly over the actual coupon period (actual/actual day count).
+ */
+internal fun calculateBondAccruedInterest(
+    date: LocalDate,
+    coupons: List<MoexBondCoupon>
+): Double? {
+    val ordered = coupons.sortedBy { it.couponDate }
+    val next = ordered.firstOrNull { it.couponDate.isAfter(date) } ?: return null
+    val previous = ordered.lastOrNull { !it.couponDate.isAfter(date) }
+    val periodStart = previous?.couponDate ?: next.startDate ?: return null
+    if (date.isBefore(periodStart)) return null
+    val totalDays = ChronoUnit.DAYS.between(periodStart, next.couponDate)
+    val accruedDays = ChronoUnit.DAYS.between(periodStart, date)
+    if (totalDays <= 0L || accruedDays < 0L || accruedDays > totalDays) return null
+    return next.value * accruedDays.toDouble() / totalDays.toDouble()
+}
+
+internal fun calculateBondDirtyPrice(
+    cleanPricePercent: Double,
+    outstandingFaceValue: Double,
+    accruedInterest: Double
+): Double {
+    require(cleanPricePercent.isFinite() && cleanPricePercent > 0.0)
+    require(outstandingFaceValue.isFinite() && outstandingFaceValue > 0.0)
+    require(accruedInterest.isFinite() && accruedInterest >= 0.0)
+    return outstandingFaceValue * cleanPricePercent / 100.0 + accruedInterest
+}
+
+internal fun parseDailyCandles(json: JSONObject): List<MoexDailyClose> {
+    val candles = json.optJSONObject("candles")
         ?: throw IOException("В ответе MOEX ISS отсутствуют дневные свечи")
     val columns = candles.optJSONArray("columns")
         ?: throw IOException("В ответе MOEX ISS отсутствуют столбцы свечей")
@@ -101,5 +266,7 @@ internal fun parseDailyCandleRows(rows: List<Pair<String, Double?>>): List<MoexD
             ?: return@mapNotNull null
         if (close == null || !close.isFinite() || close <= 0.0) return@mapNotNull null
         MoexDailyClose(date, close)
-    }.distinctBy { it.date }.sortedBy { it.date
-}
+    }.distinctBy { it.date }.sortedBy { it.date }
+
+private fun encodeTicker(ticker: String): String =
+    URLEncoder.encode(ticker.trim().uppercase(), StandardCharsets.UTF_8.name())
