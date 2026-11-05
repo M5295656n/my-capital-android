@@ -1,13 +1,13 @@
 package ru.mycapital.app
 
 import ru.mycapital.app.data.AssetEntity
-import ru.mycapital.app.data.MoexDailyClose
 import ru.mycapital.app.data.MoexSecurityHistoryClient
 import ru.mycapital.app.data.OperationEntity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class PortfolioMarketHistoryPoint(
     val dateKey: String,
@@ -37,7 +37,9 @@ internal suspend fun buildPortfolioMarketHistory(
     currentCash: Double,
     range: PortfolioHistoryRange,
     throughDate: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow")),
-    historyClient: MoexSecurityHistoryClient = MoexSecurityHistoryClient()
+    priceLoader: suspend (String, String, LocalDate, LocalDate) -> List<ru.mycapital.app.data.MoexDailyClose> = { ticker, type, from, till ->
+        MoexSecurityHistoryClient().getDailyCloses(ticker, type, from, till)
+    }
 ): PortfolioMarketHistoryResult {
     val firstPurchase = operations.asSequence()
         .filter { it.operationType == "Покупка" && it.quantity > 0.0 && !it.ticker.isNullOrBlank() }
@@ -70,6 +72,7 @@ internal suspend fun buildPortfolioMarketHistory(
     val unavailable = relevant.map { it.first }.filter { ticker ->
         supported.none { it.first == ticker }
     }.toMutableSet()
+    val unavailableConcurrent = ConcurrentHashMap.newKeySet<String>().also { it.addAll(unavailable) }
 
     if (supported.isEmpty()) {
         return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailable.sorted())
@@ -79,9 +82,9 @@ internal suspend fun buildPortfolioMarketHistory(
         supported.map { (ticker, asset) ->
             kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) {
                 val closes = runCatching {
-                    historyClient.getDailyCloses(ticker, asset.assetType, firstPurchase, throughDate)
+                    priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
                 }.getOrElse {
-                    unavailable.add(ticker)
+                    unavailableConcurrent.add(ticker)
                     emptyList()
                 }
                 ticker to closes.associate { it.date to it.close }.toSortedMap()
@@ -100,6 +103,7 @@ internal suspend fun buildPortfolioMarketHistory(
     val points = mutableListOf<PortfolioMarketHistoryPoint>()
     var nav = 100.0
     var previousValue: Double? = null
+    var previousEndOfDay: Long? = null
 
     dates.forEach { date ->
         val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -117,7 +121,7 @@ internal suspend fun buildPortfolioMarketHistory(
                 }
             val quantityAtClose = (asset.quantity - futureTradeDelta).coerceAtLeast(0.0)
             if (quantityAtClose > 0.0000001) {
-                val historicalPrice = pricesByTicker[ticker]?.floorEntry(date)?.value
+                val historicalPrice = pricesByTicker[ticker]?.entries?.lastOrNull { !it.key.isAfter(date) }?.value
                 if (historicalPrice != null) marketValue += quantityAtClose * historicalPrice
             }
         }
@@ -138,7 +142,16 @@ internal suspend fun buildPortfolioMarketHistory(
             }
 
         if (previousValue != null && previousValue > 0.0) {
-            val valueBeforeFlow = totalValue - externalFlowForDate(orderedOperations, date)
+            val periodFlow = orderedOperations.asSequence()
+                .filter { it.operationDate >= (previousEndOfDay ?: Long.MIN_VALUE) && it.operationDate < endOfDay }
+                .sumOf {
+                    when (it.operationType) {
+                        "Пополнение" -> it.quantity * it.price
+                        "Вывод" -> -it.quantity * it.price
+                        else -> 0.0
+                    }
+                }
+            val valueBeforeFlow = totalValue - periodFlow
             if (valueBeforeFlow > 0.0) nav *= valueBeforeFlow / previousValue
         }
         points += PortfolioMarketHistoryPoint(
@@ -148,6 +161,7 @@ internal suspend fun buildPortfolioMarketHistory(
             nav = nav
         )
         previousValue = totalValue
+        previousEndOfDay = endOfDay
     }
 
     val latestDate = points.lastOrNull()?.let { LocalDate.parse(it.dateKey) }
@@ -159,7 +173,7 @@ internal suspend fun buildPortfolioMarketHistory(
         val base = filtered.first().nav
         if (base > 0.0) filtered.map { it.copy(nav = it.nav / base * 100.0) } else filtered
     }
-    return PortfolioMarketHistoryResult(normalized, firstPurchase, unavailable.sorted())
+    return PortfolioMarketHistoryResult(normalized, firstPurchase, unavailableConcurrent.toList().sorted())
 }
 
 private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
