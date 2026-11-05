@@ -110,7 +110,7 @@ internal class MarketOverviewClient {
     }
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? = runCatching {
-        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE"
+        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,PREVPRICE,CHANGE"
         val json = getJson(url)
         val table = json.optJSONObject("marketdata") ?: return@runCatching null
         val columns = table.optJSONArray("columns") ?: return@runCatching null
@@ -118,9 +118,18 @@ internal class MarketOverviewClient {
         val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
         val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
             .firstOrNull { it.optString(indexes["SECID"] ?: -1) == ticker } ?: return@runCatching null
-        val price = row.optDouble(indexes["LAST"] ?: -1, Double.NaN).takeIf { it.isFinite() && it > 0.0 }
+        // LAST can be null outside trading hours. PREVPRICE keeps the quote visible
+        // with the latest available exchange price instead of rendering an empty dash.
+        val last = row.optDouble(indexes["LAST"] ?: -1, Double.NaN)
+        val previousClose = row.optDouble(indexes["PREVPRICE"] ?: -1, Double.NaN)
+        val price = (last.takeIf { it.isFinite() && it > 0.0 }
+            ?: previousClose.takeIf { it.isFinite() && it > 0.0 })
+            ?: return@runCatching null
         val change = row.optDouble(indexes["CHANGE"] ?: -1, Double.NaN).takeIf { it.isFinite() }
-        MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
+        MarketQuoteRow(ticker, label, price, change?.let { delta ->
+            val base = price - delta
+            if (base > 0.0) delta / base * 100.0 else null
+        })
     }.getOrNull()
 
         // Fallback for USD/CNY when MOEX does not publish a usable LAST price.
