@@ -636,7 +636,7 @@ private fun OverviewScreen(
                 colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(
@@ -703,10 +703,12 @@ private fun OverviewScreen(
                         }
                     } else {
                         val portfolioValues = history.map { it.totalValue }
-                        val investedValues = history.map { it.investedCapital }
-                        val minValue = (portfolioValues + investedValues).minOrNull() ?: 0.0
-                        val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
-                        val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
+                        // Net cash flows may be negative in an incomplete early ledger.
+                        // Keep the chart's monetary axis anchored at zero.
+                        val investedValues = history.map { it.investedCapital.coerceAtLeast(0.0) }
+                        val minValue = 0.0
+                        val maxValue = (portfolioValues + investedValues).maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+                        val span = maxValue
                         val axisValues = (0..3).map { maxValue - span * it / 3.0 }
                         val portfolioColor = androidx.compose.ui.graphics.Color(0xFF2698FF)
                         val investedColor = androidx.compose.ui.graphics.Color(0xFF8798B5)
@@ -716,7 +718,7 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(48.dp).height(132.dp),
+                                Modifier.width(40.dp).height(115.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
@@ -728,7 +730,7 @@ private fun OverviewScreen(
                                     )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(132.dp)) {
+                            Canvas(Modifier.weight(1f).height(115.dp)) {
                                 val left = 2f
                                 val right = size.width - 2f
                                 val top = 5f
@@ -765,37 +767,9 @@ private fun OverviewScreen(
                                 drawCircle(portfolioColor, 4.dp.toPx(), Offset(right, portfolioY))
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
-                            Column(
-                                Modifier.width(54.dp).height(132.dp),
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Box(
-                                    Modifier.clip(RoundedCornerShape(6.dp))
-                                        .background(portfolioColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        money(portfolioValues.last()).substringBefore(','),
-                                        color = portfolioColor, style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold, maxLines = 1
-                                    )
-                                }
-                                Box(
-                                    Modifier.clip(RoundedCornerShape(6.dp))
-                                        .background(investedColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        money(investedValues.last()).substringBefore(','),
-                                        color = investedColor, style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold, maxLines = 1
-                                    )
-                                }
-                            }
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(start = 48.dp, end = 54.dp, top = 3.dp),
+                            Modifier.fillMaxWidth().padding(start = 40.dp, top = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             chartDates.forEach { index ->
@@ -814,15 +788,6 @@ private fun OverviewScreen(
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
-                        )
-                    }
-                    val firstPurchaseDate = historyResult.firstPurchaseDate
-                    if (firstPurchaseDate != null) {
-                        Text(
-                            "История с первой покупки: ${firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                         )
                     }
                     Row(
