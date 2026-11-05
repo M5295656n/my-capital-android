@@ -215,6 +215,23 @@ private fun MyCapitalApp() {
             "moex_events_refresh_manual", ExistingWorkPolicy.REPLACE, request
         )
     }
+    // Refresh dividend data immediately after the portfolio becomes available or changes.
+    // The old periodic-only schedule could leave a freshly installed/imported portfolio empty for 24 hours.
+    val eventRefreshSignature = assets
+        .filter { it.quantity > 0.0 }
+        .map { "${it.ticker}:${it.quantity}:${it.assetType}" }
+        .sorted()
+    LaunchedEffect(eventRefreshSignature) {
+        if (eventRefreshSignature.isNotEmpty()) {
+            val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+            val request = OneTimeWorkRequestBuilder<CorporateEventsWorker>().setConstraints(constraints).build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "moex_events_refresh_manual", ExistingWorkPolicy.KEEP, request
+            )
+        }
+    }
+    val eventSyncMessage = eventWorkInfos.firstOrNull { it.state.isFinished }
+        ?.outputData?.getString("summary")
     val refreshAllMarketData: () -> Unit = {
         refreshQuotes()
         refreshEvents()
@@ -270,7 +287,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     isParsingReport = isParsingReport,
@@ -1659,6 +1676,7 @@ private fun PayoutsScreen(
     onAccountSelected: (String) -> Unit,
     onConfirmReceipt: (PayoutEntity) -> Unit,
     onRefreshEvents: () -> Unit,
+    eventSyncMessage: String?,
     modifier: Modifier = Modifier
 ) {
     val visiblePayouts = payouts.filter { payout ->
@@ -1691,6 +1709,9 @@ private fun PayoutsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!eventSyncMessage.isNullOrBlank()) {
+                    Text(eventSyncMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                }
             }
             IconButton(onClick = onRefreshEvents) {
                 Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
