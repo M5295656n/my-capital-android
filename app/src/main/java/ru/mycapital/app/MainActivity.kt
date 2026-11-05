@@ -3,6 +3,7 @@ package ru.mycapital.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,6 +59,8 @@ import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
 import java.time.YearMonth
 import ru.mycapital.app.data.AssetEntity
+import ru.mycapital.app.data.MoexSecurityHistoryClient
+import ru.mycapital.app.data.MoexDailyClose
 import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.OperationEntity
@@ -97,6 +100,8 @@ private fun MyCapitalApp() {
     val cashBalance by dao.observeCashBalance().collectAsState(initial = 0.0)
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
+    var selectedAssetDetail by remember { mutableStateOf<AssetEntity?>(null) }
+    BackHandler(enabled = selectedAssetDetail != null) { selectedAssetDetail = null }
     var moreDestination by remember { mutableStateOf(Screen.More) }
     var showAddAsset by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
@@ -227,13 +232,13 @@ private fun MyCapitalApp() {
     )) {
         Scaffold(
             floatingActionButton = {
-                if (selected == Screen.Assets || selected == Screen.Operations || selected == Screen.Payouts) {
+                if (selectedAssetDetail == null && (selected == Screen.Assets || selected == Screen.Operations || selected == Screen.Payouts)) {
                     FloatingActionButton(onClick = { when (selected) { Screen.Assets -> showAddAsset = true; Screen.Operations -> showAddOperation = true; Screen.Payouts -> showAddPayout = true; else -> Unit } }) {
                         Icon(Icons.Default.Add, contentDescription = "Добавить актив")
                     }
                 }
             },
-            bottomBar = {
+            bottomBar = if (selectedAssetDetail == null) {{
                 NavigationBar {
                     listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
                         NavigationBarItem(
@@ -244,11 +249,14 @@ private fun MyCapitalApp() {
                         )
                     }
                 }
-            }
+            }} else null
         ) { padding ->
-            when (selected) {
+            if (selectedAssetDetail != null) {
+                val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
+                AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
+            } else when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, modifier = Modifier.padding(padding))
@@ -951,6 +959,7 @@ private fun AssetsScreen(
     assets: List<AssetEntity>,
     operations: List<OperationEntity>,
     accounts: List<BrokerAccountEntity>,
+    onOpenAsset: (AssetEntity) -> Unit,
     onEditAsset: (AssetEntity) -> Unit,
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
@@ -960,10 +969,9 @@ private fun AssetsScreen(
     LaunchedEffect(Unit) {
         logoCatalog = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
     }
-    var selectedAssetForHistory by remember { mutableStateOf<AssetEntity?>(null) }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
-        Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Портфель", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         if (assets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -976,7 +984,7 @@ private fun AssetsScreen(
             ) {
                 items(assets, key = { it.id }) { asset ->
                     Card(
-                        Modifier.fillMaxWidth().clickable { selectedAssetForHistory = asset },
+                        Modifier.fillMaxWidth().clickable { onOpenAsset(asset) },
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
@@ -1000,14 +1008,200 @@ private fun AssetsScreen(
             }
         }
     }
-    selectedAssetForHistory?.let { asset ->
-        AssetPurchaseHistoryDialog(
-            asset = asset,
-            operations = operations,
-            accounts = accounts,
-            onDismiss = { selectedAssetForHistory = null }
-        )
+
+}
+
+@Composable
+private fun AssetDetailScreen(
+    asset: AssetEntity,
+    allAssets: List<AssetEntity>,
+    operations: List<OperationEntity>,
+    payouts: List<PayoutEntity>,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var logos by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var period by remember { mutableStateOf("1М") }
+    var candles by remember { mutableStateOf<List<MoexDailyClose>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val trades = remember(asset.id, asset.ticker, operations) {
+        operations.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }.sortedBy { it.operationDate }
     }
+    val assetPayouts = remember(asset.id, asset.ticker, payouts) {
+        payouts.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
+    }
+    LaunchedEffect(Unit) { logos = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) } }
+    LaunchedEffect(asset.ticker, asset.assetType, period) {
+        loading = true
+        error = null
+        try {
+            val days = when (period) { "1М" -> 31L; "3М" -> 92L; "6М" -> 183L; "1Г" -> 366L; else -> 3650L }
+            candles = withContext(Dispatchers.IO) {
+                val today = java.time.LocalDate.now()
+                MoexSecurityHistoryClient().getDailyCloses(asset.ticker, asset.assetType, today.minusDays(days), today)
+            }
+            if (candles.isEmpty()) error = "Нет истории котировок"
+        } catch (e: Exception) {
+            candles = emptyList()
+            error = e.message ?: "Не удалось загрузить котировки"
+        } finally { loading = false }
+    }
+    val price = candles.lastOrNull()?.close ?: asset.currentPrice
+    val previous = candles.dropLast(1).lastOrNull()?.close
+    val change = previous?.let { price - it }
+    val changePct = previous?.takeIf { it != 0.0 }?.let { (price - it) / it * 100.0 }
+    val fifo = remember(trades) { calculateRemainingPurchaseLots(trades) }
+    val invested = trades.filter { it.operationType == "Покупка" }.sumOf { op ->
+        val remaining = fifo.remainingByOperationId[op.id] ?: 0.0
+        if (op.quantity > 0.0) remaining / op.quantity * (op.quantity * op.price + op.commission) else 0.0
+    }
+    val actual = assetPayouts.filter { it.actualDate != null || it.status.equals("RECEIVED", true) }
+    val received = actual.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
+    val fees = trades.sumOf { it.commission }
+    val value = asset.quantity * price
+    val sales = trades.filter { it.operationType == "Продажа" }.sumOf { it.quantity * it.price - it.commission }
+    val purchases = trades.filter { it.operationType == "Покупка" }.sumOf { it.quantity * it.price + it.commission }
+    val profit = value + sales + received - purchases
+    val totalReturn = if (purchases > 0.0) profit / purchases * 100.0 else null
+    val cashFlows = buildList {
+        trades.forEach { op ->
+            val amount = op.quantity * op.price + op.commission
+            add(op.operationDate to if (op.operationType == "Покупка") -amount else op.quantity * op.price - op.commission)
+        }
+        actual.forEach { p -> (p.actualDate ?: p.expectedDate)?.let { add(it to (p.reportedNetAmount ?: p.totalAmount - p.taxAmount)) } }
+        add(System.currentTimeMillis() to value)
+    }
+    val annualized = annualizedReturnPercent(cashFlows)
+    val nextPayout = assetPayouts.filter { it.actualDate == null && (it.expectedDate ?: Long.MAX_VALUE) >= System.currentTimeMillis() }
+        .minByOrNull { it.expectedDate ?: Long.MAX_VALUE }
+    val bond = asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true)
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
+            Text("Актив", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AssetTypeIcon(asset.assetType, asset.ticker, logos)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(asset.ticker, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("${money(price)} ₽", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text(if (change != null && changePct != null) "${if (change >= 0) "+" else ""}${money(change)} ₽ (${String.format(java.util.Locale("ru", "RU"), "%.2f", changePct)}%)" else "Нет данных за день",
+                            color = if ((change ?: 0.0) >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Text("Стоимость позиции", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${money(value)} ₽", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    listOf("1М", "3М", "6М", "1Г", "Всё").forEach { p ->
+                        FilterChip(selected = period == p, onClick = { period = p }, label = { Text(p) })
+                    }
+                }
+                if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (candles.size > 1) {
+                    val points = candles.map { it.close }
+                    val min = points.minOrNull() ?: 0.0
+                    val span = ((points.maxOrNull() ?: min) - min).takeIf { it > 0.0 } ?: 1.0
+                    Canvas(Modifier.fillMaxWidth().height(145.dp)) {
+                        val path = Path()
+                        points.forEachIndexed { i, v ->
+                            val x = size.width * i / (points.size - 1).toFloat()
+                            val y = size.height - ((v - min) / span * (size.height - 8.dp.toPx())).toFloat() - 4.dp.toPx()
+                            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        drawPath(path, MaterialTheme.colorScheme.primary, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                    }
+                    Text("MOEX · дневные закрытия · котировки могут быть задержаны", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else Text(error ?: "История котировок загружается", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        AssetDetailSection("Общее") {
+            AssetDetailMetric("Количество", "${quantity(asset.quantity)} шт.")
+            AssetDetailMetric("Вложено в оставшуюся позицию", if (trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001) "${money(invested)} ₽" else "Недостаточно данных")
+            AssetDetailMetric("Средняя цена", if (asset.quantity > 0.0 && trades.isNotEmpty()) "${money(invested / asset.quantity)} ₽" else "Не рассчитано")
+            AssetDetailMetric("Стоимость 1 шт.", "${money(price)} ₽")
+            val portfolioValue = allAssets.sumOf { it.quantity * it.currentPrice }
+            AssetDetailMetric("Доля в портфеле", if (portfolioValue > 0.0) String.format(java.util.Locale("ru", "RU"), "%.2f%%", value / portfolioValue * 100.0) else "Не рассчитано")
+        }
+        AssetDetailSection("Прибыль") {
+            AssetDetailMetric("Общая прибыль", "${if (profit >= 0) "+" else ""}${money(profit)} ₽")
+            AssetDetailMetric("Общая доходность", totalReturn?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Не рассчитано")
+            AssetDetailMetric("Прибыль / убыток за день", change?.let { "${if (it >= 0) "+" else ""}${money(it * asset.quantity)} ₽" } ?: "Нет данных")
+            AssetDetailMetric("Получено начислений", "${money(received)} ₽")
+            AssetDetailMetric("Уплачено комиссий", "${money(fees)} ₽")
+            AssetDetailMetric("Доходность годовых", annualized?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Недостаточно данных")
+        }
+        AssetDetailSection(if (bond) "Купоны" else "Дивиденды") {
+            if (nextPayout == null) Text("Нет данных о будущих выплатах", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else {
+                AssetDetailMetric("Следующая выплата · прогноз", nextPayout.expectedDate?.let { java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)) } ?: "Дата неизвестна")
+                AssetDetailMetric(if (bond) "Купон на одну облигацию" else "Дивиденд на одну акцию", "${money(nextPayout.amountPerUnit)} ₽")
+                AssetDetailMetric("Сумма · прогноз", "${money(nextPayout.totalAmount)} ₽")
+            }
+            AssetDetailMetric(if (bond) "Купонная доходность" else "Дивидендная доходность", "Нет проверяемых данных")
+            if (!bond) AssetDetailMetric("Рост дивидендов за 5 лет", "Нет проверяемых данных")
+        }
+        AssetDetailSection("Операции") {
+            if (actual.isEmpty() && trades.isEmpty()) Text("История операций отсутствует", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            actual.forEach { p ->
+                val d = p.actualDate?.let { java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)) } ?: "дата не указана"
+                AssetDetailMetric("${if (bond) "Купон" else "Дивиденд"} · $d", "${money(p.reportedNetAmount ?: (p.totalAmount - p.taxAmount))} ₽")
+            }
+            trades.forEach { op ->
+                val d = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(op.operationDate))
+                AssetDetailMetric("$d · ${op.operationType}", "${quantity(op.quantity)} × ${money(op.price)} ₽ · комиссия ${money(op.commission)} ₽")
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun AssetDetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+}
+
+@Composable
+private fun AssetDetailMetric(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.width(10.dp))
+        Text(value, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+    }
+}
+
+private fun annualizedReturnPercent(flows: List<Pair<Long, Double>>): Double? {
+    val items = flows.filter { it.second.isFinite() && it.second != 0.0 }.sortedBy { it.first }
+    if (items.size < 2 || items.none { it.second < 0.0 } || items.none { it.second > 0.0 }) return null
+    val start = items.first().first
+    val millisPerYear = 365.25 * 24.0 * 60.0 * 60.0 * 1000.0
+    if ((items.last().first - start) / millisPerYear <= 0.0) return null
+    fun npv(rate: Double) = items.sumOf { (date, amount) -> amount / Math.pow(1.0 + rate, (date - start) / millisPerYear) }
+    var low = -0.9999
+    var high = 10.0
+    if (npv(low) * npv(high) > 0.0) return null
+    repeat(120) {
+        val mid = (low + high) / 2.0
+        if (npv(low) * npv(mid) <= 0.0) high = mid else low = mid
+    }
+    val result = (low + high) / 2.0
+    return if (result.isFinite()) result * 100.0 else null
 }
 
 @Composable
