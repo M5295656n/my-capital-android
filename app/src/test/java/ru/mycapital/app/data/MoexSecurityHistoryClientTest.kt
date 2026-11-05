@@ -93,4 +93,23 @@ class MoexSecurityHistoryClientTest {
         assertEquals(1_000.0, terms.faceValue, 0.000001)
         assertEquals("RUB", terms.faceUnit)
     }
+    @Test
+    fun reconstructsPastNominalFromTodaysFaceValueAndLaterAmortizations() {
+        val amortizations = listOf(
+            MoexBondAmortization(LocalDate.parse("2026-05-01"), 100.0),
+            MoexBondAmortization(LocalDate.parse("2026-10-01"), 200.0),
+            MoexBondAmortization(LocalDate.parse("2027-03-01"), 100.0)
+        )
+        assertEquals(
+            1_300.0,
+            historicalBondFaceValue(1_000.0, amortizations, LocalDate.parse("2026-04-01"), LocalDate.parse("2026-11-05")),
+            0.000001
+        )
+        assertEquals(
+            1_200.0,
+            historicalBondFaceValue(1_000.0, amortizations, LocalDate.parse("2026-06-01"), LocalDate.parse("2026-11-05")),
+            0.000001
+        )
+    }
+
 }
