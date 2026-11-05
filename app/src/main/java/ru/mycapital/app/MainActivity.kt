@@ -524,12 +524,33 @@ private fun OverviewScreen(
         openCost > 0.0 -> (unrealized + realized + receivedPayouts) / openCost * 100.0
         else -> null
     }
-    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ONE_YEAR) }
-    // Empty snapshots created before the first import are not a meaningful portfolio baseline.
-    // Keep them out of the dashboard chart rather than drawing a misleading jump from zero.
-    val history = remember(snapshots, selectedRange) {
-        calculatePortfolioHistoryPoints(snapshots.filter { it.totalValue > 0.0 }, selectedRange)
+    // Build the chart from actual trades and historical MOEX closes. Daily
+    // snapshots are no longer a prerequisite; ALL starts at the first recorded buy.
+    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
+    var historyResult by remember {
+        mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList()))
     }
+    var historyLoading by remember { mutableStateOf(false) }
+    val historyAssetsKey = remember(assets) {
+        assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
+    }
+    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedRange) {
+        historyLoading = true
+        historyResult = runCatching {
+            withContext(Dispatchers.IO) {
+                buildPortfolioMarketHistory(
+                    assets = assets,
+                    operations = operations,
+                    currentCash = cashBalance,
+                    range = selectedRange
+                )
+            }
+        }.getOrElse {
+            PortfolioMarketHistoryResult(emptyList(), null, emptyList())
+        }
+        historyLoading = false
+    }
+    val history = historyResult.points
     val annualizedReturn = remember(history) {
         if (history.size < 2) null else {
             val firstDate = java.time.LocalDate.parse(history.first().dateKey)
@@ -660,27 +681,21 @@ private fun OverviewScreen(
                         fontWeight = FontWeight.Bold,
                         color = if (totalProfit >= 0) androidx.compose.ui.graphics.Color(0xFF25D879) else androidx.compose.ui.graphics.Color(0xFFFF5964)
                     )
-                    if (history.size < 2) {
+                    if (history.isEmpty()) {
                         Box(
                             Modifier.fillMaxWidth().height(190.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "График появится после накопления минимум двух дневных снимков.",
+                                if (historyLoading) "Загружаю историю от первой покупки…"
+                                else "История появится после импорта операций покупки и продажи и загрузки котировок MOEX.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                             )
                         }
                     } else {
                         val portfolioValues = history.map { it.totalValue }
-                        val moscowZone = java.time.ZoneId.of("Europe/Moscow")
-                        val investedValues = history.map { point ->
-                            val endOfDay = java.time.LocalDate.parse(point.dateKey).plusDays(1)
-                                .atStartOfDay(moscowZone).toInstant().toEpochMilli()
-                            operations.asSequence()
-                                .filter { it.operationDate < endOfDay && (it.operationType == "Пополнение" || it.operationType == "Вывод") }
-                                .sumOf { if (it.operationType == "Пополнение") it.price else -it.price }
-                        }
+                        val investedValues = history.map { it.investedCapital }
                         val minValue = (portfolioValues + investedValues).minOrNull() ?: 0.0
                         val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
                         val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
@@ -784,6 +799,22 @@ private fun OverviewScreen(
                                 )
                             }
                         }
+                    }
+                    if (historyResult.unavailableTickers.isNotEmpty()) {
+                        Text(
+                            "Нет исторических котировок для: ${historyResult.unavailableTickers.joinToString()}. Эти позиции не включены в историческую оценку.",
+                            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
+                        )
+                    }
+                    if (historyResult.firstPurchaseDate != null) {
+                        Text(
+                            "История с первой покупки: ${historyResult.firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
+                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
+                        )
                     }
                     Row(
                         Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 1.dp),
