@@ -239,13 +239,24 @@ private fun MyCapitalApp() {
                 }
             },
             bottomBar = { if (selectedAssetDetail == null) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = androidx.compose.ui.graphics.Color(0xFF0B1422),
+                    contentColor = androidx.compose.ui.graphics.Color(0xFFAAB9D0),
+                    tonalElevation = 0.dp
+                ) {
                     listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
                         NavigationBarItem(
                             selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
                             icon = { Icon(screen.icon, contentDescription = screen.title) },
-                            label = { Text(screen.title, fontSize = 10.sp) }
+                            label = { Text(screen.title, fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = androidx.compose.ui.graphics.Color(0xFF4B9BFF),
+                                selectedTextColor = androidx.compose.ui.graphics.Color(0xFF69AFFF),
+                                indicatorColor = androidx.compose.ui.graphics.Color(0xFF1B3555),
+                                unselectedIconColor = androidx.compose.ui.graphics.Color(0xFF8797AD),
+                                unselectedTextColor = androidx.compose.ui.graphics.Color(0xFF8797AD)
+                            )
                         )
                     }
                 }
