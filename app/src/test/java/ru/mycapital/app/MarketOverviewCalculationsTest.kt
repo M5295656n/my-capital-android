@@ -20,7 +20,8 @@ class MarketOverviewCalculationsTest {
     @Test
     fun previousCbrRateSkipsDuplicateCurrentFixings() {
         val xml = """<ValCurs><Record Date="03.11.2026"><Nominal>1</Nominal><Value>91,0000</Value></Record><Record Date="04.11.2026"><Nominal>1</Nominal><Value>92,0000</Value></Record><Record Date="05.11.2026"><Nominal>1</Nominal><Value>92,0000</Value></Record></ValCurs>"""
-        assertEquals(91.0, parsePreviousCbrRate(xml, 92.0)!!, 0.000001)
+        assertEquals(92.0, parsePreviousCbrRate(xml, 92.0)!!, 0.000001)
+        assertEquals(0.0, calculatePercentChange(92.0, parsePreviousCbrRate(xml, 92.0)!!)!!, 0.000001)
     }
 
     @Test

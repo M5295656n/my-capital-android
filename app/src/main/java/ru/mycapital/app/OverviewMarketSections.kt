@@ -69,7 +69,12 @@ internal fun parsePreviousCbrRate(xml: String, current: Double): Double? {
         .mapNotNull { match -> match.groupValues.getOrNull(1)?.replace(",", ".")?.toDoubleOrNull() }
         .filter { it.isFinite() && it > 0.0 }
         .toList()
-    return values.lastOrNull { kotlin.math.abs(it - current) > 0.0000001 }
+    val latest = values.lastOrNull() ?: return null
+    return if (kotlin.math.abs(latest - current) <= 0.0000001) {
+        values.dropLast(1).lastOrNull()
+    } else {
+        latest
+    }
 }
 
 internal class MarketOverviewClient {
