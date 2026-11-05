@@ -643,7 +643,7 @@ private fun OverviewScreen(
                 colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(
@@ -723,7 +723,7 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(40.dp).height(132.dp),
+                                Modifier.width(40.dp).height(100.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
@@ -735,7 +735,7 @@ private fun OverviewScreen(
                                     )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(132.dp)) {
+                            Canvas(Modifier.weight(1f).height(100.dp)) {
                                 val left = 2f
                                 val right = size.width - 2f
                                 val top = 5f
@@ -773,7 +773,7 @@ private fun OverviewScreen(
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
                             Column(
-                                Modifier.width(44.dp).height(132.dp),
+                                Modifier.width(44.dp).height(100.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
