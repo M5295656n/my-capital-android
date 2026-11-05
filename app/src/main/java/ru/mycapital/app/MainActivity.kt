@@ -1694,8 +1694,11 @@ private fun PayoutsScreen(
     // Keep the history compact: show near-term events, while asset cards retain the best available status.
     val historyCutoff = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90)
     val historyPayouts = visiblePayouts.filter { payout ->
-        val date = payout.recordDate ?: payout.expectedDate
-        (!(isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED")) || date == null ||
+        val date = payout.expectedDate
+        val dividendEvent = payout.payoutType == "Дивиденд" && isUpcomingDividendStatus(payout.status)
+        // The 90-day compact view applies to bond coupons only. Dividend forecasts may
+        // have record dates many months ahead and must remain visible in the calendar.
+        dividendEvent || payout.status != "EXPECTED" || date == null ||
             !java.time.Instant.ofEpochMilli(date).atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
     }.sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
         .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
