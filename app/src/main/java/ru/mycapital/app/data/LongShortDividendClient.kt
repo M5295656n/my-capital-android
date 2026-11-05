@@ -120,7 +120,7 @@ private fun parseCsvRows(text: String): List<List<String>> {
     return rows
 }
 
-class LongShortDividendClient {
+internal class LongShortDividendClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
