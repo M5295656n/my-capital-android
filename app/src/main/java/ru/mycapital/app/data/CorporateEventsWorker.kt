@@ -1,9 +1,9 @@
 package ru.mycapital.app.data
 
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -18,11 +18,53 @@ class CorporateEventsWorker(
         val assets = dao.getAssets().filter { it.quantity > 0.0 }
         if (assets.isEmpty()) return@withContext Result.success()
 
-        val client = CorporateEventsClient()
         var transientFailures = 0
-        for (asset in assets.distinctBy { it.ticker.uppercase() }) {
+        val equities = assets.filter {
+            it.assetType.contains("акц", ignoreCase = true) ||
+                it.assetType.contains("stock", ignoreCase = true)
+        }
+        if (equities.isNotEmpty()) {
             try {
-                val events = client.getEvents(asset.ticker, asset.assetType)
+                // One public daily CSV contains confirmed, board-recommended and forecast dividends.
+                // Keep the previous good cache if the feed cannot be fetched or parsed.
+                val events = LongShortDividendClient().getUpcomingDividends()
+                val byTicker = equities.associateBy { it.ticker.uppercase() }
+                database.withTransaction {
+                    dao.deleteUnreceivedLongShortDividendEvents()
+                    events.forEach { event ->
+                        val asset = byTicker[event.ticker] ?: return@forEach
+                        dao.insertPayout(
+                            PayoutEntity(
+                                assetId = asset.id,
+                                ticker = event.ticker,
+                                payoutType = "Дивиденд",
+                                amountPerUnit = event.amountPerUnit,
+                                quantity = asset.quantity,
+                                totalAmount = event.amountPerUnit * asset.quantity,
+                                taxAmount = 0.0,
+                                expectedDate = event.paymentDate,
+                                actualDate = null,
+                                status = event.status,
+                                sourceKey = event.sourceKey,
+                                recordDate = event.recordDate,
+                                sourceName = "Long/Short"
+                            )
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                transientFailures++
+            }
+        }
+
+        // Bond coupons remain sourced from MOEX ISS; the Long/Short feed is for equities.
+        val bondClient = CorporateEventsClient()
+        for (asset in assets.filter {
+            it.assetType.contains("облигац", ignoreCase = true) ||
+                it.assetType.contains("офз", ignoreCase = true)
+        }.distinctBy { it.ticker.uppercase() }) {
+            try {
+                val events = bondClient.getEvents(asset.ticker, asset.assetType)
                 database.withTransaction {
                     events.forEach { event ->
                         val existing = dao.getPayoutBySourceKey(event.sourceKey)
@@ -39,7 +81,8 @@ class CorporateEventsWorker(
                                     expectedDate = event.eventDate,
                                     actualDate = null,
                                     status = "EXPECTED",
-                                    sourceKey = event.sourceKey
+                                    sourceKey = event.sourceKey,
+                                    sourceName = "MOEX ISS"
                                 )
                             )
                         } else if (existing.status == "EXPECTED") {

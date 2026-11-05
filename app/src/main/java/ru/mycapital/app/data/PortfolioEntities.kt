@@ -47,7 +47,10 @@ data class PayoutEntity(
     val status: String = "EXPECTED",
     val sourceKey: String? = null,
     // Net amount explicitly credited in a broker report when gross/tax split is unavailable.
-    val reportedNetAmount: Double? = null
+    val reportedNetAmount: Double? = null,
+    // Registry-close date is distinct from the estimated cash payment date.
+    val recordDate: Long? = null,
+    val sourceName: String? = null
 )
 
 @Entity(tableName = "cash_balance")

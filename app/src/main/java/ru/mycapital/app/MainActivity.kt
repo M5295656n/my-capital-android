@@ -267,7 +267,7 @@ private fun MyCapitalApp() {
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, modifier = Modifier.padding(padding))
@@ -934,6 +934,7 @@ private fun MoreScreen(
 private fun AssetsScreen(
     assets: List<AssetEntity>,
     operations: List<OperationEntity>,
+    payouts: List<PayoutEntity>,
     accounts: List<BrokerAccountEntity>,
     onOpenAsset: (AssetEntity) -> Unit,
     onEditAsset: (AssetEntity) -> Unit,
@@ -973,6 +974,19 @@ private fun AssetsScreen(
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                                 Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                                 Text("${quantity(asset.quantity)} шт. · ${asset.assetType}", style = MaterialTheme.typography.bodySmall)
+                                val bestDividend = payouts
+                                    .filter { it.ticker.equals(asset.ticker, true) && it.payoutType == "Дивиденд" && it.status != "RECEIVED" }
+                                    .sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
+                                        .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
+                                    .firstOrNull()
+                                if (bestDividend != null && (asset.assetType.contains("акц", true) || asset.assetType.contains("stock", true))) {
+                                    Text(
+                                        "${dividendStatusLabel(bestDividend.status)} · ${money(bestDividend.amountPerUnit * asset.quantity)} ₽",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
@@ -1055,8 +1069,11 @@ private fun AssetDetailScreen(
         add(System.currentTimeMillis() to value)
     }
     val annualized = if (historyComplete) annualizedReturnPercent(cashFlows) else null
-    val nextPayout = assetPayouts.filter { it.actualDate == null && (it.expectedDate ?: Long.MAX_VALUE) >= System.currentTimeMillis() }
-        .minByOrNull { it.expectedDate ?: Long.MAX_VALUE }
+    val upcomingDividendPayouts = assetPayouts
+        .filter { it.payoutType == "Дивиденд" && isUpcomingDividendStatus(it.status) && it.actualDate == null }
+        .filter { (it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE) >= System.currentTimeMillis() }
+        .sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
+            .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
     val bond = asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true)
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1123,11 +1140,31 @@ private fun AssetDetailScreen(
             AssetDetailMetric("Доходность годовых", annualized?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Недостаточно данных")
         }
         AssetDetailSection(if (bond) "Купоны" else "Дивиденды") {
-            if (nextPayout == null) Text("Нет данных о будущих выплатах", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else {
-                AssetDetailMetric("Следующая выплата · прогноз", nextPayout.expectedDate?.let { java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)) } ?: "Дата неизвестна")
-                AssetDetailMetric(if (bond) "Купон на одну облигацию" else "Дивиденд на одну акцию", "${money(nextPayout.amountPerUnit)} ₽")
-                AssetDetailMetric("Сумма · прогноз", "${money(nextPayout.totalAmount)} ₽")
+            if (bond) {
+                val nextCoupon = assetPayouts.filter { it.payoutType == "Купон" && it.status != "RECEIVED" && it.expectedDate != null }
+                    .minByOrNull { it.expectedDate ?: Long.MAX_VALUE }
+                if (nextCoupon == null) Text("Нет данных о будущих купонах", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else {
+                    AssetDetailMetric("Следующая выплата", nextCoupon.expectedDate?.let { java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)) } ?: "Дата неизвестна")
+                    AssetDetailMetric("Купон на одну облигацию", "${money(nextCoupon.amountPerUnit)} ₽")
+                    AssetDetailMetric("Сумма", "${money(nextCoupon.totalAmount)} ₽")
+                }
+            } else if (upcomingDividendPayouts.isEmpty()) {
+                Text("Нет данных об объявленных или ожидаемых дивидендах", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                upcomingDividendPayouts.take(5).forEach { payout ->
+                    AssetDetailMetric(dividendStatusLabel(payout.status), "${money(payout.totalAmount)} ₽")
+                    AssetDetailMetric("На одну акцию", "${money(payout.amountPerUnit)} ₽")
+                    payout.recordDate?.let { date ->
+                        AssetDetailMetric("Дата отсечки", java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(date)))
+                    }
+                    payout.expectedDate?.let { date ->
+                        AssetDetailMetric("Ориентировочная дата выплаты", java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(date)))
+                    }
+                    if (!payout.sourceName.isNullOrBlank()) {
+                        Text("Источник: ${payout.sourceName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             AssetDetailMetric(if (bond) "Купонная доходность" else "Дивидендная доходность", "Нет проверяемых данных")
             if (!bond) AssetDetailMetric("Рост дивидендов за 5 лет", "Нет проверяемых данных")
@@ -1634,15 +1671,16 @@ private fun PayoutsScreen(
     val received = visiblePayouts.filter { it.status == "RECEIVED" }.sumOf {
         it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
     }
-    val expected = visiblePayouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
-    // Keep the history compact: hide only expected payments dated more than 90 days ahead.
-    // Received payments and overdue/undated expected payments remain visible.
+    val expected = visiblePayouts.filter { isUpcomingDividendStatus(it.status) || it.status == "EXPECTED" }
+        .sumOf { it.totalAmount }
+    // Keep the history compact: show near-term events, while asset cards retain the best available status.
     val historyCutoff = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90)
     val historyPayouts = visiblePayouts.filter { payout ->
-        payout.status != "EXPECTED" || payout.expectedDate == null ||
-            !java.time.Instant.ofEpochMilli(payout.expectedDate)
-                .atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
-    }
+        val date = payout.recordDate ?: payout.expectedDate
+        (!(isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED")) || date == null ||
+            !java.time.Instant.ofEpochMilli(date).atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
+    }.sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
+        .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
 
     // One page-level scroll: header, forecast, and payout history move together.
     Column(
@@ -1686,7 +1724,7 @@ private fun PayoutsScreen(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
+                            Text(dividendStatusLabel(payout.status),
                                 color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (payout.reportedNetAmount != null) {
@@ -1697,15 +1735,23 @@ private fun PayoutsScreen(
                             Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
                             Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
                         }
-                        payout.expectedDate?.let {
-                            Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                        payout.recordDate?.let {
+                            Text("Дата отсечки: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        payout.expectedDate?.let {
+                            Text((if (payout.sourceName.isNullOrBlank()) "Дата выплаты: " else "Ориентировочная дата выплаты: ") +
+                                java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (!payout.sourceName.isNullOrBlank()) {
+                            Text("Источник: ${payout.sourceName}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
                         }
                         payout.actualDate?.let {
                             Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (payout.status == "EXPECTED") {
+                        if (isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED") {
                             TextButton(onClick = { onConfirmReceipt(payout) }) {
                                 Text("Подтвердить получение")
                             }
@@ -1730,7 +1776,7 @@ private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
         ) {
             Text("Календарь ожидаемых выплат", fontWeight = FontWeight.SemiBold)
             Text(
-                "Прогноз по известным датам, суммы до налога",
+                "Объявленные, рекомендованные и прогнозные выплаты с известными датами · до налога",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

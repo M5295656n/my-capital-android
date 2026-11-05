@@ -81,6 +81,22 @@ class PayoutForecastCalculationsTest {
     }
 
     @Test
+    fun announcedRecommendedAndForecastDividendsAreIncluded() {
+        val result = calculatePayoutForecast(
+            listOf(
+                payout(today.plusDays(4), 100.0, "ANNOUNCED"),
+                payout(today.plusDays(8), 200.0, "RECOMMENDED"),
+                payout(today.plusDays(12), 300.0, "FORECAST"),
+                payout(today.plusDays(16), 400.0, "RECEIVED")
+            ),
+            today,
+            zone
+        )
+        assertEquals(600.0, result.next30Days, 0.000001)
+        assertEquals(3, result.monthly.first().paymentCount)
+    }
+
+    @Test
     fun todayPaymentsAreIncludedInForecast() {
         val result = calculatePayoutForecast(
             listOf(payout(today, 55.0)),
