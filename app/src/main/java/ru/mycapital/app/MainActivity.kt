@@ -489,26 +489,29 @@ private fun OverviewScreen(
     var marketData by remember { mutableStateOf(MarketOverviewData()) }
     var marketLoading by remember { mutableStateOf(false) }
     val marketScope = rememberCoroutineScope()
-    val loadMarketData: () -> Unit = {
-        marketScope.launch {
-            marketLoading = true
-            marketData = runCatching {
-                kotlinx.coroutines.withTimeout(20_000L) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet())
-                    }
-                }
-            }.getOrElse { marketData.copy(error = if (it is kotlinx.coroutines.TimeoutCancellationException) "Загрузка рыночных данных заняла слишком много времени" else (it.message ?: "Не удалось загрузить рыночные данные")) }
-            marketLoading = false
-        }
-    }
-    // Reload market movers when the actual holdings arrive or change.
-    // On first composition assets can still be empty while Room emits its initial value;
-    // a Unit-keyed effect would then never refresh the list until the screen is recreated.
+    // Fetch market data from the effect itself, keyed by the actual held tickers.
+    // This avoids a stale callback capturing the first (often still empty) Room emission.
     val heldTickers = remember(assets) {
         assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
     }
-    LaunchedEffect(heldTickers) { loadMarketData() }
+    suspend fun refreshMarketData(tickers: Set<String>) {
+        marketLoading = true
+        try {
+            marketData = kotlinx.coroutines.withTimeout(25_000L) {
+                withContext(Dispatchers.IO) { MarketOverviewClient().load(tickers) }
+            }
+        } catch (error: Throwable) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            marketData = marketData.copy(
+                error = if (error is kotlinx.coroutines.TimeoutCancellationException)
+                    "Загрузка рыночных данных заняла слишком много времени"
+                else error.message ?: "Не удалось загрузить рыночные данные"
+            )
+        } finally {
+            marketLoading = false
+        }
+    }
+    LaunchedEffect(heldTickers) { refreshMarketData(heldTickers) }
     val orderedSnapshots = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val latest = orderedSnapshots.lastOrNull()
     val previous = orderedSnapshots.dropLast(1).lastOrNull()
@@ -593,7 +596,7 @@ private fun OverviewScreen(
                 return androidx.compose.ui.geometry.Offset.Zero
             }
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); loadMarketData() }
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); marketScope.launch { refreshMarketData(heldTickers) } }
                 pullDistance = 0f
                 return Velocity.Zero
             }
@@ -723,7 +726,7 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(40.dp).height(100.dp),
+                                Modifier.width(40.dp).height(150.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
@@ -735,7 +738,7 @@ private fun OverviewScreen(
                                     )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(100.dp)) {
+                            Canvas(Modifier.weight(1f).height(150.dp)) {
                                 val left = 2f
                                 val right = size.width - 2f
                                 val top = 5f
@@ -773,7 +776,7 @@ private fun OverviewScreen(
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
                             Column(
-                                Modifier.width(44.dp).height(100.dp),
+                                Modifier.width(44.dp).height(150.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
