@@ -4,22 +4,34 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,6 +56,7 @@ import ru.mycapital.app.data.QuoteRefreshWorker
 import ru.mycapital.app.data.CorporateEventsWorker
 import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
+import java.time.YearMonth
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
@@ -64,11 +77,12 @@ class MainActivity : ComponentActivity() {
 
 private enum class Screen(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Overview("Обзор", Icons.Default.Home),
-    Assets("Активы", Icons.Default.AccountBalanceWallet),
-    Accounts("Счета", Icons.Default.AccountBalance),
+    Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
-    Operations("Операции", Icons.Default.SwapHoriz),
-    Analytics("Аналитика", Icons.Default.ShowChart)
+    Analytics("Аналитика", Icons.Default.ShowChart),
+    More("Ещё", Icons.Default.MoreHoriz),
+    Accounts("Счета", Icons.Default.AccountBalance),
+    Operations("Операции", Icons.Default.SwapHoriz)
 }
 
 @Composable
@@ -83,6 +97,7 @@ private fun MyCapitalApp() {
     val cashBalance by dao.observeCashBalance().collectAsState(initial = 0.0)
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
+    var moreDestination by remember { mutableStateOf(Screen.More) }
     var showAddAsset by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
     var assetToDelete by remember { mutableStateOf<AssetEntity?>(null) }
@@ -149,7 +164,16 @@ private fun MyCapitalApp() {
         }
     }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
-
+    val quoteWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("moex_quote_refresh_manual")
+        .collectAsState(initial = emptyList())
+    val eventWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("moex_events_refresh_manual")
+        .collectAsState(initial = emptyList())
+    // Show activity only while a worker is actually executing. ENQUEUED/BLOCKED can
+    // persist while Android waits for network constraints and must not look like a stuck spinner.
+    val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING } ||
+        eventWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING }
     LaunchedEffect(Unit) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val periodic = PeriodicWorkRequestBuilder<QuoteRefreshWorker>(6, TimeUnit.HOURS)
@@ -176,18 +200,31 @@ private fun MyCapitalApp() {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val request = OneTimeWorkRequestBuilder<QuoteRefreshWorker>().setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "moex_quote_refresh_manual", ExistingWorkPolicy.KEEP, request
+            "moex_quote_refresh_manual", ExistingWorkPolicy.REPLACE, request
         )
     }
     val refreshEvents: () -> Unit = {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val request = OneTimeWorkRequestBuilder<CorporateEventsWorker>().setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "moex_events_refresh_manual", ExistingWorkPolicy.KEEP, request
+            "moex_events_refresh_manual", ExistingWorkPolicy.REPLACE, request
         )
     }
+    val refreshAllMarketData: () -> Unit = {
+        refreshQuotes()
+        refreshEvents()
+    }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF176B55))) {
+    MaterialTheme(colorScheme = darkColorScheme(
+        primary = androidx.compose.ui.graphics.Color(0xFF2588FF),
+        secondary = androidx.compose.ui.graphics.Color(0xFF55C99A),
+        background = androidx.compose.ui.graphics.Color(0xFF080F1B),
+        surface = androidx.compose.ui.graphics.Color(0xFF101C30),
+        surfaceVariant = androidx.compose.ui.graphics.Color(0xFF14243B),
+        onBackground = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
+        onSurface = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
+        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFB3B7C4)
+    )) {
         Scaffold(
             floatingActionButton = {
                 if (selected == Screen.Assets || selected == Screen.Operations || selected == Screen.Payouts) {
@@ -198,9 +235,9 @@ private fun MyCapitalApp() {
             },
             bottomBar = {
                 NavigationBar {
-                    Screen.entries.forEach { screen ->
+                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
                         NavigationBarItem(
-                            selected = selected == screen,
+                            selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
                             icon = { Icon(screen.icon, contentDescription = screen.title) },
                             label = { Text(screen.title, fontSize = 10.sp) }
@@ -210,12 +247,21 @@ private fun MyCapitalApp() {
             }
         ) { padding ->
             when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, refreshQuotes, refreshEvents, { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) }, isParsingReport, { exportPicker.launch("my-capital-export.zip") }, isExportingData, Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, brokerAccounts, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.More -> MoreScreen(
+                    isParsingReport = isParsingReport,
+                    isExportingData = isExportingData,
+                    onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
+                    onExportData = { exportPicker.launch("my-capital-export.zip") },
+                    onOpenAccounts = { selected = Screen.Accounts },
+                    onOpenOperations = { selected = Screen.Operations },
+                    modifier = Modifier.padding(padding)
+                )
             }
         }
     }
@@ -228,32 +274,28 @@ private fun MyCapitalApp() {
             isImporting = isImportingReport,
             isReconciling = isReconcilingReport,
             onDismiss = { if (!isImportingReport && !isReconcilingReport) importedReport = null },
-            onReconcile = {
-                val reportToReconcile = importedReport!!
-                isReconcilingReport = true
-                scope.launch {
-                    try {
-                        val result = withContext(Dispatchers.IO) { repository.reconcileBrokerReportSnapshot(reportToReconcile) }
-                        importResultMessage = "Сверка договора ${reportToReconcile.accountId} завершена. Обновлено позиций: ${result.matchedAssets}. Не сопоставлено позиций из отчёта: ${result.unmatchedReportAssets}. Денежный остаток по сверенным договорам: ${money(result.resultingCash)} ₽ (до сверки: ${money(result.previousCash)} ₽). Остатки ранее сверенных договоров сохранены; средняя цена не менялась."
-                        importedReport = null
-                    } catch (error: Exception) {
-                        importError = error.message ?: "Не удалось сверить портфель."
-                    } finally {
-                        isReconcilingReport = false
-                    }
-                }
-            },
-            onImportHistory = {
+            onImportAndReconcile = {
                 val reportToImport = importedReport!!
+                isReconcilingReport = true
                 isImportingReport = true
                 scope.launch {
                     try {
-                        val result = withContext(Dispatchers.IO) { repository.importBrokerReportHistory(reportToImport) }
-                        importResultMessage = "Добавлено операций: ${result.imported}. Выплат добавлено: ${result.payoutsImported}. Дубликатов пропущено: ${result.duplicates}. Неисполненных или непроверенных сделок пропущено: ${result.unsettledSkipped}. Денежный остаток и позиции не менялись."
+                        val result = withContext(Dispatchers.IO) {
+                            repository.importAndReconcileBrokerReport(reportToImport)
+                        }
+                        val snapshot = result.reconciliation
+                        val history = result.history
+                        importResultMessage =
+                            "Отчёт ${reportToImport.accountId} обработан полностью. " +
+                            "Сверено позиций: ${snapshot.matchedAssets}; не сопоставлено: ${snapshot.unmatchedReportAssets}. " +
+                            "Общий денежный остаток: ${money(snapshot.resultingCash)} ₽. " +
+                            "Добавлено операций: ${history.imported}; выплат: ${history.payoutsImported}; " +
+                            "дубликатов пропущено: ${history.duplicates}; неисполненных сделок пропущено: ${history.unsettledSkipped}."
                         importedReport = null
                     } catch (error: Exception) {
-                        importError = error.message ?: "Не удалось импортировать операции."
+                        importError = error.message ?: "Не удалось импортировать и сверить брокерский отчёт."
                     } finally {
+                        isReconcilingReport = false
                         isImportingReport = false
                     }
                 }
@@ -288,10 +330,10 @@ private fun MyCapitalApp() {
         AddPayoutDialog(
             assets = assets,
             onDismiss = { showAddPayout = false },
-            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received ->
+            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received, expectedDate ->
                 scope.launch {
                     try {
-                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received)
+                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received, expectedDate)
                         showAddPayout = false
                     } catch (error: Exception) {
                         errorMessage = error.message ?: "Не удалось сохранить выплату"
@@ -416,95 +458,458 @@ private fun MyCapitalApp() {
 }
 
 @Composable
-private fun OverviewScreen(assets: List<AssetEntity>, total: Double, cashBalance: Double, onRefreshQuotes: () -> Unit, onRefreshEvents: () -> Unit, onImportReport: () -> Unit, isParsingReport: Boolean, onExportData: () -> Unit, isExportingData: Boolean, modifier: Modifier = Modifier) {
-    val assetCount = assets.size
+private fun OverviewScreen(
+    assets: List<AssetEntity>,
+    total: Double,
+    cashBalance: Double,
+    payouts: List<PayoutEntity>,
+    operations: List<OperationEntity>,
+    snapshots: List<PortfolioSnapshotEntity>,
+    onRefresh: () -> Unit,
+    isRefreshing: Boolean,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val portfolioTotal = total + cashBalance
-    val invested = assets.sumOf { it.quantity * it.averagePrice }
-    val unrealized = total - invested
-    val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
-    val allocation = calculatePortfolioAllocation(assets, cashBalance)
+    var marketData by remember { mutableStateOf(MarketOverviewData()) }
+    var marketLoading by remember { mutableStateOf(false) }
+    val marketScope = rememberCoroutineScope()
+    val loadMarketData: () -> Unit = {
+        marketScope.launch {
+            marketLoading = true
+            marketData = runCatching {
+                kotlinx.coroutines.withTimeout(20_000L) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet())
+                    }
+                }
+            }.getOrElse { marketData.copy(error = if (it is kotlinx.coroutines.TimeoutCancellationException) "Загрузка рыночных данных заняла слишком много времени" else (it.message ?: "Не удалось загрузить рыночные данные")) }
+            marketLoading = false
+        }
+    }
+    // Reload market movers when the actual holdings arrive or change.
+    // On first composition assets can still be empty while Room emits its initial value;
+    // a Unit-keyed effect would then never refresh the list until the screen is recreated.
+    val heldTickers = remember(assets) {
+        assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    LaunchedEffect(heldTickers) { loadMarketData() }
+    val orderedSnapshots = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
+    val latest = orderedSnapshots.lastOrNull()
+    val previous = orderedSnapshots.dropLast(1).lastOrNull()
+    val dailyChange = if (latest != null && previous != null) {
+        latest.totalValue - previous.totalValue - latest.externalFlow
+    } else null
+    val netContributions = operations.sumOf {
+        when (it.operationType) {
+            "Пополнение" -> it.price
+            "Вывод" -> -it.price
+            else -> 0.0
+        }
+    }
+    val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
+        .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
+    val realized = calculateRealizedTradingResult(operations).profit
+    val openCost = assets.sumOf { it.quantity * it.averagePrice }
+    val unrealized = total - openCost
+    val totalProfit = if (operations.any { it.operationType == "Пополнение" || it.operationType == "Вывод" }) {
+        portfolioTotal - netContributions
+    } else {
+        // Without a recorded funding history, avoid presenting cost-basis-only
+        // unrealized P/L as lifetime profit.
+        unrealized + realized + receivedPayouts
+    }
+    val profitPercent = when {
+        netContributions > 0.0 -> totalProfit / netContributions * 100.0
+        openCost > 0.0 -> (unrealized + realized + receivedPayouts) / openCost * 100.0
+        else -> null
+    }
+    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ONE_YEAR) }
+    // Empty snapshots created before the first import are not a meaningful portfolio baseline.
+    // Keep them out of the dashboard chart rather than drawing a misleading jump from zero.
+    val history = remember(snapshots, selectedRange) {
+        calculatePortfolioHistoryPoints(snapshots.filter { it.totalValue > 0.0 }, selectedRange)
+    }
+    val annualizedReturn = remember(history) {
+        if (history.size < 2) null else {
+            val firstDate = java.time.LocalDate.parse(history.first().dateKey)
+            val lastDate = java.time.LocalDate.parse(history.last().dateKey)
+            val days = java.time.temporal.ChronoUnit.DAYS.between(firstDate, lastDate)
+            val finalNav = history.last().nav / 100.0
+            if (days >= 30 && finalNav > 0.0) {
+                (Math.pow(finalNav, 365.0 / days.toDouble()) - 1.0) * 100.0
+            } else null
+        }
+    }
+
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var pullDistance by remember { mutableFloatStateOf(0f) }
+    val refreshConnection = remember(isRefreshing, onRefresh) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
+                if (available.y > 0f && !isRefreshing) {
+                    pullDistance = (pullDistance + available.y).coerceAtMost(with(density) { 120.dp.toPx() })
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); loadMarketData() }
+                pullDistance = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxSize().nestedScroll(refreshConnection),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Мой капитал", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Ваш инвестиционный портфель", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = onRefreshQuotes) {
-                Icon(Icons.Default.Refresh, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Обновить котировки MOEX")
-            }
-            OutlinedButton(onClick = onRefreshEvents) {
-                Icon(Icons.Default.Event, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Обновить дивиденды и купоны")
-            }
-            OutlinedButton(onClick = onImportReport, enabled = !isParsingReport) {
-                Icon(Icons.Default.FileOpen, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
-            }
-            OutlinedButton(onClick = onExportData, enabled = !isExportingData) {
-                Icon(Icons.Default.FileDownload, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)) {
-                Column(Modifier.padding(22.dp)) {
-                    Text("Общая стоимость портфеля", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("${money(portfolioTotal)} ₽", color = MaterialTheme.colorScheme.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                    Text("Активов в портфеле: $assetCount", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Default.TrendingUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+                    Text("Мой капитал", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Настройки")
                 }
             }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Себестоимость остатков", money(invested) + " ₽", Modifier.weight(1f))
-                MetricCard("Нереализованный результат", (if (unrealized > 0) "+" else "") + money(unrealized) + " ₽", Modifier.weight(1f))
+            if (isRefreshing || marketLoading || pullDistance > 0f) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    if (isRefreshing || marketLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        CircularProgressIndicator(
+                            progress = { (pullDistance / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
             }
+            // Detailed MOEX diagnostics stay out of the dashboard; refresh feedback is the compact spinner above.
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Результат к себестоимости", String.format(java.util.Locale("ru", "RU"), "%.2f%%", returnPercent), Modifier.weight(1f))
-                MetricCard("Свободные деньги", money(cashBalance) + " ₽", Modifier.weight(1f))
-            }
-        }
-        item {
-            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (allocation.isEmpty()) {
-                Text("Распределение появится после добавления активов или свободных денег.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    allocation.forEach { slice ->
-                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(slice.label, fontWeight = FontWeight.Medium)
+            Card(
+                modifier = Modifier.fillMaxWidth().border(
+                    1.dp, androidx.compose.ui.graphics.Color(0xFF223653), RoundedCornerShape(24.dp)
+                ),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Общая стоимость портфеля",
+                            modifier = Modifier.weight(1f),
+                            color = androidx.compose.ui.graphics.Color(0xFFB8C9E8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Row(
+                            Modifier.clip(RoundedCornerShape(20.dp))
+                                .background(androidx.compose.ui.graphics.Color(0xFF1A2942))
+                                .padding(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            PortfolioHistoryRange.entries.forEach { range ->
+                                val active = selectedRange == range
                                 Text(
-                                    "${money(slice.value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", slice.share * 100.0)}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    range.label,
+                                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                                        .background(if (active) androidx.compose.ui.graphics.Color(0xFF1688F8) else androidx.compose.ui.graphics.Color.Transparent)
+                                        .clickable { selectedRange = range }
+                                        .padding(horizontal = 5.dp, vertical = 6.dp),
+                                    color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
+                                    fontSize = 10.sp,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
-                            LinearProgressIndicator(
-                                progress = { slice.share.toFloat().coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth()
+                        }
+                    }
+                    Text(
+                        "${money(portfolioTotal)} ₽",
+                        modifier = Modifier.padding(top = 2.dp),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = androidx.compose.ui.graphics.Color(0xFFF5F7FC)
+                    )
+                    Text(
+                        (if (totalProfit >= 0) "▲ +" else "▼ −") + "${money(kotlin.math.abs(totalProfit))} ₽" +
+                            (profitPercent?.let { " (${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f", it)}%)" } ?: ""),
+                        modifier = Modifier.padding(top = 1.dp, bottom = 5.dp),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (totalProfit >= 0) androidx.compose.ui.graphics.Color(0xFF25D879) else androidx.compose.ui.graphics.Color(0xFFFF5964)
+                    )
+                    if (history.size < 2) {
+                        Box(
+                            Modifier.fillMaxWidth().height(190.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "График появится после накопления минимум двух дневных снимков.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                             )
+                        }
+                    } else {
+                        val portfolioValues = history.map { it.totalValue }
+                        val moscowZone = java.time.ZoneId.of("Europe/Moscow")
+                        val investedValues = history.map { point ->
+                            val endOfDay = java.time.LocalDate.parse(point.dateKey).plusDays(1)
+                                .atStartOfDay(moscowZone).toInstant().toEpochMilli()
+                            operations.asSequence()
+                                .filter { it.operationDate < endOfDay && (it.operationType == "Пополнение" || it.operationType == "Вывод") }
+                                .sumOf { if (it.operationType == "Пополнение") it.price else -it.price }
+                        }
+                        val minValue = (portfolioValues + investedValues).minOrNull() ?: 0.0
+                        val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
+                        val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
+                        val axisValues = (0..3).map { maxValue - span * it / 3.0 }
+                        val portfolioColor = androidx.compose.ui.graphics.Color(0xFF2698FF)
+                        val investedColor = androidx.compose.ui.graphics.Color(0xFF8798B5)
+                        val gridColor = androidx.compose.ui.graphics.Color(0xFF293A55)
+                        val axisColor = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
+                        val chartDates = listOf(0, (history.lastIndex / 3), (history.lastIndex * 2 / 3), history.lastIndex)
+                            .distinct()
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(
+                                Modifier.width(48.dp).height(132.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                axisValues.forEach { value ->
+                                    Text(
+                                        money(value).substringBefore(','),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = axisColor,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            Canvas(Modifier.weight(1f).height(132.dp)) {
+                                val left = 2f
+                                val right = size.width - 2f
+                                val top = 5f
+                                val bottom = size.height - 5f
+                                for (i in 0..4) {
+                                    val y = top + (bottom - top) * i / 4f
+                                    drawLine(gridColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
+                                }
+                                for (i in 0..5) {
+                                    val x = left + (right - left) * i / 5f
+                                    drawLine(gridColor.copy(alpha = 0.65f), Offset(x, top), Offset(x, bottom), 1.dp.toPx())
+                                }
+                                fun drawSeries(series: List<Double>, color: androidx.compose.ui.graphics.Color, dashed: Boolean) {
+                                    if (series.size < 2) return
+                                    val path = Path()
+                                    series.forEachIndexed { index, value ->
+                                        val x = left + (right - left) * index / (series.size - 1).toFloat()
+                                        val y = bottom - ((value - minValue) / span).toFloat() * (bottom - top)
+                                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                                    }
+                                    drawPath(
+                                        path, color,
+                                        style = Stroke(
+                                            width = if (dashed) 2.5.dp.toPx() else 3.dp.toPx(),
+                                            cap = StrokeCap.Round,
+                                            pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx())) else null
+                                        )
+                                    )
+                                }
+                                drawSeries(portfolioValues, portfolioColor, false)
+                                drawSeries(investedValues, investedColor, true)
+                                val portfolioY = bottom - ((portfolioValues.last() - minValue) / span).toFloat() * (bottom - top)
+                                val investedY = bottom - ((investedValues.last() - minValue) / span).toFloat() * (bottom - top)
+                                drawCircle(portfolioColor, 4.dp.toPx(), Offset(right, portfolioY))
+                                drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
+                            }
+                            Column(
+                                Modifier.width(54.dp).height(132.dp),
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(6.dp))
+                                        .background(portfolioColor.copy(alpha = 0.18f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        money(portfolioValues.last()).substringBefore(','),
+                                        color = portfolioColor, style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold, maxLines = 1
+                                    )
+                                }
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(6.dp))
+                                        .background(investedColor.copy(alpha = 0.18f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        money(investedValues.last()).substringBefore(','),
+                                        color = investedColor, style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold, maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 48.dp, end = 54.dp, top = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            chartDates.forEach { index ->
+                                Text(
+                                    java.time.LocalDate.parse(history[index].dateKey)
+                                        .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = axisColor
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 1.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0xFF2698FF)))
+                            Text("Портфель", color = androidx.compose.ui.graphics.Color(0xFFB8C9E8), style = MaterialTheme.typography.labelMedium)
+                        }
+                        Spacer(Modifier.width(22.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Canvas(Modifier.width(25.dp).height(8.dp)) {
+                                drawLine(
+                                    androidx.compose.ui.graphics.Color(0xFF8798B5), Offset(0f, size.height / 2), Offset(size.width, size.height / 2),
+                                    2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+                                )
+                            }
+                            Text("Вложенные средства", color = androidx.compose.ui.graphics.Color(0xFFB8C9E8), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
             }
         }
         item {
-            Text("Портфель", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                if (assetCount == 0) "Добавьте первый актив во вкладке «Активы»."
-                else "Стоимость рассчитана по последней сохранённой цене. Котировки MOEX могут иметь задержку до 15 минут.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            MarketQuotesSection(marketData = marketData)
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) {
+                    MarketMoversSection(title = "Топ роста за день", rows = marketData.gainers, positive = true)
+                }
+                Box(Modifier.weight(1f)) {
+                    MarketMoversSection(title = "Топ падений за день", rows = marketData.losers, positive = false)
+                }
+            }
+        }
+        item {
+            DividendHistorySection(payouts = payouts)
+        }
+
+    }
+}
+
+
+private fun sectorForTicker(ticker: String): String = when (ticker.uppercase()) {
+    "SBER", "SBERP", "T", "VTBR", "MOEX", "BSPB", "CBOM" -> "Финансы"
+    "LKOH", "ROSN", "TATN", "GAZP", "NVTK", "SNGS", "SNGSP", "BANE", "TRNFP" -> "Нефть и газ"
+    "YDEX", "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
+    "GMKN", "NLMK", "CHMF", "MAGN", "RUAL", "ALRS" -> "Металлы и добыча"
+    "MTSS", "RTKM", "VEON" -> "Телеком"
+    "AFLT", "FLOT" -> "Транспорт"
+    "PIKK", "SMLT", "LSRG" -> "Недвижимость"
+    "IRAO", "HYDR", "FEES", "UPRO" -> "Энергетика"
+    else -> "Прочие акции"
+}
+
+@Composable
+private fun OverviewMetricCard(
+    title: String,
+    value: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    valueColor: androidx.compose.ui.graphics.Color
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, minLines = 1)
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = valueColor, maxLines = 2)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MoreScreen(
+    isParsingReport: Boolean,
+    isExportingData: Boolean,
+    onImportReport: () -> Unit,
+    onExportData: () -> Unit,
+    onOpenAccounts: () -> Unit,
+    onOpenOperations: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Дополнительные инструменты и управление данными", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenAccounts)) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AccountBalance, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Брокерские счета", fontWeight = FontWeight.SemiBold)
+                    Text("Договоры и остатки по счетам", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenOperations)) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.SwapHoriz, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("История операций", fontWeight = FontWeight.SemiBold)
+                    Text("Покупки, продажи, пополнения и выводы", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        Text("Файлы и резервные копии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedButton(onClick = onImportReport, enabled = !isParsingReport, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.FileOpen, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
+        }
+        OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.FileDownload, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
         }
     }
 }
@@ -518,45 +923,44 @@ private fun AssetsScreen(
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var logoCatalog by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        logoCatalog = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
+    }
     var selectedAssetForHistory by remember { mutableStateOf<AssetEntity?>(null) }
-    Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Spacer(Modifier.height(20.dp))
-        Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Локальный список вашего портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Нажмите на актив, чтобы посмотреть историю его покупок.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Добавление актива задаёт начальную позицию и не списывает деньги. Для новых покупок сначала внесите свободные деньги.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
+        Text("Активы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
         if (assets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Пока нет активов. Нажмите +, чтобы добавить первый.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
+            ) {
                 items(assets, key = { it.id }) { asset ->
                     Card(
                         Modifier.fillMaxWidth().clickable { selectedAssetForHistory = asset },
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AssetTypeIcon(asset.assetType, asset.ticker, logoCatalog)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                                Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${asset.assetType} · ${quantity(asset.quantity)} шт.")
-                                Text("Нажмите, чтобы открыть историю покупок", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                Text("${quantity(asset.quantity)} шт. · ${asset.assetType}", style = MaterialTheme.typography.bodySmall)
                             }
-                            Column(horizontalAlignment = Alignment.End) {
+                            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
                                 Text("Средняя ${money(asset.averagePrice)} ₽", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton(onClick = { onEditAsset(asset) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Изменить")
-                                }
-                                TextButton(onClick = { onDeleteAsset(asset) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                                    Icon(Icons.Default.Delete, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Удалить")
-                                }
                             }
                         }
                     }
@@ -571,6 +975,105 @@ private fun AssetsScreen(
             accounts = accounts,
             onDismiss = { selectedAssetForHistory = null }
         )
+    }
+}
+
+@Composable
+private fun DoubleHeadedEagleIcon(tint: androidx.compose.ui.graphics.Color) {
+    Canvas(Modifier.size(31.dp)) {
+        val sx = size.width / 100f
+        val sy = size.height / 100f
+        val eagle = Path().apply {
+            // Two outward-facing heads and their necks.
+            moveTo(47f, 39f)
+            cubicTo(39f, 29f, 34f, 20f, 25f, 18f)
+            cubicTo(20f, 17f, 15f, 19f, 11f, 24f)
+            lineTo(3f, 20f)
+            lineTo(8f, 31f)
+            lineTo(2f, 35f)
+            lineTo(15f, 37f)
+            cubicTo(20f, 34f, 24f, 30f, 29f, 30f)
+            cubicTo(35f, 31f, 39f, 41f, 44f, 49f)
+            lineTo(44f, 60f)
+            cubicTo(34f, 56f, 24f, 50f, 13f, 45f)
+            lineTo(7f, 51f)
+            cubicTo(20f, 67f, 32f, 72f, 45f, 69f)
+            lineTo(50f, 83f)
+            lineTo(55f, 69f)
+            cubicTo(68f, 72f, 80f, 67f, 93f, 51f)
+            lineTo(87f, 45f)
+            cubicTo(76f, 50f, 66f, 56f, 56f, 60f)
+            lineTo(56f, 49f)
+            cubicTo(61f, 41f, 65f, 31f, 71f, 30f)
+            cubicTo(76f, 30f, 80f, 34f, 85f, 37f)
+            lineTo(98f, 35f)
+            lineTo(92f, 31f)
+            lineTo(97f, 20f)
+            lineTo(89f, 24f)
+            cubicTo(85f, 19f, 80f, 17f, 75f, 18f)
+            cubicTo(66f, 20f, 61f, 29f, 53f, 39f)
+            lineTo(50f, 43f)
+            close()
+        }
+        val crown = Path().apply {
+            moveTo(17f, 13f); lineTo(13f, 5f); lineTo(21f, 9f); lineTo(25f, 2f)
+            lineTo(29f, 10f); lineTo(34f, 6f); lineTo(31f, 16f); close()
+            moveTo(83f, 13f); lineTo(87f, 5f); lineTo(79f, 9f); lineTo(75f, 2f)
+            lineTo(71f, 10f); lineTo(66f, 6f); lineTo(69f, 16f); close()
+        }
+        val legs = Path().apply {
+            moveTo(43f, 72f); lineTo(39f, 88f); lineTo(31f, 92f); lineTo(33f, 96f)
+            lineTo(46f, 93f); lineTo(50f, 79f); lineTo(54f, 79f); lineTo(58f, 93f)
+            lineTo(71f, 96f); lineTo(73f, 92f); lineTo(65f, 88f); lineTo(57f, 72f); close()
+        }
+        drawContext.transform.scale(sx, sy, pivot = androidx.compose.ui.geometry.Offset.Zero)
+        drawPath(eagle, tint)
+        drawPath(crown, tint)
+        drawPath(legs, tint)
+        drawLine(tint, androidx.compose.ui.geometry.Offset(46f, 48f), androidx.compose.ui.geometry.Offset(54f, 48f), strokeWidth = 5f)
+    }
+}
+
+@Composable
+private fun AssetTypeIcon(
+    assetType: String,
+    ticker: String,
+    logoCatalog: Map<String, String>
+) {
+    val type = assetType.lowercase()
+    val normalizedTicker = ticker.trim().uppercase()
+    val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
+    val isFund = type.contains("фонд") || type.contains("бпиф") || type.contains("etf")
+    val domain = if (isBond) null else AssetLogoCatalog.domainFor(normalizedTicker, logoCatalog)
+    val blue = androidx.compose.ui.graphics.Color(0xFF173F78)
+    val fallbackTint = if (isFund) androidx.compose.ui.graphics.Color(0xFF67469A)
+        else androidx.compose.ui.graphics.Color(0xFF176B55)
+
+    Surface(
+        shape = CircleShape,
+        color = if (isBond) blue else androidx.compose.ui.graphics.Color(0xFFF0F2F5),
+        modifier = Modifier.size(46.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (isBond) {
+                DoubleHeadedEagleIcon(androidx.compose.ui.graphics.Color.White)
+            } else {
+                // The monogram remains visible if the network image is unavailable.
+                Text(
+                    normalizedTicker.take(2).ifBlank { "?" },
+                    color = fallbackTint,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                if (domain != null) {
+                    AsyncImage(
+                        model = AssetLogoCatalog.faviconUrl(domain),
+                        contentDescription = "Логотип $ticker",
+                        modifier = Modifier.fillMaxSize().padding(5.dp).clip(CircleShape)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -911,6 +1414,7 @@ private fun PayoutsScreen(
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
     onConfirmReceipt: (PayoutEntity) -> Unit,
+    onRefreshEvents: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val visiblePayouts = payouts.filter { payout ->
@@ -924,67 +1428,94 @@ private fun PayoutsScreen(
         it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
     }
     val expected = visiblePayouts.filter { it.status == "EXPECTED" }.sumOf { it.totalAmount }
-    Column(modifier.fillMaxSize().padding(20.dp)) {
-        Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Получено после налога", money(received) + " ₽", Modifier.weight(1f))
-            MetricCard("Ожидается до налога", money(expected) + " ₽", Modifier.weight(1f))
+    // Keep the history compact: hide only expected payments dated more than 90 days ahead.
+    // Received payments and overdue/undated expected payments remain visible.
+    val historyCutoff = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90)
+    val historyPayouts = visiblePayouts.filter { payout ->
+        payout.status != "EXPECTED" || payout.expectedDate == null ||
+            !java.time.Instant.ofEpochMilli(payout.expectedDate)
+                .atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
+    }
+
+    // One page-level scroll: header, forecast, and payout history move together.
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onRefreshEvents) {
+                Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
+            }
         }
-        Spacer(Modifier.height(12.dp))
+        AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
+        Card(shape = RoundedCornerShape(18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                Text("Всего получено после налога", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(money(received) + " ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+        Card(shape = RoundedCornerShape(16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ожидается", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(money(expected) + " ₽", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+                Text("До налога", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+        }
         PayoutForecastCard(visiblePayouts)
-        Spacer(Modifier.height(12.dp))
-        if (visiblePayouts.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат. Нажмите +, чтобы добавить дивиденд или купон." else "Для выбранного счёта выплат нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (historyPayouts.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат в ближайшие 90 дней. Более поздние ожидаемые выплаты временно скрыты." else "Для выбранного счёта нет выплат в ближайшие 90 дней.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 80.dp)) {
-                items(visiblePayouts, key = { it.id }) { payout ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
-                                    color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (payout.reportedNetAmount != null) {
-                                Text("Зачислено по брокерскому отчёту: ${money(payout.reportedNetAmount)} ₽")
-                                Text("Сумма до налога и удержанный налог в отчёте отдельно не раскрыты",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
-                                Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
-                            }
-                            payout.expectedDate?.let {
-                                Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            payout.actualDate?.let {
-                                Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (payout.status == "EXPECTED") {
-                                TextButton(onClick = { onConfirmReceipt(payout) }) {
-                                    Text("Подтвердить получение")
-                                }
+            Text("История выплат", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            historyPayouts.forEach { payout ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(if (payout.status == "RECEIVED") "Получено" else "Ожидается",
+                                color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (payout.reportedNetAmount != null) {
+                            Text("Зачислено по брокерскому отчёту: ${money(payout.reportedNetAmount)} ₽")
+                            Text("Сумма до налога и удержанный налог в отчёте отдельно не раскрыты",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
+                            Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
+                        }
+                        payout.expectedDate?.let {
+                            Text("Дата выплаты: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        payout.actualDate?.let {
+                            Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (payout.status == "EXPECTED") {
+                            TextButton(onClick = { onConfirmReceipt(payout) }) {
+                                Text("Подтвердить получение")
                             }
                         }
                     }
                 }
             }
         }
+        Spacer(Modifier.height(72.dp))
     }
 }
 
 @Composable
 private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
-    val forecast = remember(payouts) {
-        calculatePayoutForecast(payouts)
-    }
+    val forecast = remember(payouts) { calculatePayoutForecast(payouts) }
+    var shownMonth by remember { mutableStateOf(YearMonth.now()) }
+    val monthForecast = forecast.monthly.firstOrNull { it.month == shownMonth }
     Card(shape = RoundedCornerShape(16.dp)) {
         Column(
             Modifier.fillMaxWidth().padding(14.dp),
@@ -1006,34 +1537,37 @@ private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
                     Text("${money(forecast.next90Days)} ₽", fontWeight = FontWeight.SemiBold)
                 }
             }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { shownMonth = shownMonth.minusMonths(1) }) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Предыдущий месяц")
+                }
+                Text(
+                    shownMonth.format(java.time.format.DateTimeFormatter.ofPattern("LLLL yyyy", java.util.Locale("ru", "RU")))
+                        .replaceFirstChar { it.titlecase(java.util.Locale("ru", "RU")) },
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.SemiBold
+                )
+                IconButton(onClick = { shownMonth = shownMonth.plusMonths(1) }) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Следующий месяц")
+                }
+            }
+            if (monthForecast == null) {
+                Text("На этот месяц ожидаемых выплат с известной датой нет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${monthForecast.paymentCount} ${if (monthForecast.paymentCount == 1) "выплата" else if (monthForecast.paymentCount in 2..4) "выплаты" else "выплат"}")
+                    Text("${money(monthForecast.amount)} ₽", fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (forecast.monthly.isEmpty()) {
                 Text(
-                    "Нет ожидаемых выплат с будущей датой. Обновите корпоративные события или добавьте выплату вручную.",
+                    "Пока нет ожидаемых выплат с будущей датой. Обновите корпоративные события или добавьте выплату вручную.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                HorizontalDivider()
-                forecast.monthly.take(6).forEach { month ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f)) {
-                            Text(month.displayMonth(), style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "${month.paymentCount} ${if (month.paymentCount == 1) "выплата" else if (month.paymentCount in 2..4) "выплаты" else "выплат"}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Text("${money(month.amount)} ₽", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                if (forecast.monthly.size > 6) {
-                    Text(
-                        "Показаны ближайшие 6 месяцев",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }
@@ -1076,13 +1610,14 @@ private fun ReceivePayoutDialog(
 private fun AddPayoutDialog(
     assets: List<AssetEntity>,
     onDismiss: () -> Unit,
-    onSave: (AssetEntity?, String, Double, Double, Double, Boolean) -> Unit
+    onSave: (AssetEntity?, String, Double, Double, Double, Boolean, Long?) -> Unit
 ) {
     var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
     var payoutType by remember { mutableStateOf("Дивиденд") }
     var amountText by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("1") }
     var taxText by remember { mutableStateOf("0") }
+    var expectedDateText by remember { mutableStateOf("") }
     var received by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     val asset = assets.firstOrNull { it.id == assetId }
@@ -1090,7 +1625,9 @@ private fun AddPayoutDialog(
     val quantity = parseDecimalInput(quantityText) ?: 0.0
     val tax = parseDecimalInput(taxText) ?: -1.0
     val gross = amount * quantity
-    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross
+    val parsedExpectedDate = runCatching { java.time.LocalDate.parse(expectedDateText, java.time.format.DateTimeFormatter.ofPattern("dd.MM.uuuu")) }.getOrNull()
+    val expectedDate = parsedExpectedDate?.atStartOfDay(java.time.ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross && (received || expectedDate != null)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Добавить выплату") },
@@ -1112,6 +1649,9 @@ private fun AddPayoutDialog(
                 OutlinedTextField(amountText, { amountText = it }, label = { Text("Сумма на акцию / облигацию, ₽") }, singleLine = true)
                 OutlinedTextField(quantityText, { quantityText = it }, label = { Text("Количество бумаг") }, singleLine = true)
                 OutlinedTextField(taxText, { taxText = it }, label = { Text("Налог, ₽") }, singleLine = true)
+                if (!received) {
+                    OutlinedTextField(expectedDateText, { expectedDateText = it }, label = { Text("Дата выплаты, ДД.ММ.ГГГГ") }, placeholder = { Text("20.01.2027") }, singleLine = true)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = received, onCheckedChange = { received = it })
                     Text("Уже фактически получено")
@@ -1121,7 +1661,7 @@ private fun AddPayoutDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received) }) { Text("Сохранить") }
+            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received, expectedDate) }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
@@ -1329,6 +1869,36 @@ private fun AnalyticsScreen(
         item {
             Text("Аналитика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("Структура и текущий результат портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item {
+            val todayMillis = System.currentTimeMillis()
+            val horizonMillis = todayMillis + TimeUnit.DAYS.toMillis(90)
+            val upcoming = payouts.filter {
+                it.status == "EXPECTED" && it.expectedDate != null &&
+                    it.expectedDate >= todayMillis && it.expectedDate <= horizonMillis
+            }.sortedBy { it.expectedDate }
+            Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (upcoming.isEmpty()) {
+                Text("В ближайшие 90 дней ожидаемых выплат с известной датой нет.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                upcoming.take(8).forEach { payout ->
+                    Card(shape = RoundedCornerShape(16.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val date = java.time.Instant.ofEpochMilli(payout.expectedDate!!)
+                                .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                            Column(Modifier.weight(1f)) {
+                                Text(assets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text("${date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("ru", "RU")))} · ${payout.payoutType}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("≈ ${money(payout.totalAmount)} ₽", fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
         }
         item {
             Card(shape = RoundedCornerShape(18.dp)) {
@@ -1588,8 +2158,7 @@ private fun BrokerReportPreviewDialog(
     isImporting: Boolean,
     isReconciling: Boolean,
     onDismiss: () -> Unit,
-    onReconcile: () -> Unit,
-    onImportHistory: () -> Unit
+    onImportAndReconcile: () -> Unit
 ) {
     val pendingTrades = report.trades.filterNot { isFullyExecutedBrokerTrade(it.status) }
     val completedTrades = report.trades.size - pendingTrades.size
@@ -1630,13 +2199,13 @@ private fun BrokerReportPreviewDialog(
                 }
                 HorizontalDivider()
                 Text("Сверка позиций", fontWeight = FontWeight.SemiBold)
-                Text("Будет изменено количество и текущая цена только у уже известных приложению бумаг. Средняя цена покупки останется прежней.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Остатки существующих бумаг будут обновлены, а новые позиции из справочника брокера добавлены в портфель. Затем приложение загрузит сделки, пополнения, дивиденды и купоны из этого же отчёта.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 knownRows.take(20).forEach { (row, current) ->
                     Text("${row.ticker}: по этому договору ${quantity(row.closingQuantity)} шт.; всего в приложении сейчас ${quantity(current!!.quantity)} шт.", fontSize = 12.sp)
                 }
                 if (knownRows.size > 20) Text("И ещё ${knownRows.size - 20} сопоставленных позиций…", fontSize = 12.sp)
                 if (unknownRows.isNotEmpty()) {
-                    Text("Не будут изменены: ${unknownRows.size} поз. без совпадения тикера в приложении.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    Text("Позиции, которые не удалось распознать по тикеру: ${unknownRows.size}.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     unknownRows.take(5).forEach { Text("• ${it.ticker.ifBlank { it.name }}", fontSize = 12.sp) }
                 }
                 HorizontalDivider()
@@ -1647,28 +2216,21 @@ private fun BrokerReportPreviewDialog(
                     Text("Внимание: денежный баланс отчёта не сходится. Сверка заблокирована.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
                 Text(
-                    "Импорт истории и сверка остатков — разные действия. Сверка не импортирует сделки, не меняет среднюю цену и не удаляет активы, которых нет в отчёте.",
+                    "История операций и остатки обрабатываются одной командой. Сначала сверяется снимок договора, затем импортируются сделки и выплаты; повторные строки пропускаются как дубликаты.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
             }
         },
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(
-                    onClick = { showReconcileConfirmation = true },
-                    enabled = !isImporting && !isReconciling && report.closingCash >= 0.0 &&
-                        report.assets.any { it.ticker.isNotBlank() } &&
-                        kotlin.math.abs(report.openingCash + report.cashCredits - report.cashDebits - report.closingCash) <= 0.02
-                ) {
-                    Text(if (isReconciling) "Сверяю…" else "Сверить остатки и позиции")
-                }
-                TextButton(
-                    onClick = onImportHistory,
-                    enabled = !isImporting && !isReconciling && (report.cashFlows.isNotEmpty() || completedTrades > 0)
-                ) {
-                    Text(if (isImporting) "Импортирую…" else "Импортировать историю")
-                }
+            TextButton(
+                onClick = { showReconcileConfirmation = true },
+                enabled = !isImporting && !isReconciling &&
+                    report.closingCash >= 0.0 &&
+                    report.assets.any { it.ticker.isNotBlank() } &&
+                    kotlin.math.abs(report.openingCash + report.cashCredits - report.cashDebits - report.closingCash) <= 0.02
+            ) {
+                Text(if (isImporting || isReconciling) "Обрабатываю отчёт…" else "Импортировать и сверить портфель")
             }
         },
         dismissButton = {
@@ -1680,7 +2242,7 @@ private fun BrokerReportPreviewDialog(
             report = report,
             onConfirm = {
                 showReconcileConfirmation = false
-                onReconcile()
+                onImportAndReconcile()
             },
             onDismiss = { showReconcileConfirmation = false }
         )
@@ -1698,7 +2260,7 @@ private fun BrokerReportReconciliationConfirmation(
         title = { Text("Подтвердить сверку портфеля?") },
         text = {
             Text(
-                "Приложение сохранит остаток договора ${report.accountId} и пересчитает общий остаток по всем уже сверенным договорам. Первый договор задаёт начальную базу, последующие добавляются; повторная сверка заменяет только снимок этого договора. Количества позиций также пересчитываются по разнице с предыдущим снимком договора. Средняя цена покупки не изменится; бумаги, не сопоставленные с тикером в приложении, не будут изменены."
+                "Приложение обновит остатки договора ${report.accountId}, пересчитает общий портфель с учётом остальных договоров и импортирует историю операций и выплат из этого же отчёта. Повторно загруженные операции не будут продублированы. Сделки, которые не отмечены как полностью исполненные, в историю покупок и продаж не попадут."
             )
         },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Подтвердить сверку") } },

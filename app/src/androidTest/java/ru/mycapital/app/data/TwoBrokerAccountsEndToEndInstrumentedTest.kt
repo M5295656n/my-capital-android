@@ -54,7 +54,8 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
                 openingQuantity = 0.0,
                 closingQuantity = index.toDouble(),
                 closingPrice = 10.0 + index,
-                closingValue = index * (10.0 + index)
+                closingValue = index * (10.0 + index),
+                assetType = "Акция"
             )
         }
         val iisAssets = (1..5).map { index ->
@@ -139,6 +140,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         assertEquals(600.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(17, dao.getAssets().size)
         assertTrue(dao.getAssets().all { it.averagePrice == 0.0 })
+        assertTrue(dao.getAssets().filter { it.ticker.startsWith("MAIN") }.all { it.assetType == "Акция" })
         mainAssets.forEach { expected ->
             assertEquals(expected.closingQuantity, dao.getAssetByTicker(expected.ticker)!!.quantity, 0.000001)
         }

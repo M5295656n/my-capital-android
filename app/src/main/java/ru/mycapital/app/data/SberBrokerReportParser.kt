@@ -14,7 +14,8 @@ data class BrokerReportAsset(
     val openingQuantity: Double,
     val closingQuantity: Double,
     val closingPrice: Double,
-    val closingValue: Double
+    val closingValue: Double,
+    val assetType: String = "Другое"
 )
 
 enum class BrokerCashFlowKind { DEPOSIT, WITHDRAWAL, DIVIDEND, COUPON, INTERNAL_TRANSFER, IGNORE }
@@ -149,6 +150,22 @@ object SberBrokerReportParser {
             val isin = row.getOrNull(2).orEmpty()
             if (name.isNotBlank() && ticker.isNotBlank() && isin.startsWith("RU")) Triple(name, ticker, isin) else null
         }
+        fun assetTypeFor(isin: String): String {
+            val securityType = securitiesRows.firstOrNull { it.getOrNull(2) == isin }
+                ?.getOrNull(4).orEmpty().lowercase(Locale.ROOT)
+            return when {
+                securityType.contains("акци") || securityType.contains("share") -> "Акция"
+                securityType.contains("облигац") || securityType.contains("bond") -> "Облигация"
+                securityType.contains("фонд") || securityType.contains("пай") || securityType.contains("бпиф") ||
+                    securityType.contains("fund") || securityType.contains("unit") -> "Фонд"
+                else -> "Другое"
+            }
+        }
+        val bondIsins = securitiesRows.mapNotNull { row ->
+            val isin = row.getOrNull(2).orEmpty()
+            val securityType = row.getOrNull(4).orEmpty()
+            isin.takeIf { it.startsWith("RU") && securityType.contains("облигац", ignoreCase = true) }
+        }.toSet()
         fun normalize(value: String): String = value.lowercase(Locale.ROOT)
             .replace('ё', 'е').replace(Regex("[^\\p{L}\\p{N}]"), "")
         fun tickerFor(description: String): String? {
@@ -262,9 +279,14 @@ object SberBrokerReportParser {
                 // Trade rows carrying the ISIN will resolve to this same identifier below.
                 ticker = security?.second?.takeIf { it.isNotBlank() } ?: isin,
                 isin = isin,
+                assetType = assetTypeFor(isin),
                 openingQuantity = number(row.getOrNull(3), "количество на начало по ${row[0]}"),
                 closingQuantity = closingQuantity,
-                closingPrice = number(row.getOrNull(10), "цена на конец по ${row[0]}"),
+                // Bond quotes in Sber reports are percentages of nominal (e.g. 92.697),
+                // but the position market value is in RUB (e.g. 926.97).
+                // Store a RUB-per-security price in the portfolio.
+                closingPrice = if (closingQuantity > 0.0) closingValue / closingQuantity
+                    else number(row.getOrNull(10), "цена на конец по ${row[0]}"),
                 closingValue = closingValue
             )
         }
@@ -283,7 +305,16 @@ object SberBrokerReportParser {
                 ticker = securityNames.firstOrNull { it.third == row[4] }?.second ?: row[4],
                 side = row[6],
                 quantity = number(row.getOrNull(7), "количество в сделке"),
-                price = number(row.getOrNull(8), "цена сделки"),
+                price = run {
+                    val quotedPrice = number(row.getOrNull(8), "цена сделки")
+                    val quantity = number(row.getOrNull(7), "количество в сделке")
+                    val grossAmount = number(row.getOrNull(9), "сумма сделки")
+                    val code = row.getOrNull(4).orEmpty()
+                    val isin = securityNames.firstOrNull { it.second == code || it.third == code }?.third ?: code
+                    // Bond trade prices are percentages of nominal; the report amount
+                    // is in RUB, so normalize it to a RUB-per-security price.
+                    if (isin in bondIsins && quantity > 0.0) grossAmount / quantity else quotedPrice
+                },
                 grossAmount = number(row.getOrNull(9), "сумма сделки"),
                 brokerFee = number(row.getOrNull(11), "комиссия брокера"),
                 exchangeFee = number(row.getOrNull(12), "биржевая комиссия"),

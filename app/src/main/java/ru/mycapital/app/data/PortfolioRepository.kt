@@ -8,6 +8,51 @@ import java.util.Locale
 internal fun isFullyExecutedBrokerTrade(status: String): Boolean =
     status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ")
 
+
+/**
+ * Calculates weighted-average acquisition cost from a complete buy/sell history.
+ * Returns null when the available operations do not explain the current holding
+ * (for example, when the report omits purchases made before its start date).
+ */
+internal fun calculateAverageCostFromCompleteHistory(
+    operations: List<OperationEntity>,
+    expectedQuantity: Double
+): Double? {
+    val epsilon = 0.0000001
+    var quantity = 0.0
+    var totalCost = 0.0
+
+    operations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
+        .forEach { operation ->
+            when (operation.operationType) {
+                "Покупка" -> {
+                    if (operation.quantity <= 0.0 || operation.price < 0.0 || operation.commission < 0.0) {
+                        return null
+                    }
+                    quantity += operation.quantity
+                    totalCost += operation.quantity * operation.price + operation.commission
+                }
+                "Продажа" -> {
+                    if (operation.quantity <= 0.0 || quantity + epsilon < operation.quantity) {
+                        return null
+                    }
+                    val averageBeforeSale = if (quantity > epsilon) totalCost / quantity else 0.0
+                    quantity -= operation.quantity
+                    totalCost = averageBeforeSale * quantity
+                    if (quantity <= epsilon) {
+                        quantity = 0.0
+                        totalCost = 0.0
+                    }
+                }
+            }
+        }
+
+    if (kotlin.math.abs(quantity - expectedQuantity) > maxOf(epsilon, expectedQuantity * 0.000001)) {
+        return null
+    }
+    return if (quantity > epsilon) totalCost / quantity else 0.0
+}
+
 class PortfolioRepository(private val database: PortfolioDatabase) {
     private val dao = database.portfolioDao()
 
@@ -76,15 +121,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             // unmatched and the user sees cash but no assets.
             reportAssets.forEach { (ticker, row) ->
                 if (ticker !in currentAssets && row.closingQuantity > 0.0) {
-                    val type = when {
-                        row.name.contains("ОФЗ", ignoreCase = true) ||
-                            row.name.contains("облигац", ignoreCase = true) -> "Облигация"
-                        row.name.contains("фонд", ignoreCase = true) ||
-                            row.name.contains("БПИФ", ignoreCase = true) ||
-                            row.name.contains("ПИФ", ignoreCase = true) -> "Фонд"
-                        row.name.contains("акци", ignoreCase = true) -> "Акция"
-                        else -> "Другое"
-                    }
+                    val type = row.assetType
                     val id = dao.insertAsset(
                         AssetEntity(
                             ticker = ticker,
@@ -151,6 +188,23 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         )
     }
 
+    data class BrokerReportImportAndReconciliationResult(
+        val reconciliation: BrokerSnapshotReconciliationResult,
+        val history: BrokerHistoryImportResult
+    )
+
+    /**
+     * Applies the holdings/cash snapshot first, then imports the statement's
+     * transaction and payout history. Both steps run in one Room transaction.
+     */
+    suspend fun importAndReconcileBrokerReport(
+        report: SberBrokerReport
+    ): BrokerReportImportAndReconciliationResult = database.withTransaction {
+        val reconciliation = reconcileBrokerReportSnapshot(report)
+        val history = importBrokerReportHistory(report)
+        BrokerReportImportAndReconciliationResult(reconciliation, history)
+    }
+
     suspend fun importBrokerReportHistory(report: SberBrokerReport): BrokerHistoryImportResult {
         var imported = 0
         var duplicates = 0
@@ -166,6 +220,14 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     )
                 )
             }
+            dao.upsertBrokerCashOpening(
+                BrokerCashOpeningEntity(
+                    accountId = report.accountId,
+                    periodStart = report.periodStart.toString(),
+                    openingCash = report.openingCash,
+                    periodEnd = report.periodEnd.toString()
+                )
+            )
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
                 val kind = flow.kind
@@ -274,6 +336,23 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 } else {
                     val id = dao.insertImportedOperation(row)
                     if (id == -1L) duplicates++ else imported++
+                }
+            }
+
+            // Rebuild average acquisition cost only when the stored trade history
+            // fully explains the current snapshot quantity. If the statement starts
+            // after the first purchase, keep the existing value rather than publish
+            // a misleading partial-period average.
+            assetsByTicker.values.forEach { asset ->
+                val history = dao.getOperationsForAsset(asset.id)
+                val calculatedAverage = calculateAverageCostFromCompleteHistory(history, asset.quantity)
+                if (calculatedAverage != null) {
+                    dao.updateAsset(
+                        asset.copy(
+                            averagePrice = calculatedAverage,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
                 }
             }
         }
@@ -403,7 +482,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         amountPerUnit: Double,
         quantity: Double,
         taxAmount: Double,
-        isReceived: Boolean
+        isReceived: Boolean,
+        expectedDate: Long? = null
     ) {
         require(ticker.isNotBlank()) { "Укажите тикер" }
         require(payoutType == "Дивиденд" || payoutType == "Купон") { "Неизвестный тип выплаты" }
@@ -411,6 +491,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         require(quantity > 0.0) { "Количество должно быть больше нуля" }
         val gross = amountPerUnit * quantity
         require(taxAmount >= 0.0 && taxAmount <= gross) { "Налог должен быть от нуля до суммы выплаты" }
+        if (!isReceived) require(expectedDate != null) { "Укажите дату ожидаемой выплаты" }
         val now = System.currentTimeMillis()
 
         database.withTransaction {
@@ -423,8 +504,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     quantity = quantity,
                     totalAmount = gross,
                     taxAmount = taxAmount,
-                    // No expected payment date is collected by the current form; do not invent one.
-                    expectedDate = null,
+                    expectedDate = if (isReceived) null else expectedDate,
                     actualDate = if (isReceived) now else null,
                     status = if (isReceived) "RECEIVED" else "EXPECTED"
                 )
