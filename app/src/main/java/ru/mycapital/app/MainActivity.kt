@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Screen(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Overview("Обзор", Icons.Default.Home),
+    Overview("Главная", Icons.Default.Home),
     Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
@@ -234,14 +234,29 @@ private fun MyCapitalApp() {
                 }
             },
             bottomBar = {
-                NavigationBar {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
-                        NavigationBarItem(
-                            selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
-                            onClick = { selected = screen },
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
-                            label = { Text(screen.title, fontSize = 10.sp) }
-                        )
+                Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF080F1B))) {
+                    HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFF1D2A40), thickness = 1.dp)
+                    NavigationBar(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF080F1B),
+                        contentColor = androidx.compose.ui.graphics.Color(0xFFAAB6CD),
+                        tonalElevation = 0.dp,
+                        windowInsets = NavigationBarDefaults.windowInsets
+                    ) {
+                        listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
+                            NavigationBarItem(
+                                selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
+                                onClick = { selected = screen },
+                                icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                label = { Text(screen.title, fontSize = 10.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = androidx.compose.ui.graphics.Color(0xFF2588FF),
+                                    selectedTextColor = androidx.compose.ui.graphics.Color(0xFF2588FF),
+                                    unselectedIconColor = androidx.compose.ui.graphics.Color(0xFFAAB6CD),
+                                    unselectedTextColor = androidx.compose.ui.graphics.Color(0xFFAAB6CD),
+                                    indicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -474,26 +489,29 @@ private fun OverviewScreen(
     var marketData by remember { mutableStateOf(MarketOverviewData()) }
     var marketLoading by remember { mutableStateOf(false) }
     val marketScope = rememberCoroutineScope()
-    val loadMarketData: () -> Unit = {
-        marketScope.launch {
-            marketLoading = true
-            marketData = runCatching {
-                kotlinx.coroutines.withTimeout(20_000L) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet())
-                    }
-                }
-            }.getOrElse { marketData.copy(error = if (it is kotlinx.coroutines.TimeoutCancellationException) "Загрузка рыночных данных заняла слишком много времени" else (it.message ?: "Не удалось загрузить рыночные данные")) }
-            marketLoading = false
-        }
-    }
-    // Reload market movers when the actual holdings arrive or change.
-    // On first composition assets can still be empty while Room emits its initial value;
-    // a Unit-keyed effect would then never refresh the list until the screen is recreated.
+    // Fetch market data from the effect itself, keyed by the actual held tickers.
+    // This avoids a stale callback capturing the first (often still empty) Room emission.
     val heldTickers = remember(assets) {
         assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
     }
-    LaunchedEffect(heldTickers) { loadMarketData() }
+    suspend fun refreshMarketData(tickers: Set<String>) {
+        marketLoading = true
+        try {
+            marketData = kotlinx.coroutines.withTimeout(25_000L) {
+                withContext(Dispatchers.IO) { MarketOverviewClient().load(tickers) }
+            }
+        } catch (error: Throwable) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            marketData = marketData.copy(
+                error = if (error is kotlinx.coroutines.TimeoutCancellationException)
+                    "Загрузка рыночных данных заняла слишком много времени"
+                else error.message ?: "Не удалось загрузить рыночные данные"
+            )
+        } finally {
+            marketLoading = false
+        }
+    }
+    LaunchedEffect(heldTickers) { refreshMarketData(heldTickers) }
     val orderedSnapshots = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val latest = orderedSnapshots.lastOrNull()
     val previous = orderedSnapshots.dropLast(1).lastOrNull()
@@ -578,7 +596,7 @@ private fun OverviewScreen(
                 return androidx.compose.ui.geometry.Offset.Zero
             }
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); loadMarketData() }
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); marketScope.launch { refreshMarketData(heldTickers) } }
                 pullDistance = 0f
                 return Velocity.Zero
             }
@@ -628,7 +646,7 @@ private fun OverviewScreen(
                 colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(
@@ -695,10 +713,12 @@ private fun OverviewScreen(
                         }
                     } else {
                         val portfolioValues = history.map { it.totalValue }
-                        val investedValues = history.map { it.investedCapital }
-                        val minValue = (portfolioValues + investedValues).minOrNull() ?: 0.0
-                        val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
-                        val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
+                        // Net cash flows can be negative in an incomplete early history.
+                        // They must not pull the absolute-value chart's axis below zero.
+                        val investedValues = history.map { it.investedCapital.coerceAtLeast(0.0) }
+                        val minValue = 0.0
+                        val maxValue = (portfolioValues + investedValues).maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+                        val span = maxValue
                         val axisValues = (0..3).map { maxValue - span * it / 3.0 }
                         val portfolioColor = androidx.compose.ui.graphics.Color(0xFF2698FF)
                         val investedColor = androidx.compose.ui.graphics.Color(0xFF8798B5)
@@ -708,19 +728,19 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(48.dp).height(132.dp),
+                                Modifier.width(40.dp).height(115.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
                                     Text(
                                         money(value).substringBefore(','),
-                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 9.sp,
                                         color = axisColor,
                                         maxLines = 1
                                     )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(132.dp)) {
+                            Canvas(Modifier.weight(1f).height(115.dp)) {
                                 val left = 2f
                                 val right = size.width - 2f
                                 val top = 5f
@@ -757,44 +777,16 @@ private fun OverviewScreen(
                                 drawCircle(portfolioColor, 4.dp.toPx(), Offset(right, portfolioY))
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
-                            Column(
-                                Modifier.width(54.dp).height(132.dp),
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Box(
-                                    Modifier.clip(RoundedCornerShape(6.dp))
-                                        .background(portfolioColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        money(portfolioValues.last()).substringBefore(','),
-                                        color = portfolioColor, style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold, maxLines = 1
-                                    )
-                                }
-                                Box(
-                                    Modifier.clip(RoundedCornerShape(6.dp))
-                                        .background(investedColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        money(investedValues.last()).substringBefore(','),
-                                        color = investedColor, style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold, maxLines = 1
-                                    )
-                                }
-                            }
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(start = 48.dp, end = 54.dp, top = 3.dp),
+                            Modifier.fillMaxWidth().padding(start = 40.dp, top = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             chartDates.forEach { index ->
                                 Text(
                                     java.time.LocalDate.parse(history[index].dateKey)
                                         .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
                                     color = axisColor
                                 )
                             }
@@ -804,17 +796,8 @@ private fun OverviewScreen(
                         Text(
                             "Нет исторических котировок для: ${historyResult.unavailableTickers.joinToString()}. Эти позиции не включены в историческую оценку.",
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
                             color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
-                        )
-                    }
-                    val firstPurchaseDate = historyResult.firstPurchaseDate
-                    if (firstPurchaseDate != null) {
-                        Text(
-                            "История с первой покупки: ${firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                         )
                     }
                     Row(

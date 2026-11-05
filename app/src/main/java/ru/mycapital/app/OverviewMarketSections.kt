@@ -41,7 +41,9 @@ import okhttp3.Request
 import org.json.JSONObject
 import ru.mycapital.app.data.PayoutEntity
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import java.time.ZoneId
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -56,6 +58,25 @@ internal data class MarketOverviewData(
     val error: String? = null
 )
 
+internal fun calculatePercentChange(current: Double, previous: Double): Double? =
+    if (current.isFinite() && previous.isFinite() && previous > 0.0) {
+        (current - previous) / previous * 100.0
+    } else null
+
+internal fun parsePreviousCbrRate(xml: String, current: Double): Double? {
+    val values = Regex("""<Record\b[^>]*>.*?<Value>(.*?)</Value>.*?</Record>""", RegexOption.DOT_MATCHES_ALL)
+        .findAll(xml)
+        .mapNotNull { match -> match.groupValues.getOrNull(1)?.replace(",", ".")?.toDoubleOrNull() }
+        .filter { it.isFinite() && it > 0.0 }
+        .toList()
+    val latest = values.lastOrNull() ?: return null
+    return if (kotlin.math.abs(latest - current) <= 0.0000001) {
+        values.dropLast(1).lastOrNull()
+    } else {
+        latest
+    }
+}
+
 internal class MarketOverviewClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -68,10 +89,10 @@ internal class MarketOverviewClient {
         // cannot keep the dashboard in its loading state for several sequential timeouts.
         val quotes = coroutineScope {
             listOf(
-                async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") },
+                async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") ?: cbrCurrencyQuote("USD", "R01235") },
                 async(Dispatchers.IO) { cbrEuroQuote() },
-                async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") },
-                async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
+                async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") ?: cbrCurrencyQuote("CNY", "R01375") },
+                async(Dispatchers.IO) { quote("GLDRUB_TOM", "Золото/RUB") }
             ).awaitAll().filterNotNull()
         }
         val movers = coroutineScope {
@@ -89,8 +110,7 @@ internal class MarketOverviewClient {
     }
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? = runCatching {
-        val market = if (ticker == "USD000UTSTOM" || ticker == "CNYRUB_TOM") "currency/selt" else "currency/selt"
-        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE"
+        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,PREVPRICE,CHANGE"
         val json = getJson(url)
         val table = json.optJSONObject("marketdata") ?: return@runCatching null
         val columns = table.optJSONArray("columns") ?: return@runCatching null
@@ -98,29 +118,59 @@ internal class MarketOverviewClient {
         val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
         val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
             .firstOrNull { it.optString(indexes["SECID"] ?: -1) == ticker } ?: return@runCatching null
-        val price = row.optDouble(indexes["LAST"] ?: -1, Double.NaN).takeIf { it.isFinite() && it > 0.0 }
+        // LAST can be null outside trading hours. PREVPRICE keeps the quote visible
+        // with the latest available exchange price instead of rendering an empty dash.
+        val last = row.optDouble(indexes["LAST"] ?: -1, Double.NaN)
+        val previousClose = row.optDouble(indexes["PREVPRICE"] ?: -1, Double.NaN)
+        val price = (last.takeIf { it.isFinite() && it > 0.0 }
+            ?: previousClose.takeIf { it.isFinite() && it > 0.0 })
+            ?: return@runCatching null
         val change = row.optDouble(indexes["CHANGE"] ?: -1, Double.NaN).takeIf { it.isFinite() }
-        MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
+        MarketQuoteRow(ticker, label, price, change?.let { delta ->
+            val base = price - delta
+            if (base > 0.0) delta / base * 100.0 else null
+        })
     }.getOrNull()
 
-        // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the official
+        // Fallback for USD/CNY when MOEX does not publish a usable LAST price.
+    // The official CBR fixing is still preferable to hiding the entire quote card.
+    private fun cbrCurrencyQuote(label: String, cbrId: String): MarketQuoteRow? = runCatching {
+        val xml = getXml("https://www.cbr.ru/scripts/XML_daily.asp")
+        val valueText = Regex("""<Valute[^>]*ID="$cbrId">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
+            .find(xml)?.groupValues?.getOrNull(1) ?: return@runCatching null
+        val value = valueText.replace(",", ".").toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it > 0.0 } ?: return@runCatching null
+        MarketQuoteRow("CBR_$label", "$label/RUB", value, null)
+    }.getOrNull()
+
+    // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the official
     // Bank of Russia rate instead of showing an unavailable or stale MOEX quote.
     private fun cbrEuroQuote(): MarketQuoteRow? = runCatching {
-        val request = Request.Builder()
-            .url("https://www.cbr.ru/scripts/XML_daily.asp")
-            .header("User-Agent", "MyCapital-Android/0.3")
-            .build()
-        val xml = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
-            response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
-        }
+        val xml = getXml("https://www.cbr.ru/scripts/XML_daily.asp")
         val valueText = Regex("""<Valute[^>]*ID="R01239">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
             .find(xml)?.groupValues?.getOrNull(1)
             ?: return@runCatching null
         val value = valueText.replace(",", ".").toDoubleOrNull()
             ?.takeIf { it.isFinite() && it > 0.0 } ?: return@runCatching null
-        MarketQuoteRow("EUR_RUB_CBR", "EUR/RUB", value, null)
+
+        // Dynamic CBR history returns actual fixing dates, so weekends and holidays
+        // are handled without comparing the current rate with a calendar-day duplicate.
+        val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.US)
+        val endDate = LocalDate.now()
+        val startDate = endDate.minusDays(14)
+        val dynamicUrl = "https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=${startDate.format(formatter)}&date_req2=${endDate.format(formatter)}&VAL_NM_RQ=R01239"
+        val previous = runCatching { parsePreviousCbrRate(getXml(dynamicUrl), value) }.getOrNull()
+        MarketQuoteRow("EUR_RUB_CBR", "EUR/RUB", value, previous?.let { calculatePercentChange(value, it) })
     }.getOrNull()
+
+    private fun getXml(url: String): String {
+        val request = Request.Builder().url(url)
+            .header("User-Agent", "MyCapital-Android/0.3").build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
+            response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
+        }
+    }
 
     private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/boardgroups/$boardGroup/securities.json?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,SHORTNAME&marketdata.columns=SECID,LAST,CHANGE"
@@ -164,7 +214,6 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Мои котировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Все →", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         }
         if (marketData.quotes.isEmpty()) {
             Text(marketData.error ?: "Загружаем котировки…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -256,9 +305,9 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
 private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
     val key = ticker.uppercase()
     val background = when (key) {
-        "USD000UTSTOM" -> Color(0xFF244A87)
+        "USD000UTSTOM", "CBR_USD" -> Color(0xFF244A87)
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> Color(0xFF2454A6)
-        "CNYRUB_TOM" -> Color(0xFFB52D35)
+        "CNYRUB_TOM", "CBR_CNY" -> Color(0xFFB52D35)
         "GLDRUB_TOM" -> Color(0xFFB88B24)
         "SBER", "SBERP" -> Color(0xFF20A66A)
         "YDEX" -> Color(0xFFFF4438)
@@ -272,9 +321,9 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
         else -> MaterialTheme.colorScheme.surface
     }
     val mark = when (key) {
-        "USD000UTSTOM" -> "$"
+        "USD000UTSTOM", "CBR_USD" -> "$"
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
-        "CNYRUB_TOM" -> "¥"
+        "CNYRUB_TOM", "CBR_CNY" -> "¥"
         "GLDRUB_TOM" -> "Au"
         else -> key.take(3)
     }
