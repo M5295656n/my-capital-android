@@ -24,6 +24,28 @@ X5,"X5",2027-01-10,2027-01-09,98,RUB,5.0,forecast,2027-01-25
     }
 
     @Test
+    fun parsesSemicolonCsvAndDecimalComma() {
+        val csv = """secid;company;record_date;last_buy_date;value;currency;yield_pct;status;payment_date
+LKOH;"ЛУКОЙЛ";2026-12-09;2026-12-08;"535,50";RUB;9,1;recommended;2026-12-23
+"""
+        val events = parseLongShortDividendCsv(csv, today)
+        assertEquals(1, events.size)
+        assertEquals(535.50, events.single().amountPerUnit, 0.000001)
+        assertEquals("RECOMMENDED", events.single().status)
+    }
+
+    @Test
+    fun parsesTabSeparatedDividendFeed() {
+        val csv = """secid\tcompany\trecord_date\tlast_buy_date\tvalue\tcurrency\tyield_pct\tstatus\tpayment_date
+X5\tX5\t2027-01-06\t2027-01-05\t98\tRUB\t5\tforecast\t
+"""
+        val events = parseLongShortDividendCsv(csv, today)
+        assertEquals(1, events.size)
+        assertEquals("FORECAST", events.single().status)
+        assertEquals(null, events.single().paymentDate)
+    }
+
+    @Test
     fun strongestStatusWinsForSameDividendEvent() {
         val csv = """secid,company,record_date,last_buy_date,value,currency,yield_pct,status,payment_date
 SBER,"Сбербанк",2026-11-20,2026-11-19,12.5,RUB,4.2,forecast,2026-12-05
