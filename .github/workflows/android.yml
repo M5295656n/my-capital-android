@@ -30,8 +30,8 @@ jobs:
         run: |
           test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64 secret" && exit 1)
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/my-capital-signing.jks
-      - name: Build debug APK and unit tests
-        run: gradle testDebugUnitTest assembleDebug
+      - name: Run unit tests
+        run: gradle testDebugUnitTest
       - name: Build signed release APK
         env:
           ANDROID_KEYSTORE_PATH: my-capital-signing.jks
@@ -51,12 +51,6 @@ jobs:
         with:
           name: my-capital-release-apk
           path: app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: my-capital-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
   room-instrumentation:
