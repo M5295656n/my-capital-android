@@ -86,4 +86,14 @@ class MoexSecurityHistoryClientTest {
         )
     }
 
+    @Test
+    fun doesNotAccrueAgainstLaterCouponWhenNextPaymentAmountIsUnknown() {
+        val coupons = listOf(
+            MoexBondCoupon(LocalDate.parse("2026-06-01"), 50.0),
+            MoexBondCoupon(LocalDate.parse("2026-09-01"), null),
+            MoexBondCoupon(LocalDate.parse("2026-12-01"), 50.0)
+        )
+        assertEquals(null, calculateBondAccruedInterest(LocalDate.parse("2026-08-01"), coupons))
+    }
+
 }
