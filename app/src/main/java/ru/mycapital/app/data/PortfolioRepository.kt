@@ -452,7 +452,9 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         return database.withTransaction {
             val payout = requireNotNull(dao.getPayoutById(payoutId)) { "Выплата не найдена" }
             if (payout.status == "RECEIVED") return@withTransaction false
-            require(payout.status == "EXPECTED") { "Можно подтвердить только ожидаемую выплату" }
+            require(payout.status in setOf("EXPECTED", "ANNOUNCED", "RECOMMENDED", "FORECAST")) {
+                "Можно подтвердить только объявленную или ожидаемую выплату"
+            }
             val net = calculatePayoutNetAmount(payout.totalAmount, taxAmount)
             dao.updatePayout(payout.copy(taxAmount = taxAmount, actualDate = receivedAt, status = "RECEIVED"))
             dao.ensureCashBalance(CashBalanceEntity())
