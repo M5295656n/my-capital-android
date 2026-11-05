@@ -29,7 +29,6 @@ data class OperationEntity(
     val operationDate: Long = System.currentTimeMillis(),
     val note: String = "",
     val sourceKey: String? = null,
-    // Brokerage agreement for imported history; null keeps legacy/manual portfolio-wide entries.
     val accountId: String? = null
 )
 
@@ -87,4 +86,13 @@ data class BrokerAccountEntity(
     @PrimaryKey val accountId: String,
     val displayName: String,
     val accountType: String = "Не указан"
+)
+
+@Entity(tableName = "broker_cash_opening", primaryKeys = ["accountId", "periodStart"])
+data class BrokerCashOpeningEntity(
+    val accountId: String,
+    val periodStart: String,
+    val openingCash: Double,
+    val periodEnd: String,
+    val importedAt: Long = System.currentTimeMillis()
 )

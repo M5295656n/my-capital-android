@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class],
-    version = 11,
+    entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class],
+    version = 12,
     exportSchema = false
 )
 abstract class PortfolioDatabase : RoomDatabase() {
@@ -75,8 +75,13 @@ abstract class PortfolioDatabase : RoomDatabase() {
 
         internal val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS broker_cash_opening (accountId TEXT NOT NULL, periodStart TEXT NOT NULL, openingCash REAL NOT NULL, periodEnd TEXT NOT NULL, importedAt INTEGER NOT NULL, PRIMARY KEY(accountId, periodStart))")
+            }
+        }
+
+        internal val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 // Existing manual and legacy imported operations remain unassigned.
-                // Newly imported broker rows will carry their agreement ID.
                 database.execSQL("ALTER TABLE operations ADD COLUMN accountId TEXT")
             }
         }
@@ -89,7 +94,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     context.applicationContext,
                     PortfolioDatabase::class.java,
                     "my_capital.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12).build().also { INSTANCE = it }
             }
     }
 }
