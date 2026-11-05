@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Screen(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Overview("Обзор", Icons.Default.Home),
+    Overview("Главная", Icons.Default.Home),
     Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
@@ -234,14 +234,29 @@ private fun MyCapitalApp() {
                 }
             },
             bottomBar = {
-                NavigationBar {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
-                        NavigationBarItem(
-                            selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
-                            onClick = { selected = screen },
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
-                            label = { Text(screen.title, fontSize = 10.sp) }
-                        )
+                Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFF080F1B))) {
+                    HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFF1D2A40), thickness = 1.dp)
+                    NavigationBar(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF080F1B),
+                        contentColor = androidx.compose.ui.graphics.Color(0xFFAAB6CD),
+                        tonalElevation = 0.dp,
+                        windowInsets = NavigationBarDefaults.windowInsets
+                    ) {
+                        listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
+                            NavigationBarItem(
+                                selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
+                                onClick = { selected = screen },
+                                icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                label = { Text(screen.title, fontSize = 10.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = androidx.compose.ui.graphics.Color(0xFF2588FF),
+                                    selectedTextColor = androidx.compose.ui.graphics.Color(0xFF2588FF),
+                                    unselectedIconColor = androidx.compose.ui.graphics.Color(0xFFAAB6CD),
+                                    unselectedTextColor = androidx.compose.ui.graphics.Color(0xFFAAB6CD),
+                                    indicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -628,7 +643,7 @@ private fun OverviewScreen(
                 colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(
@@ -708,13 +723,13 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(48.dp).height(132.dp),
+                                Modifier.width(40.dp).height(132.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
                                     Text(
                                         money(value).substringBefore(','),
-                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 9.sp,
                                         color = axisColor,
                                         maxLines = 1
                                     )
@@ -758,7 +773,7 @@ private fun OverviewScreen(
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
                             Column(
-                                Modifier.width(54.dp).height(132.dp),
+                                Modifier.width(44.dp).height(132.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -769,7 +784,7 @@ private fun OverviewScreen(
                                 ) {
                                     Text(
                                         money(portfolioValues.last()).substringBefore(','),
-                                        color = portfolioColor, style = MaterialTheme.typography.labelSmall,
+                                        color = portfolioColor, fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold, maxLines = 1
                                     )
                                 }
@@ -780,21 +795,21 @@ private fun OverviewScreen(
                                 ) {
                                     Text(
                                         money(investedValues.last()).substringBefore(','),
-                                        color = investedColor, style = MaterialTheme.typography.labelSmall,
+                                        color = investedColor, fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold, maxLines = 1
                                     )
                                 }
                             }
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(start = 48.dp, end = 54.dp, top = 3.dp),
+                            Modifier.fillMaxWidth().padding(start = 40.dp, end = 44.dp, top = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             chartDates.forEach { index ->
                                 Text(
                                     java.time.LocalDate.parse(history[index].dateKey)
                                         .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
                                     color = axisColor
                                 )
                             }
@@ -804,7 +819,7 @@ private fun OverviewScreen(
                         Text(
                             "Нет исторических котировок для: ${historyResult.unavailableTickers.joinToString()}. Эти позиции не включены в историческую оценку.",
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
                             color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
                         )
                     }
@@ -813,7 +828,7 @@ private fun OverviewScreen(
                         Text(
                             "История с первой покупки: ${firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
                             modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
                             color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                         )
                     }
