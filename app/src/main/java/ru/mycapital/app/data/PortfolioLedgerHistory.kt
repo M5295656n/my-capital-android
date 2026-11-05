@@ -38,9 +38,9 @@ internal fun reconstructPortfolioLedger(
     }.filter { (_, date) -> !date.isBefore(periodStart) && !date.isAfter(throughDate) }
         .sortedWith(compareBy<Pair<OperationEntity, LocalDate>> { it.second }.thenBy { it.first.id })
 
-    val firstPurchase = dated.firstOrNull { it.first.operationType == "Покупка" }?.second
+    val firstPurchaseDate: LocalDate = dated.firstOrNull { it.first.operationType == "Покупка" }?.second
         ?: return emptyList()
-    if (firstPurchase.isAfter(throughDate)) return emptyList()
+    if (firstPurchaseDate.isAfter(throughDate)) return emptyList()
 
     var cash = openingCash
     val quantities = linkedMapOf<String, Double>()
@@ -79,7 +79,7 @@ internal fun reconstructPortfolioLedger(
                 }
             }
         }
-        if (!date.isBefore(firstPurchase)) {
+        if (!date.isBefore(firstPurchaseDate)) {
             result += PortfolioLedgerDay(
                 date = date,
                 cashBalance = cash,
