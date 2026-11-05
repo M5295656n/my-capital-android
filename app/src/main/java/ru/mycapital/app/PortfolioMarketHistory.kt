@@ -8,6 +8,10 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 internal data class PortfolioMarketHistoryPoint(
     val dateKey: String,
@@ -78,9 +82,9 @@ internal suspend fun buildPortfolioMarketHistory(
         return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailableConcurrent.toList().sorted())
     }
 
-    val pricesByTicker = kotlinx.coroutines.coroutineScope {
+    val pricesByTicker = coroutineScope {
         supported.map { (ticker, asset) ->
-            kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) {
+            async(Dispatchers.IO) {
                 val closes = runCatching {
                     priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
                 }.getOrElse {
@@ -90,7 +94,7 @@ internal suspend fun buildPortfolioMarketHistory(
                 if (closes.isEmpty()) unavailableConcurrent.add(ticker)
                 ticker to closes.associate { it.date to it.close }.toSortedMap()
             }
-        }.map { it.await() }.toMap()
+        }.awaitAll().toMap()
     }
 
     val dates = pricesByTicker.values.flatMap { it.keys }.distinct().sorted()
@@ -145,7 +149,8 @@ internal suspend fun buildPortfolioMarketHistory(
                 }
             }
 
-        if (previousValue != null && previousValue > 0.0) {
+        val priorValue = previousValue
+        if (priorValue != null && priorValue > 0.0) {
             val periodFlow = orderedOperations.asSequence()
                 .filter { it.operationDate >= (previousEndOfDay ?: Long.MIN_VALUE) && it.operationDate < endOfDay }
                 .sumOf {
@@ -156,7 +161,7 @@ internal suspend fun buildPortfolioMarketHistory(
                     }
                 }
             val valueBeforeFlow = totalValue - periodFlow
-            if (valueBeforeFlow > 0.0) nav *= valueBeforeFlow / previousValue
+            if (valueBeforeFlow > 0.0) nav *= valueBeforeFlow / priorValue
         }
         points += PortfolioMarketHistoryPoint(
             dateKey = date.toString(),
