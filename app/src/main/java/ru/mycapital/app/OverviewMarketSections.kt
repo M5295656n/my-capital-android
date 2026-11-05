@@ -116,7 +116,7 @@ internal class MarketOverviewClient {
             if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
             response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
         }
-        parseEuroRateJson(JSONObject(body))
+        parseEuroRateJson(body)
     }.getOrNull()
 
     private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
@@ -161,10 +161,16 @@ internal fun calculateQuoteChangePercent(current: Double, previous: Double): Dou
     return ((current - previous) / previous * 100.0).takeIf { it.isFinite() }
 }
 
-internal fun parseEuroRateJson(json: JSONObject): MarketQuoteRow? {
-    val euro = json.optJSONObject("Valute")?.optJSONObject("EUR") ?: return null
-    val current = euro.optDouble("Value", Double.NaN)
-    val previous = euro.optDouble("Previous", Double.NaN)
+internal fun parseEuroRateJson(json: String): MarketQuoteRow? {
+    val euroFields = Regex("\\\"EUR\\\"\\s*:\\s*\\{([^}]*)\\}", RegexOption.DOT_MATCHES_ALL)
+        .find(json)?.groupValues?.getOrNull(1) ?: return null
+
+    fun rate(field: String): Double =
+        Regex("\\\"$field\\\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)")
+            .find(euroFields)?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: Double.NaN
+
+    val current = rate("Value")
+    val previous = rate("Previous")
     if (!current.isFinite() || current <= 0.0) return null
     return MarketQuoteRow(
         ticker = "EUR_RUB_CBR",
