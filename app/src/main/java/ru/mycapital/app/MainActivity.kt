@@ -726,7 +726,7 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(40.dp).height(150.dp),
+                                Modifier.width(40.dp).height(115.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
@@ -738,7 +738,7 @@ private fun OverviewScreen(
                                     )
                                 }
                             }
-                            Canvas(Modifier.weight(1f).height(150.dp)) {
+                            Canvas(Modifier.weight(1f).height(115.dp)) {
                                 val left = 2f
                                 val right = size.width - 2f
                                 val top = 5f
@@ -775,37 +775,9 @@ private fun OverviewScreen(
                                 drawCircle(portfolioColor, 4.dp.toPx(), Offset(right, portfolioY))
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
-                            Column(
-                                Modifier.width(44.dp).height(150.dp),
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Box(
-                                    Modifier.clip(RoundedCornerShape(6.dp))
-                                        .background(portfolioColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        money(portfolioValues.last()).substringBefore(','),
-                                        color = portfolioColor, fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold, maxLines = 1
-                                    )
-                                }
-                                Box(
-                                    Modifier.clip(RoundedCornerShape(6.dp))
-                                        .background(investedColor.copy(alpha = 0.18f))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        money(investedValues.last()).substringBefore(','),
-                                        color = investedColor, fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold, maxLines = 1
-                                    )
-                                }
-                            }
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(start = 40.dp, end = 44.dp, top = 2.dp),
+                            Modifier.fillMaxWidth().padding(start = 40.dp, top = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             chartDates.forEach { index ->
@@ -824,15 +796,6 @@ private fun OverviewScreen(
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                             fontSize = 9.sp,
                             color = androidx.compose.ui.graphics.Color(0xFFFFC66D)
-                        )
-                    }
-                    val firstPurchaseDate = historyResult.firstPurchaseDate
-                    if (firstPurchaseDate != null) {
-                        Text(
-                            "История с первой покупки: ${firstPurchaseDate.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))}",
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                            fontSize = 9.sp,
-                            color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                         )
                     }
                     Row(
