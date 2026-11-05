@@ -297,9 +297,9 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
 private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
     val key = ticker.uppercase()
     val background = when (key) {
-        "USD000UTSTOM" -> Color(0xFF244A87)
+        "USD000UTSTOM", "CBR_USD" -> Color(0xFF244A87)
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> Color(0xFF2454A6)
-        "CNYRUB_TOM" -> Color(0xFFB52D35)
+        "CNYRUB_TOM", "CBR_CNY" -> Color(0xFFB52D35)
         "GLDRUB_TOM" -> Color(0xFFB88B24)
         "SBER", "SBERP" -> Color(0xFF20A66A)
         "YDEX" -> Color(0xFFFF4438)
@@ -313,9 +313,9 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
         else -> MaterialTheme.colorScheme.surface
     }
     val mark = when (key) {
-        "USD000UTSTOM" -> "$"
+        "USD000UTSTOM", "CBR_USD" -> "$"
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
-        "CNYRUB_TOM" -> "¥"
+        "CNYRUB_TOM", "CBR_CNY" -> "¥"
         "GLDRUB_TOM" -> "Au"
         else -> key.take(3)
     }
