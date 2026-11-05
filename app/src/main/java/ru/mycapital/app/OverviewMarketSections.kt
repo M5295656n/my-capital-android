@@ -103,23 +103,20 @@ internal class MarketOverviewClient {
         MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
     }.getOrNull()
 
-        // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the official
-    // Bank of Russia rate instead of showing an unavailable or stale MOEX quote.
+        // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the
+    // Bank of Russia's current and previous published rates so the card can
+    // show a real daily percentage instead of an empty placeholder.
     private fun cbrEuroQuote(): MarketQuoteRow? = runCatching {
         val request = Request.Builder()
-            .url("https://www.cbr.ru/scripts/XML_daily.asp")
+            .url("https://www.cbr-xml-daily.ru/daily_json.js")
+            .header("Accept", "application/json")
             .header("User-Agent", "MyCapital-Android/0.3")
             .build()
-        val xml = client.newCall(request).execute().use { response ->
+        val body = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
             response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
         }
-        val valueText = Regex("""<Valute[^>]*ID="R01239">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
-            .find(xml)?.groupValues?.getOrNull(1)
-            ?: return@runCatching null
-        val value = valueText.replace(",", ".").toDoubleOrNull()
-            ?.takeIf { it.isFinite() && it > 0.0 } ?: return@runCatching null
-        MarketQuoteRow("EUR_RUB_CBR", "EUR/RUB", value, null)
+        parseEuroRateJson(JSONObject(body))
     }.getOrNull()
 
     private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
@@ -157,6 +154,24 @@ internal class MarketOverviewClient {
             return JSONObject(response.body?.string() ?: throw IllegalStateException("Пустой ответ MOEX ISS"))
         }
     }
+}
+
+internal fun calculateQuoteChangePercent(current: Double, previous: Double): Double? {
+    if (!current.isFinite() || !previous.isFinite() || current <= 0.0 || previous <= 0.0) return null
+    return ((current - previous) / previous * 100.0).takeIf { it.isFinite() }
+}
+
+internal fun parseEuroRateJson(json: JSONObject): MarketQuoteRow? {
+    val euro = json.optJSONObject("Valute")?.optJSONObject("EUR") ?: return null
+    val current = euro.optDouble("Value", Double.NaN)
+    val previous = euro.optDouble("Previous", Double.NaN)
+    if (!current.isFinite() || current <= 0.0) return null
+    return MarketQuoteRow(
+        ticker = "EUR_RUB_CBR",
+        label = "EUR/RUB",
+        price = current,
+        changePercent = calculateQuoteChangePercent(current, previous)
+    )
 }
 
 @Composable
