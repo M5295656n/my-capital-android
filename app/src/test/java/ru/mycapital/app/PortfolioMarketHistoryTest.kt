@@ -85,4 +85,29 @@ class PortfolioMarketHistoryTest {
         assertEquals(518.0, result.points[1].totalValue, 0.000001)
         assertFalse(result.unavailableTickers.contains("SBER"))
     }
+    @Test
+    fun includesOfzDirtyRublePriceInPortfolioHistory() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-04-01")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 2L, ticker = "SU26238RMFS4", name = "ОФЗ 26238", assetType = "Облигация",
+                quantity = 1.0, averagePrice = 950.0, currentPrice = 967.5
+            )),
+            operations = listOf(
+                operation(10, "Пополнение", "2026-03-31", 1.0, 1_000.0, ticker = "RUB"),
+                operation(11, "Покупка", "2026-04-01", 1.0, 950.0, 0.5, ticker = "SU26238RMFS4")
+            ),
+            currentCash = 49.5,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = buyDate
+        ) { _, type, _, _ ->
+            assertTrue(type.contains("облига", ignoreCase = true))
+            listOf(MoexDailyClose(buyDate, 967.5))
+        }
+
+        assertEquals(1, result.points.size)
+        assertEquals(1_017.0, result.points.single().totalValue, 0.000001)
+        assertTrue(result.unavailableTickers.isEmpty())
+    }
+
 }
