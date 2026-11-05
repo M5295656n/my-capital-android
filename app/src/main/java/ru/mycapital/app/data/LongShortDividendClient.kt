@@ -62,7 +62,7 @@ internal fun parseLongShortDividendCsv(
             ticker = ticker,
             amountPerUnit = amount,
             status = status,
-            recordDate = recordDate?.atStartOfDay().toInstant(ZoneOffset.UTC)?.toEpochMilli(),
+            recordDate = recordDate?.atStartOfDay()?.toInstant(ZoneOffset.UTC)?.toEpochMilli(),
             paymentDate = paymentDate?.atStartOfDay()?.toInstant(ZoneOffset.UTC)?.toEpochMilli(),
             sourceKey = sourceKey
         )
