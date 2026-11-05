@@ -68,7 +68,7 @@ internal fun writePortfolioExportZip(
         })
         zip.writeCsv("payouts.csv", buildString {
             appendCsvRow("Тикер", "Счёт", "Тип выплаты", "На единицу", "Количество", "Начислено",
-                "Налог", "Чистая сумма из отчёта", "Ожидаемая дата", "Дата получения", "Статус")
+                "Налог", "Чистая сумма из отчёта", "Ожидаемая дата", "Дата отсечки", "Источник", "Дата получения", "Статус")
             payouts.sortedBy { it.actualDate ?: it.expectedDate ?: Long.MAX_VALUE }.forEach { payout ->
                 appendCsvRow(
                     payout.ticker,
