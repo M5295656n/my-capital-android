@@ -601,7 +601,7 @@ private fun OverviewScreen(
                 colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF101D32))
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Row(
@@ -613,7 +613,7 @@ private fun OverviewScreen(
                             "Общая стоимость портфеля",
                             modifier = Modifier.weight(1f),
                             color = androidx.compose.ui.graphics.Color(0xFFB8C9E8),
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false
@@ -642,15 +642,15 @@ private fun OverviewScreen(
                     Text(
                         "${money(portfolioTotal)} ₽",
                         modifier = Modifier.padding(top = 2.dp),
-                        style = MaterialTheme.typography.headlineMedium,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = androidx.compose.ui.graphics.Color(0xFFF5F7FC)
                     )
                     Text(
                         (if (totalProfit >= 0) "▲ +" else "▼ −") + "${money(kotlin.math.abs(totalProfit))} ₽" +
                             (profitPercent?.let { " (${if (it >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f", it)}%)" } ?: ""),
-                        modifier = Modifier.padding(top = 1.dp, bottom = 8.dp),
-                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 1.dp, bottom = 5.dp),
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (totalProfit >= 0) androidx.compose.ui.graphics.Color(0xFF25D879) else androidx.compose.ui.graphics.Color(0xFFFF5964)
                     )
@@ -687,7 +687,7 @@ private fun OverviewScreen(
                             .distinct()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(
-                                Modifier.width(60.dp).height(132.dp),
+                                Modifier.width(48.dp).height(132.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 axisValues.forEach { value ->
@@ -737,7 +737,7 @@ private fun OverviewScreen(
                                 drawCircle(investedColor, 3.dp.toPx(), Offset(right, investedY))
                             }
                             Column(
-                                Modifier.width(66.dp).height(132.dp),
+                                Modifier.width(54.dp).height(132.dp),
                                 horizontalAlignment = Alignment.End,
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -766,7 +766,7 @@ private fun OverviewScreen(
                             }
                         }
                         Row(
-                            Modifier.fillMaxWidth().padding(start = 60.dp, end = 66.dp, top = 3.dp),
+                            Modifier.fillMaxWidth().padding(start = 48.dp, end = 54.dp, top = 3.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             chartDates.forEach { index ->
