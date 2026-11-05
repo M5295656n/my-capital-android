@@ -114,7 +114,7 @@ internal class MarketOverviewClient {
             if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
             response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
         }
-        val valueText = Regex("""<Valute\\s+ID="R01239">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
+        val valueText = Regex("""<Valute[^>]*ID="R01239">.*?<Value>(.*?)</Value>""", RegexOption.DOT_MATCHES_ALL)
             .find(xml)?.groupValues?.getOrNull(1)
             ?: return@runCatching null
         val value = valueText.replace(",", ".").toDoubleOrNull()
