@@ -713,12 +713,12 @@ private fun OverviewScreen(
                         }
                     } else {
                         val portfolioValues = history.map { it.totalValue }
-                        val investedValues = history.map { it.investedCapital }
-                        // Keep zero as the lower baseline; negative net cash flows must not
-                        // shift the absolute portfolio-value chart below zero.
-                        val minValue = minOf(0.0, (portfolioValues + investedValues).minOrNull() ?: 0.0)
-                        val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
-                        val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
+                        // Net cash flows can be negative in an incomplete early history.
+                        // They must not pull the absolute-value chart's axis below zero.
+                        val investedValues = history.map { it.investedCapital.coerceAtLeast(0.0) }
+                        val minValue = 0.0
+                        val maxValue = (portfolioValues + investedValues).maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+                        val span = maxValue
                         val axisValues = (0..3).map { maxValue - span * it / 3.0 }
                         val portfolioColor = androidx.compose.ui.graphics.Color(0xFF2698FF)
                         val investedColor = androidx.compose.ui.graphics.Color(0xFF8798B5)
