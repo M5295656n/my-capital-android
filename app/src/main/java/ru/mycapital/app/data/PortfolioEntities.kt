@@ -86,3 +86,12 @@ data class BrokerAccountEntity(
     val displayName: String,
     val accountType: String = "Не указан"
 )
+
+@Entity(tableName = "broker_cash_opening", primaryKeys = ["accountId", "periodStart"])
+data class BrokerCashOpeningEntity(
+    val accountId: String,
+    val periodStart: String,
+    val openingCash: Double,
+    val periodEnd: String,
+    val importedAt: Long = System.currentTimeMillis()
+)
