@@ -36,9 +36,10 @@ LKOH;"ЛУКОЙЛ";2026-12-09;2026-12-08;"535,50";RUB;9,1;recommended;2026-12-2
 
     @Test
     fun parsesTabSeparatedDividendFeed() {
-        val csv = """secid\tcompany\trecord_date\tlast_buy_date\tvalue\tcurrency\tyield_pct\tstatus\tpayment_date
-X5\tX5\t2027-01-06\t2027-01-05\t98\tRUB\t5\tforecast\t
-"""
+        val csv = listOf(
+            listOf("secid", "company", "record_date", "last_buy_date", "value", "currency", "yield_pct", "status", "payment_date").joinToString("\\t"),
+            listOf("X5", "X5", "2027-01-06", "2027-01-05", "98", "RUB", "5", "forecast", "").joinToString("\\t")
+        ).joinToString("\\n")
         val events = parseLongShortDividendCsv(csv, today)
         assertEquals(1, events.size)
         assertEquals("FORECAST", events.single().status)
