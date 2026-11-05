@@ -714,7 +714,9 @@ private fun OverviewScreen(
                     } else {
                         val portfolioValues = history.map { it.totalValue }
                         val investedValues = history.map { it.investedCapital }
-                        val minValue = (portfolioValues + investedValues).minOrNull() ?: 0.0
+                        // Keep zero as the lower baseline; negative net cash flows must not
+                        // shift the absolute portfolio-value chart below zero.
+                        val minValue = minOf(0.0, (portfolioValues + investedValues).minOrNull() ?: 0.0)
                         val maxValue = (portfolioValues + investedValues).maxOrNull() ?: 1.0
                         val span = (maxValue - minValue).takeIf { it > 0.000001 } ?: 1.0
                         val axisValues = (0..3).map { maxValue - span * it / 3.0 }
