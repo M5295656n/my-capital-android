@@ -238,7 +238,7 @@ private fun MyCapitalApp() {
                     }
                 }
             },
-            bottomBar = if (selectedAssetDetail == null) {{
+            bottomBar = { if (selectedAssetDetail == null) {
                 NavigationBar {
                     listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
                         NavigationBarItem(
@@ -249,7 +249,7 @@ private fun MyCapitalApp() {
                         )
                     }
                 }
-            }} else null
+            } }
         ) { padding ->
             if (selectedAssetDetail != null) {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
@@ -1111,6 +1111,7 @@ private fun AssetDetailScreen(
                     val points = candles.map { it.close }
                     val min = points.minOrNull() ?: 0.0
                     val span = ((points.maxOrNull() ?: min) - min).takeIf { it > 0.0 } ?: 1.0
+                    val chartColor = MaterialTheme.colorScheme.primary
                     Canvas(Modifier.fillMaxWidth().height(145.dp)) {
                         val path = Path()
                         points.forEachIndexed { i, v ->
@@ -1118,7 +1119,7 @@ private fun AssetDetailScreen(
                             val y = size.height - ((v - min) / span * (size.height - 8.dp.toPx())).toFloat() - 4.dp.toPx()
                             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                         }
-                        drawPath(path, MaterialTheme.colorScheme.primary, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                        drawPath(path, chartColor, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
                     }
                     Text("MOEX · дневные закрытия · котировки могут быть задержаны", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else Text(error ?: "История котировок загружается", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
