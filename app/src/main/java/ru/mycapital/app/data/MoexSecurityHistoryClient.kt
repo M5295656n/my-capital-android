@@ -18,7 +18,7 @@ data class MoexDailyClose(
 
 internal data class MoexBondCoupon(
     val couponDate: LocalDate,
-    val value: Double,
+    val value: Double?,
     val startDate: LocalDate? = null
 )
 
@@ -165,9 +165,9 @@ internal fun parseBondTerms(json: JSONObject): MoexBondTerms {
 internal fun parseBondCoupons(json: JSONObject): List<MoexBondCoupon> =
     parseBondScheduleRows(json, "coupons", "coupondate", "value").mapNotNull { row ->
         val date = row.first ?: return@mapNotNull null
-        val value = row.second ?: return@mapNotNull null
+        val value = row.second
         val start = row.third
-        if (!value.isFinite() || value <= 0.0) null else MoexBondCoupon(date, value, start)
+        if (value != null && (!value.isFinite() || value < 0.0)) null else MoexBondCoupon(date, value, start)
     }.distinctBy { it.couponDate }.sortedBy { it.couponDate }
 
 internal fun parseBondAmortizations(json: JSONObject): List<MoexBondAmortization> =
@@ -218,10 +218,13 @@ internal fun calculateBondAccruedInterest(
     val previous = ordered.lastOrNull { !it.couponDate.isAfter(date) }
     val periodStart = previous?.couponDate ?: next.startDate ?: return null
     if (date.isBefore(periodStart)) return null
+    val couponValue = next.value ?: return null
     val totalDays = ChronoUnit.DAYS.between(periodStart, next.couponDate)
     val accruedDays = ChronoUnit.DAYS.between(periodStart, date)
-    if (totalDays <= 0L || accruedDays < 0L || accruedDays > totalDays) return null
-    return next.value * accruedDays.toDouble() / totalDays.toDouble()
+    if (!couponValue.isFinite() || couponValue < 0.0 || totalDays <= 0L ||
+        accruedDays < 0L || accruedDays > totalDays
+    ) return null
+    return couponValue * accruedDays.toDouble() / totalDays.toDouble()
 }
 
 /**
