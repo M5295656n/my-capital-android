@@ -487,7 +487,13 @@ private fun OverviewScreen(
             marketLoading = false
         }
     }
-    LaunchedEffect(Unit) { loadMarketData() }
+    // Reload market movers when the actual holdings arrive or change.
+    // On first composition assets can still be empty while Room emits its initial value;
+    // a Unit-keyed effect would then never refresh the list until the screen is recreated.
+    val heldTickers = remember(assets) {
+        assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    LaunchedEffect(heldTickers) { loadMarketData() }
     val orderedSnapshots = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val latest = orderedSnapshots.lastOrNull()
     val previous = orderedSnapshots.dropLast(1).lastOrNull()
