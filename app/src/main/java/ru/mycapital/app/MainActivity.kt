@@ -1142,6 +1142,22 @@ private fun AssetDetailScreen(
                 ?: "id:${payout.id}"
         }
     val bond = ru.mycapital.app.data.isBondInstrument(asset.ticker, asset.name, asset.assetType)
+    var bondMarketInfo by remember(asset.ticker) { mutableStateOf<ru.mycapital.app.data.BondMarketInfo?>(null) }
+    var bondInfoLoading by remember(asset.ticker) { mutableStateOf(false) }
+    LaunchedEffect(asset.ticker, asset.currentPrice, bond) {
+        if (bond) {
+            bondInfoLoading = true
+            bondMarketInfo = withContext(Dispatchers.IO) {
+                runCatching {
+                    ru.mycapital.app.data.BondMarketInfoClient().getInfo(asset.ticker, asset.currentPrice)
+                }.getOrNull()
+            }
+            bondInfoLoading = false
+        } else {
+            bondMarketInfo = null
+            bondInfoLoading = false
+        }
+    }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
@@ -1287,6 +1303,17 @@ private fun AssetDetailScreen(
             if (bond) {
                 val nextCoupon = assetPayouts.filter { it.payoutType == "Купон" && it.status != "RECEIVED" && it.expectedDate != null }
                     .minByOrNull { it.expectedDate ?: Long.MAX_VALUE }
+                AssetDetailMetric(
+                    "Купонная доходность",
+                    bondMarketInfo?.couponYieldPercent?.let {
+                        String.format(java.util.Locale("ru", "RU"), "%.2f%%", it)
+                    } ?: if (bondInfoLoading) "Загрузка…" else "Нет данных"
+                )
+                AssetDetailMetric(
+                    "Погашение",
+                    bondMarketInfo?.maturityDate?.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy", java.util.Locale("ru", "RU")))
+                        ?: if (bondInfoLoading) "Загрузка…" else "Нет данных"
+                )
                 if (nextCoupon == null) Text("Нет данных о будущих купонах", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else {
                     AssetDetailMetric("Следующая выплата", nextCoupon.expectedDate?.let { java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)) } ?: "Дата неизвестна")
