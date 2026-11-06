@@ -1075,29 +1075,45 @@ private fun AssetDetailScreen(
         } finally { loading = false }
     }
     val price = candles.lastOrNull()?.close ?: asset.currentPrice
-    var dividendHistoryMetrics by remember(asset.ticker) { mutableStateOf<ru.mycapital.app.data.DividendHistoryMetrics?>(null) }
+    val isDividendAsset = !(asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true) || asset.assetType.contains("bond", true))
+    var dividendHistory by remember(asset.ticker) {
+        mutableStateOf<ru.mycapital.app.data.DividendHistoryFetchResult?>(null)
+    }
     var dividendHistoryLoading by remember(asset.ticker) { mutableStateOf(false) }
     var dividendHistoryError by remember(asset.ticker) { mutableStateOf<String?>(null) }
-    LaunchedEffect(asset.ticker, price, (asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true))) {
-        if (!(asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true) || asset.assetType.contains("bond", true))) {
+
+    // Fetch the issuer history only when the ticker changes. Price updates must not
+    // cancel and restart the network request; metrics below are recalculated locally.
+    LaunchedEffect(asset.ticker, isDividendAsset) {
+        if (isDividendAsset) {
             dividendHistoryLoading = true
             dividendHistoryError = null
+            dividendHistory = null
             try {
-                val history = withContext(Dispatchers.IO) {
+                dividendHistory = withContext(Dispatchers.IO) {
                     ru.mycapital.app.data.MoexDividendHistoryClient().getHistory(asset.ticker)
                 }
-                dividendHistoryMetrics = ru.mycapital.app.data.calculateDividendHistoryMetrics(
-                    history.dividends,
-                    price,
-                    java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
-                    history.annualCoverageVerified
-                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                dividendHistoryMetrics = null
                 dividendHistoryError = e.message ?: "Не удалось загрузить историю дивидендов"
             } finally {
                 dividendHistoryLoading = false
             }
+        } else {
+            dividendHistory = null
+            dividendHistoryError = null
+            dividendHistoryLoading = false
+        }
+    }
+    val dividendHistoryMetrics = remember(dividendHistory, price) {
+        dividendHistory?.let { history ->
+            ru.mycapital.app.data.calculateDividendHistoryMetrics(
+                history.dividends,
+                price,
+                java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
+                history.annualCoverageVerified
+            )
         }
     }
     val previous = candles.dropLast(1).lastOrNull()?.close
