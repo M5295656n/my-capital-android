@@ -83,7 +83,7 @@ class PortfolioHistoryCalculationsTest {
 
     @Test
     fun xirrReturnsNullWhenThereIsNoPositiveDuration() {
-        assertEquals(null, annualizedReturnPercent(listOf(1L to -100.0, 1L to 110.0)))
+        assertTrue(annualizedReturnPercent(listOf(1L to -100.0, 1L to 110.0)) == null)
     }
 
     @Test
