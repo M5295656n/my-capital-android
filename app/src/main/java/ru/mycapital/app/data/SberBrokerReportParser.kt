@@ -45,7 +45,7 @@ internal fun classifyBrokerCashFlow(description: String): BrokerCashFlowKind {
         value.startsWith("вывод средств") || value.startsWith("вывод д/с") -> BrokerCashFlowKind.WITHDRAWAL
         value.startsWith("выплата дивидендов") -> BrokerCashFlowKind.DIVIDEND
         value.startsWith("выплата купонов") -> BrokerCashFlowKind.COUPON
-        value.startsWith("погашение номинала") || value.startsWith("погашение облигаций") ||
+        value.startsWith("погашение") ||
             value.startsWith("выплата номинала") -> BrokerCashFlowKind.REDEMPTION
         value.startsWith("перевод д/с") || value.startsWith("перевод денежных средств") -> BrokerCashFlowKind.INTERNAL_TRANSFER
         else -> BrokerCashFlowKind.IGNORE
