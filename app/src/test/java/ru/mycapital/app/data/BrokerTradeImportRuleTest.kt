@@ -6,20 +6,24 @@ import org.junit.Test
 
 class BrokerTradeImportRuleTest {
     @Test
-    fun importsOnlyFullyExecutedStatus() {
-        assertTrue(isFullyExecutedBrokerTrade("И"))
-        assertTrue(isFullyExecutedBrokerTrade(" И "))
-        assertTrue(isFullyExecutedBrokerTrade("ЗИ"))
-        assertTrue(isFullyExecutedBrokerTrade(" ЗИ "))
-        assertTrue(isFullyExecutedBrokerTrade("зи"))
+    fun importsSettledAndConcludedUnsettledTrades() {
+        assertTrue(isImportableBrokerTrade("И"))
+        assertTrue(isImportableBrokerTrade(" И "))
+        assertTrue(isImportableBrokerTrade("ЗИ"))
+        assertTrue(isImportableBrokerTrade(" ЗИ "))
+        assertTrue(isImportableBrokerTrade("зи"))
+        // ЗО: the deal was concluded during the report period, but settlement
+        // obligations had not yet been fulfilled at period end.
+        assertTrue(isImportableBrokerTrade("ЗО"))
+        assertTrue(isImportableBrokerTrade(" зо "))
     }
 
     @Test
-    fun skipsUnsettledAndUnknownStatuses() {
-        assertFalse(isFullyExecutedBrokerTrade("ЗО"))
-        assertFalse(isFullyExecutedBrokerTrade("З"))
-        assertFalse(isFullyExecutedBrokerTrade("О"))
-        assertFalse(isFullyExecutedBrokerTrade(""))
-        assertFalse(isFullyExecutedBrokerTrade("UNKNOWN"))
+    fun skipsUnknownAndNonTradeStatuses() {
+        assertFalse(isImportableBrokerTrade("З"))
+        assertFalse(isImportableBrokerTrade("О"))
+        assertFalse(isImportableBrokerTrade("П"))
+        assertFalse(isImportableBrokerTrade(""))
+        assertFalse(isImportableBrokerTrade("UNKNOWN"))
     }
 }
