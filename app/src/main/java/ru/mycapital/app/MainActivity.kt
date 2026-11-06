@@ -1133,6 +1133,7 @@ private fun AssetDetailScreen(
                     val chartMax = rawMax + rawSpan * 0.08
                     val chartSpan = (chartMax - chartMin).takeIf { it > 0.0 } ?: 1.0
                     val chartColor = MaterialTheme.colorScheme.primary
+                    val chartSurface = MaterialTheme.colorScheme.surface
                     val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
                     val markerOperations = trades.mapNotNull { operation ->
                         val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
@@ -1193,7 +1194,7 @@ private fun AssetDetailScreen(
                                 drawCircle(markerColor.copy(alpha = 0.22f), radius = 7.dp.toPx(), center = coordinates[index])
                                 drawCircle(markerColor, radius = 3.8.dp.toPx(), center = coordinates[index])
                             }
-                            drawCircle(MaterialTheme.colorScheme.surface, radius = 5.dp.toPx(), center = coordinates.last())
+                            drawCircle(chartSurface, radius = 5.dp.toPx(), center = coordinates.last())
                             drawCircle(chartColor, radius = 3.2.dp.toPx(), center = coordinates.last())
                         }
                     }
