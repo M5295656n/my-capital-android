@@ -98,22 +98,29 @@ class CorporateEventsWorker(
         }
 
         // Bond coupons remain sourced from MOEX ISS; the Long/Short feed is for equities.
-        val bondClient = CorporateEventsClient()
-        for (asset in assets.filter {
+        val bondAssets = assets.filter {
             isBondInstrument(it.ticker, it.name, it.assetType)
-        }.distinctBy { it.ticker.uppercase() }) {
+        }.distinctBy { it.ticker.uppercase() }
+        val bondClient = CorporateEventsClient()
+        var bondEventsReceived = 0
+        var bondPayoutsSaved = 0
+        var unsupportedBonds = 0
+        for (asset in bondAssets) {
             try {
-                // Older imported positions may still carry the generic type "Другое".
-                // Normalize OFZ type before syncing so future refreshes classify it consistently.
+                // Normalize older imported positions that still carry the generic type "Другое".
                 if (!asset.assetType.contains("облигац", ignoreCase = true)) {
                     dao.updateAsset(asset.copy(assetType = "Облигация"))
                 }
                 val events = bondClient.getEvents(asset.ticker, "Облигация")
+                if (events.isEmpty()) {
+                    throw java.io.IOException("MOEX ISS не вернул будущие купоны для ${asset.ticker}; проверьте тикер и календарь MOEX.")
+                }
+                bondEventsReceived += events.size
                 database.withTransaction {
                     events.forEach { event ->
                         val existing = dao.getPayoutBySourceKey(event.sourceKey)
                         if (existing == null) {
-                            dao.insertPayout(
+                            val inserted = dao.insertPayout(
                                 PayoutEntity(
                                     assetId = asset.id,
                                     ticker = event.ticker,
@@ -129,36 +136,41 @@ class CorporateEventsWorker(
                                     sourceName = "MOEX ISS"
                                 )
                             )
+                            if (inserted != -1L) bondPayoutsSaved++
                         } else if (existing.status == "EXPECTED") {
-                            dao.updatePayout(
-                                existing.copy(
-                                    assetId = asset.id,
-                                    amountPerUnit = event.amountPerUnit,
-                                    quantity = asset.quantity,
-                                    totalAmount = event.amountPerUnit * asset.quantity,
-                                    expectedDate = event.eventDate
-                                )
-                            )
+                            dao.updatePayout(existing.copy(
+                                assetId = asset.id,
+                                amountPerUnit = event.amountPerUnit,
+                                quantity = asset.quantity,
+                                totalAmount = event.amountPerUnit * asset.quantity,
+                                expectedDate = event.eventDate,
+                                sourceName = "MOEX ISS"
+                            ))
+                            bondPayoutsSaved++
                         }
                     }
                 }
             } catch (_: UnsupportedCorporateEventsInstrumentException) {
-                // Unsupported instruments are permanent skips, not retryable failures.
+                unsupportedBonds++
             } catch (error: Exception) {
                 transientFailures++
-                if (errors.size < 5) errors += "${asset.ticker}: ${error.message ?: error.javaClass.simpleName}"
+                if (errors.size < 8) errors += "Купоны ${asset.ticker}: ${error.message ?: error.javaClass.simpleName}"
             }
         }
 
         val summary = buildString {
-            append("Дивидендный источник: событий получено $feedEvents; совпадений с акциями портфеля $matchedDividends; добавлено или обновлено записей $importedDividends.")
-            if (errors.isNotEmpty()) append(" Ошибка: ").append(errors.joinToString("; "))
+            append("Акции: получено событий $feedEvents, совпадений $matchedDividends, записей $importedDividends. ")
+            append("Облигации: найдено ${bondAssets.size}, получено будущих купонов $bondEventsReceived, записей добавлено/обновлено $bondPayoutsSaved, неподдерживаемых $unsupportedBonds.")
+            if (errors.isNotEmpty()) append(" Ошибки: ").append(errors.joinToString("; "))
         }
         val output = Data.Builder()
             .putString("summary", summary)
             .putInt("feed_events", feedEvents)
             .putInt("matched_dividends", matchedDividends)
             .putInt("imported_dividends", importedDividends)
+            .putInt("bond_assets", bondAssets.size)
+            .putInt("bond_events", bondEventsReceived)
+            .putInt("bond_payouts_saved", bondPayoutsSaved)
             .build()
 
         setProgress(Data.Builder()
@@ -166,6 +178,9 @@ class CorporateEventsWorker(
             .putInt("feed_events", feedEvents)
             .putInt("matched_dividends", matchedDividends)
             .putInt("imported_dividends", importedDividends)
+            .putInt("bond_assets", bondAssets.size)
+            .putInt("bond_events", bondEventsReceived)
+            .putInt("bond_payouts_saved", bondPayoutsSaved)
             .build())
         if (transientFailures > 0 && runAttemptCount < 2) Result.retry()
         else if (transientFailures > 0) Result.failure(output)
