@@ -66,15 +66,17 @@ class PortfolioLedgerHistoryTest {
             periodStart = start,
             throughDate = amortizationDate,
             operations = listOf(
-                operation(1, "Покупка", buyDate, 2.0, 100.0, ticker = "SU26228RMFS5"),
-                operation(2, "Погашение", redemptionDate, 1.0, 200.0, ticker = "SU26228RMFS5"),
-                operation(3, "Амортизация", amortizationDate, 1.0, 20.0, ticker = "SU26228RMFS5")
+                operation(1, "Покупка", buyDate, 1.0, 100.0, ticker = "SU26228RMFS5"),
+                operation(2, "Покупка", buyDate, 2.0, 100.0, ticker = "SU26218RMFS6"),
+                operation(3, "Погашение", redemptionDate, 1.0, 100.0, ticker = "SU26228RMFS5"),
+                operation(4, "Амортизация", amortizationDate, 1.0, 20.0, ticker = "SU26218RMFS6")
             )
         )
 
         assertNotNull(rows)
         assertEquals(0.0, rows!![1].quantities["SU26228RMFS5"] ?: 0.0, 0.000001)
-        assertEquals(920.0, rows[2].cashBalance, 0.000001)
+        assertEquals(2.0, rows[2].quantities["SU26218RMFS6"] ?: 0.0, 0.000001)
+        assertEquals(820.0, rows[2].cashBalance, 0.000001)
     }
 
     @Test
