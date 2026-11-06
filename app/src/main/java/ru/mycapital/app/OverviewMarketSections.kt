@@ -68,7 +68,7 @@ internal class MarketOverviewClient {
         // cannot keep the dashboard in its loading state for several sequential timeouts.
         val quotes = coroutineScope {
             val currencyQuotes = async(Dispatchers.IO) { cbrCurrencyQuotes() }
-            val goldQuote = async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
+            val goldQuote = async(Dispatchers.IO) { quote("GLDRUB_TOM", "Золото ₽/г") }
             currencyQuotes.await() + listOfNotNull(goldQuote.await())
         }
         val movers = coroutineScope {
@@ -189,7 +189,8 @@ internal fun parseCbrCurrencyRateJson(
         Regex("\\\"$field\\\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?)")
             .find(currencyFields)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
 
-    val nominal = (rate("Nominal") ?: 1.0).takeIf { it.isFinite() && it > 0.0 } ?: 1.0
+    val nominal = rate("Nominal") ?: 1.0
+    if (!nominal.isFinite() || nominal <= 0.0) return null
     val current = (rate("Value") ?: return null) / nominal
     val previous = rate("Previous")?.div(nominal)
     if (!current.isFinite() || current <= 0.0) return null

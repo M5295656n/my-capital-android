@@ -41,6 +41,13 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun missingCurrencyAndInvalidNominalAreHandledSafely() {
+        assertNull(parseCbrCurrencyRateJson("""{"Valute":{}}""", "CNY", "CNY_RUB_CBR", "CNY/RUB"))
+        val json = """{"Valute":{"CNY":{"Nominal":0,"Value":12.5,"Previous":12.0}}}"""
+        assertNull(parseCbrCurrencyRateJson(json, "CNY", "CNY_RUB_CBR", "CNY/RUB"))
+    }
+
+    @Test
     fun missingPreviousRateDoesNotInventPercentage() {
         val json = """{"Valute":{"EUR":{"Value":91.5}}}"""
 
