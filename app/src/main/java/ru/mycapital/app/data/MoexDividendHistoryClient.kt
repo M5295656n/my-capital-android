@@ -22,10 +22,18 @@ internal data class DividendHistoryMetrics(
     val historyCount: Int
 )
 
+internal data class DividendHistoryFetchResult(
+    val dividends: List<HistoricalDividend>,
+    // True only when the issuer ISIN lookup and every discovered security history loaded.
+    // In that case, a year with no dividend records is a verified zero, not missing data.
+    val annualCoverageVerified: Boolean
+)
+
 internal fun calculateDividendHistoryMetrics(
     dividends: List<HistoricalDividend>,
     currentPrice: Double,
-    today: LocalDate
+    today: LocalDate,
+    annualCoverageVerified: Boolean = false
 ): DividendHistoryMetrics {
     val rubleDividends = dividends.filter {
         it.currency.equals("RUB", true) && it.amountPerShare > 0.0 &&
@@ -46,9 +54,9 @@ internal fun calculateDividendHistoryMetrics(
     val annual = rubleDividends.groupBy { it.recordDate.year }.mapValues { (_, rows) ->
         rows.sumOf { it.amountPerShare }
     }
-    val complete = years.all { annual.containsKey(it) }
-    val first = annual[years.first()]
-    val last = annual[years.last()]
+    val complete = years.all { annual.containsKey(it) || annualCoverageVerified }
+    val first = annual[years.first()] ?: if (annualCoverageVerified) 0.0 else null
+    val last = annual[years.last()] ?: if (annualCoverageVerified) 0.0 else null
     val growth = if (complete && first != null && last != null && first > 0.0 && last > 0.0) {
         (last / first - 1.0) * 100.0
     } else null
@@ -62,7 +70,7 @@ internal class MoexDividendHistoryClient {
         .callTimeout(45, TimeUnit.SECONDS)
         .build()
 
-    fun getHistory(ticker: String): List<HistoricalDividend> {
+    fun getHistory(ticker: String): DividendHistoryFetchResult {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
         val secids = linkedSetOf(normalized)
@@ -71,17 +79,27 @@ internal class MoexDividendHistoryClient {
             val name = row.optString("name").uppercase(Locale.ROOT)
             if (name == "ISIN") row.optString("value").takeIf { it.isNotBlank() && it != "null" } else null
         }
+        var annualCoverageVerified = false
         if (!isin.isNullOrBlank()) {
-            runCatching {
+            annualCoverageVerified = runCatching {
                 val search = requestJson("https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off")
-                table(search, "securities").forEach { row ->
+                val rows = table(search, "securities")
+                rows.forEach { row ->
                     val candidateIsin = row.optString("isin")
                     val candidate = row.optString("secid")
                     if (candidateIsin.equals(isin, true) && candidate.isNotBlank()) secids += candidate
                 }
-            }
+                val cursor = search.optJSONObject("securities.cursor")
+                val cursorColumns = cursor?.optJSONArray("columns")
+                val cursorData = cursor?.optJSONArray("data")?.optJSONArray(0)
+                val totalIndex = (0 until (cursorColumns?.length() ?: 0))
+                    .firstOrNull { cursorColumns?.optString(it)?.equals("TOTAL", true) == true }
+                val total = totalIndex?.let { cursorData?.optInt(it) }
+                total == null || rows.size >= total
+            }.getOrDefault(false)
         }
         val result = mutableListOf<HistoricalDividend>()
+        try {
         secids.forEach { secid ->
             val payload = requestJson("https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off")
             table(payload, "dividends").forEach { row ->
@@ -89,20 +107,28 @@ internal class MoexDividendHistoryClient {
                     ?: row.optString("recorddate").takeIf { it.isNotBlank() && it != "null" }
                 val date = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: return@forEach
                 val amount = row.optDouble("value", Double.NaN)
-                val currency = row.optString("currencyid").ifBlank { "RUB" }
+                val rawCurrency = row.optString("currencyid")
+                val currency = if (rawCurrency.isBlank() || rawCurrency == "null") "RUB" else rawCurrency
                 if (amount.isFinite() && amount > 0.0) {
                     result += HistoricalDividend(secid, date, amount, currency)
                 }
             }
         }
-        return result.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}" }
-            .sortedBy { it.recordDate }
+        } catch (e: Exception) {
+            annualCoverageVerified = false
+            throw e
+        }
+        return DividendHistoryFetchResult(
+            result.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}" }
+                .sortedBy { it.recordDate },
+            annualCoverageVerified
+        )
     }
 
     private fun requestJson(url: String): JSONObject {
         val request = Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", "MyCapital-Android/0.3.20")
+            .header("User-Agent", "MyCapital-Android/0.3.22")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
