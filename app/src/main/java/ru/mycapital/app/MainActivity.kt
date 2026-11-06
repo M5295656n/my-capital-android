@@ -1141,7 +1141,7 @@ private fun AssetDetailScreen(
                 ?: payout.expectedDate?.let { "expected:$it" }
                 ?: "id:${payout.id}"
         }
-    val bond = asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true)
+    val bond = ru.mycapital.app.data.isBondInstrument(asset.ticker, asset.name, asset.assetType)
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
