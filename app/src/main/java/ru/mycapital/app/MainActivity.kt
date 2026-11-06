@@ -242,7 +242,7 @@ private fun MyCapitalApp() {
                 ?: info.progress.getString("summary")
                 ?: when (info.state) {
                     androidx.work.WorkInfo.State.RUNNING -> "Синхронизация выплат выполняется…"
-                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Синхронизация выплат ожидает подключения к сети…"
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Синхронизация выплат ожидает запуска Android…"
                     androidx.work.WorkInfo.State.FAILED -> "Синхронизация выплат завершилась ошибкой без подробностей."
                     androidx.work.WorkInfo.State.CANCELLED -> "Синхронизация выплат отменена."
                     else -> "Синхронизация выплат завершена без диагностического сообщения."
