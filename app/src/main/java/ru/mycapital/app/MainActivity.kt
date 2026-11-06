@@ -1049,9 +1049,12 @@ private fun AssetDetailScreen(
     var candles by remember { mutableStateOf<List<MoexDailyClose>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val trades = remember(asset.id, asset.ticker, operations) {
+    val assetOperations = remember(asset.id, asset.ticker, operations) {
         operations.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
-            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }.sortedBy { it.operationDate }
+    }
+    val trades = remember(asset.id, asset.ticker, assetOperations) {
+        assetOperations.filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .sortedBy { it.operationDate }
     }
     val assetPayouts = remember(asset.id, asset.ticker, payouts) {
         payouts.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
@@ -1123,14 +1126,12 @@ private fun AssetDetailScreen(
     val historyComplete = trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001 && (quantityMatchesHistory || fullyRedeemed)
     val profit = if (historyComplete) value + sales + received - purchases else null
     val totalReturn = if (historyComplete && purchases > 0.0) profit!! / purchases * 100.0 else null
-    val cashFlows = buildList {
-        trades.forEach { op ->
-            val amount = op.quantity * op.price + op.commission
-            add(op.operationDate to if (op.operationType == "Покупка") -amount else op.quantity * op.price - op.commission)
-        }
-        actual.forEach { p -> (p.actualDate ?: p.expectedDate)?.let { add(it to (p.reportedNetAmount ?: p.totalAmount - p.taxAmount)) } }
-        if (value > 0.0) add(System.currentTimeMillis() to value)
-    }
+    val cashFlows = buildAssetReturnCashFlows(
+        operations = assetOperations,
+        payouts = assetPayouts,
+        currentValue = value,
+        valuationDate = System.currentTimeMillis()
+    )
     val annualized = if (historyComplete) annualizedReturnPercent(cashFlows) else null
     val upcomingDividendPayouts = assetPayouts
         .filter { it.payoutType == "Дивиденд" && isUpcomingDividendStatus(it.status) && it.actualDate == null }
@@ -1377,6 +1378,40 @@ private fun AssetDetailMetric(label: String, value: String) {
         Spacer(Modifier.width(10.dp))
         Text(value, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
     }
+}
+
+internal fun buildAssetReturnCashFlows(
+    operations: List<OperationEntity>,
+    payouts: List<PayoutEntity>,
+    currentValue: Double,
+    valuationDate: Long
+): List<Pair<Long, Double>> {
+    val flows = mutableListOf<Pair<Long, Double>>()
+    operations.forEach { operation ->
+        val gross = operation.quantity * operation.price
+        val amount = when (operation.operationType) {
+            "Покупка" -> -(gross + operation.commission)
+            "Продажа" -> gross - operation.commission
+            // Explicit asset-level costs are supported when present in the ledger.
+            // Coupon/dividend/redemption receipts are taken from PayoutEntity below,
+            // so their matching operation rows must not be counted twice.
+            "Комиссия", "Налог", "Расход", "Списание" -> -(gross + operation.commission)
+            else -> null
+        }
+        if (amount != null && amount.isFinite() && amount != 0.0) {
+            flows += operation.operationDate to amount
+        }
+    }
+    payouts.filter { it.actualDate != null || it.status.equals("RECEIVED", ignoreCase = true) }
+        .forEach { payout ->
+            val date = payout.actualDate ?: payout.expectedDate ?: return@forEach
+            val amount = payout.reportedNetAmount ?: (payout.totalAmount - payout.taxAmount)
+            if (amount.isFinite() && amount != 0.0) flows += date to amount
+        }
+    if (currentValue.isFinite() && currentValue > 0.0) {
+        flows += valuationDate to currentValue
+    }
+    return flows.sortedBy { it.first }
 }
 
 internal fun annualizedReturnPercent(flows: List<Pair<Long, Double>>): Double? {
