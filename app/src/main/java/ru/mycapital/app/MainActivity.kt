@@ -1118,7 +1118,9 @@ private fun AssetDetailScreen(
     val sales = trades.filter { it.operationType == "Продажа" }.sumOf { it.quantity * it.price - it.commission }
     val purchases = trades.filter { it.operationType == "Покупка" }.sumOf { it.quantity * it.price + it.commission }
     val tradedQuantity = trades.sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
-    val historyComplete = trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001 && kotlin.math.abs(tradedQuantity - asset.quantity) <= maxOf(0.000001, asset.quantity * 0.00001)
+    val quantityMatchesHistory = kotlin.math.abs(tradedQuantity - asset.quantity) <= maxOf(0.000001, asset.quantity * 0.00001)
+    val fullyRedeemed = asset.quantity <= 0.000001 && actual.any { it.payoutType.equals("Погашение", ignoreCase = true) }
+    val historyComplete = trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001 && (quantityMatchesHistory || fullyRedeemed)
     val profit = if (historyComplete) value + sales + received - purchases else null
     val totalReturn = if (historyComplete && purchases > 0.0) profit!! / purchases * 100.0 else null
     val cashFlows = buildList {
@@ -1127,7 +1129,7 @@ private fun AssetDetailScreen(
             add(op.operationDate to if (op.operationType == "Покупка") -amount else op.quantity * op.price - op.commission)
         }
         actual.forEach { p -> (p.actualDate ?: p.expectedDate)?.let { add(it to (p.reportedNetAmount ?: p.totalAmount - p.taxAmount)) } }
-        add(System.currentTimeMillis() to value)
+        if (value > 0.0) add(System.currentTimeMillis() to value)
     }
     val annualized = if (historyComplete) annualizedReturnPercent(cashFlows) else null
     val upcomingDividendPayouts = assetPayouts
@@ -1295,7 +1297,7 @@ private fun AssetDetailScreen(
             AssetDetailMetric("Прибыль / убыток за день", change?.let { "${if (it >= 0) "+" else ""}${money(it * asset.quantity)} ₽" } ?: "Нет данных")
             AssetDetailMetric("Получено начислений", "${money(received)} ₽")
             AssetDetailMetric("Уплачено комиссий", "${money(fees)} ₽")
-            AssetDetailMetric("Доходность годовых", annualized?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Недостаточно данных")
+            AssetDetailMetric("Среднегодовая доходность", annualized?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Недостаточно данных")
         }
         AssetDetailSection(if (bond) "Купоны" else "Дивиденды") {
             if (!bond) {
@@ -1377,11 +1379,12 @@ private fun AssetDetailMetric(label: String, value: String) {
     }
 }
 
-private fun annualizedReturnPercent(flows: List<Pair<Long, Double>>): Double? {
+internal fun annualizedReturnPercent(flows: List<Pair<Long, Double>>): Double? {
     val items = flows.filter { it.second.isFinite() && it.second != 0.0 }.sortedBy { it.first }
     if (items.size < 2 || items.none { it.second < 0.0 } || items.none { it.second > 0.0 }) return null
     val start = items.first().first
-    val millisPerYear = 365.25 * 24.0 * 60.0 * 60.0 * 1000.0
+    // Excel XIRR (ЧИСТВНДОХ), used by Snowball, annualizes on a 365-day basis.
+    val millisPerYear = 365.0 * 24.0 * 60.0 * 60.0 * 1000.0
     if ((items.last().first - start) / millisPerYear <= 0.0) return null
     fun npv(rate: Double) = items.sumOf { (date, amount) -> amount / Math.pow(1.0 + rate, (date - start) / millisPerYear) }
     var low = -0.9999
