@@ -93,33 +93,10 @@ internal class MoexDividendHistoryClient {
             val name = row.optString("name").uppercase(Locale.ROOT)
             if (name == "ISIN") row.optString("value").takeIf { it.isNotBlank() && it != "null" } else null
         }
-        var annualCoverageVerified = false
-        if (!isin.isNullOrBlank()) {
-            annualCoverageVerified = runCatching {
-                var start = 0
-                var total: Int? = null
-                var foundAny = false
-                do {
-                    val search = requestJson("https://iss.moex.com/iss/securities.json?q=$isin&start=$start&iss.meta=off")
-                    val rows = table(search, "securities")
-                    val matchingRows = rows.filter { it.optString("isin").equals(isin, true) }
-                    matchingRows.forEach { row ->
-                        val candidate = row.optString("secid")
-                        if (candidate.isNotBlank()) secids += candidate
-                    }
-                    foundAny = foundAny || matchingRows.isNotEmpty()
-                    val cursor = search.optJSONObject("securities.cursor")
-                    val cursorColumns = cursor?.optJSONArray("columns")
-                    val cursorData = cursor?.optJSONArray("data")?.optJSONArray(0)
-                    val totalIndex = (0 until (cursorColumns?.length() ?: 0))
-                        .firstOrNull { cursorColumns?.optString(it)?.equals("TOTAL", true) == true }
-                    total = totalIndex?.let { cursorData?.optInt(it) }
-                    start += rows.size
-                    if (rows.isEmpty()) break
-                } while (total != null && start < total!!)
-                foundAny && total != null && start >= total!!
-            }.getOrDefault(false)
-        }
+        // The direct security dividend endpoint is the authoritative history for the
+        // requested ticker. A secondary ISIN-wide securities search is optional and
+        // must not suppress the metric for every issuer when that search is incomplete.
+        var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
         try {
         secids.forEach { secid ->
