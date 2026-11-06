@@ -17,7 +17,6 @@ internal data class HistoricalDividend(
 )
 
 internal data class DividendHistoryMetrics(
-    val forwardDividendYieldPercent: Double?,
     val fiveYearGrowthPercent: Double?,
     val historyCount: Int
 )
@@ -61,9 +60,6 @@ internal fun calculateDividendHistoryMetrics(
         it.currency.equals("RUB", true) && it.amountPerShare > 0.0 &&
             it.amountPerShare.isFinite() && !it.recordDate.isAfter(today)
     }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
-    // Forward yield is calculated from declared/forecast payments separately below.
-    val yieldPercent: Double? = null
-
     // Five-year annualized dividend growth (CAGR), matching Snowball:
     // compare the annual per-share payout five years ago with the latest year.
     // Intermediate years with no payout do not become fabricated dividend rows.
@@ -80,7 +76,7 @@ internal fun calculateDividendHistoryMetrics(
     ) {
         (Math.pow(last / first, 1.0 / 5.0) - 1.0) * 100.0
     } else null
-    return DividendHistoryMetrics(yieldPercent, growth, rubleDividends.size)
+    return DividendHistoryMetrics(growth, rubleDividends.size)
 }
 
 internal class MoexDividendHistoryClient {
@@ -123,7 +119,7 @@ internal class MoexDividendHistoryClient {
                     start += rows.size
                     if (rows.isEmpty()) break
                 } while (total != null && start < total!!)
-                foundAny && (total == null || start >= total!!)
+                foundAny && total != null && start >= total!!
             }.getOrDefault(false)
         }
         val result = mutableListOf<HistoricalDividend>()
