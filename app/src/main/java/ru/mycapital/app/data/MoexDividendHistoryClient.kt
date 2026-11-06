@@ -39,21 +39,18 @@ internal fun calculateDividendHistoryMetrics(
         trailingAmount / currentPrice * 100.0
     } else null
 
-    // Compare the last five completed calendar years with the five completed years before them.
-    // A five-year CAGR needs both endpoints and a complete annual series; missing years are not zero.
-    val lastCompletedYear = if (today.monthValue == 1 && today.dayOfMonth == 1) today.year - 1
-        else if (today.isBefore(LocalDate.of(today.year, 12, 31))) today.year - 1 else today.year - 1
-    val recentYears = (lastCompletedYear - 4..lastCompletedYear).toList()
-    val priorYears = (lastCompletedYear - 9 until lastCompletedYear - 4).toList()
+    // Five completed calendar years: compare the first and last annual totals.
+    // Missing years are not treated as zero; the metric stays unavailable instead.
+    val lastCompletedYear = today.year - 1
+    val years = (lastCompletedYear - 4..lastCompletedYear).toList()
     val annual = rubleDividends.groupBy { it.recordDate.year }.mapValues { (_, rows) ->
         rows.sumOf { it.amountPerShare }
     }
-    val allYears = priorYears + recentYears
-    val complete = allYears.all { annual.containsKey(it) }
-    val first = annual[priorYears.first()]
-    val last = annual[recentYears.last()]
+    val complete = years.all { annual.containsKey(it) }
+    val first = annual[years.first()]
+    val last = annual[years.last()]
     val growth = if (complete && first != null && last != null && first > 0.0 && last > 0.0) {
-        (Math.pow(last / first, 1.0 / 5.0) - 1.0) * 100.0
+        (last / first - 1.0) * 100.0
     } else null
     return DividendHistoryMetrics(yieldPercent, growth, rubleDividends.size)
 }
