@@ -66,7 +66,11 @@ internal fun reconstructPortfolioLedger(
                     cash -= amount
                     externalFlow -= amount
                 }
-                "Дивиденд", "Купон", "Погашение" -> cash += operation.quantity * operation.price
+                "Дивиденд", "Купон", "Амортизация" -> cash += operation.quantity * operation.price
+                "Погашение" -> {
+                    cash += operation.quantity * operation.price
+                    if (ticker.isNotBlank()) quantities[ticker] = 0.0
+                }
                 "Покупка" -> {
                     if (ticker.isNotBlank() && operation.quantity > 0.0 && operation.price >= 0.0) {
                         quantities[ticker] = (quantities[ticker] ?: 0.0) + operation.quantity
