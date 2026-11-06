@@ -67,12 +67,9 @@ internal class MarketOverviewClient {
         // MOEX endpoints are independent. Fetch them concurrently so one slow endpoint
         // cannot keep the dashboard in its loading state for several sequential timeouts.
         val quotes = coroutineScope {
-            listOf(
-                async(Dispatchers.IO) { quote("USD000UTSTOM", "USD/RUB") },
-                async(Dispatchers.IO) { cbrEuroQuote() },
-                async(Dispatchers.IO) { quote("CNYRUB_TOM", "CNY/RUB") },
-                async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
-            ).awaitAll().filterNotNull()
+            val currencyQuotes = async(Dispatchers.IO) { cbrCurrencyQuotes() }
+            val goldQuote = async(Dispatchers.IO) { quote("GLDRUB_TOM", "GLDRUB") }
+            currencyQuotes.await() + listOfNotNull(goldQuote.await())
         }
         val movers = coroutineScope {
             listOf(
@@ -88,9 +85,29 @@ internal class MarketOverviewClient {
         )
     }
 
+    // Use one Bank of Russia rates snapshot for USD, EUR and CNY so all three
+    // currency cards share the same publication date and previous-rate basis.
+    private fun cbrCurrencyQuotes(): List<MarketQuoteRow> = runCatching {
+        val request = Request.Builder()
+            .url("https://www.cbr-xml-daily.ru/daily_json.js")
+            .header("Accept", "application/json")
+            .header("User-Agent", "MyCapital-Android/0.3.9")
+            .build()
+        val body = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("Курсы валют: HTTP ${response.code}")
+            response.body?.string() ?: throw IllegalStateException("Пустой ответ с курсами валют")
+        }
+        listOfNotNull(
+            parseCbrCurrencyRateJson(body, "USD", "USD_RUB_CBR", "USD/RUB"),
+            parseCbrCurrencyRateJson(body, "EUR", "EUR_RUB_CBR", "EUR/RUB"),
+            parseCbrCurrencyRateJson(body, "CNY", "CNY_RUB_CBR", "CNY/RUB")
+        )
+    }.getOrDefault(emptyList())
+
+    // Gold is traded on MOEX's FX and precious-metals market, main board CETS.
+    // Request the board explicitly and retain the last published price outside session.
     private fun quote(ticker: String, label: String): MarketQuoteRow? = runCatching {
-        val market = if (ticker == "USD000UTSTOM" || ticker == "CNYRUB_TOM") "currency/selt" else "currency/selt"
-        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE"
+        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE,PREVPRICE,MARKETPRICE"
         val json = getJson(url)
         val table = json.optJSONObject("marketdata") ?: return@runCatching null
         val columns = table.optJSONArray("columns") ?: return@runCatching null
@@ -98,25 +115,23 @@ internal class MarketOverviewClient {
         val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
         val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
             .firstOrNull { it.optString(indexes["SECID"] ?: -1) == ticker } ?: return@runCatching null
-        val price = row.optDouble(indexes["LAST"] ?: -1, Double.NaN).takeIf { it.isFinite() && it > 0.0 }
-        val change = row.optDouble(indexes["CHANGE"] ?: -1, Double.NaN).takeIf { it.isFinite() }
-        MarketQuoteRow(ticker, label, price, change?.let { delta -> price?.let { p -> if (p - delta != 0.0) delta / (p - delta) * 100.0 else null } })
-    }.getOrNull()
-
-        // MOEX stopped exchange trading in EUR/RUB in June 2024. Use the
-    // Bank of Russia's current and previous published rates so the card can
-    // show a real daily percentage instead of an empty placeholder.
-    private fun cbrEuroQuote(): MarketQuoteRow? = runCatching {
-        val request = Request.Builder()
-            .url("https://www.cbr-xml-daily.ru/daily_json.js")
-            .header("Accept", "application/json")
-            .header("User-Agent", "MyCapital-Android/0.3")
-            .build()
-        val body = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException("Банк России: HTTP ${response.code}")
-            response.body?.string() ?: throw IllegalStateException("Пустой ответ Банка России")
+        fun value(column: String): Double? {
+            val index = indexes[column] ?: return null
+            return row.optDouble(index, Double.NaN).takeIf { it.isFinite() && it > 0.0 }
         }
-        parseEuroRateJson(body)
+        val last = value("LAST")
+        val marketPrice = value("MARKETPRICE")
+        val previous = value("PREVPRICE")
+        val price = last ?: marketPrice ?: previous
+        val change = indexes["CHANGE"]?.let { row.optDouble(it, Double.NaN) }
+            ?.takeIf { it.isFinite() }
+        val changePercent = when {
+            last != null && previous != null -> calculateQuoteChangePercent(last, previous)
+            last != null && change != null -> calculateQuoteChangePercent(last, last - change)
+            marketPrice != null && previous != null -> calculateQuoteChangePercent(marketPrice, previous)
+            else -> null
+        }
+        MarketQuoteRow(ticker, label, price, changePercent)
     }.getOrNull()
 
     private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
@@ -161,24 +176,33 @@ internal fun calculateQuoteChangePercent(current: Double, previous: Double): Dou
     return ((current - previous) / previous * 100.0).takeIf { it.isFinite() }
 }
 
-internal fun parseEuroRateJson(json: String): MarketQuoteRow? {
-    val euroFields = Regex("\\\"EUR\\\"\\s*:\\s*\\{([^}]*)\\}", RegexOption.DOT_MATCHES_ALL)
+internal fun parseCbrCurrencyRateJson(
+    json: String,
+    currencyCode: String,
+    ticker: String,
+    label: String
+): MarketQuoteRow? {
+    val currencyFields = Regex("\\\"$currencyCode\\\"\\s*:\\s*\\{([^}]*)\\}", RegexOption.DOT_MATCHES_ALL)
         .find(json)?.groupValues?.getOrNull(1) ?: return null
 
-    fun rate(field: String): Double =
-        Regex("\\\"$field\\\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)")
-            .find(euroFields)?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: Double.NaN
+    fun rate(field: String): Double? =
+        Regex("\\\"$field\\\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?)")
+            .find(currencyFields)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
 
-    val current = rate("Value")
-    val previous = rate("Previous")
+    val nominal = (rate("Nominal") ?: 1.0).takeIf { it.isFinite() && it > 0.0 } ?: 1.0
+    val current = (rate("Value") ?: return null) / nominal
+    val previous = rate("Previous")?.div(nominal)
     if (!current.isFinite() || current <= 0.0) return null
     return MarketQuoteRow(
-        ticker = "EUR_RUB_CBR",
-        label = "EUR/RUB",
+        ticker = ticker,
+        label = label,
         price = current,
-        changePercent = calculateQuoteChangePercent(current, previous)
+        changePercent = previous?.let { calculateQuoteChangePercent(current, it) }
     )
 }
+
+internal fun parseEuroRateJson(json: String): MarketQuoteRow? =
+    parseCbrCurrencyRateJson(json, "EUR", "EUR_RUB_CBR", "EUR/RUB")
 
 @Composable
 internal fun MarketQuotesSection(marketData: MarketOverviewData) {
@@ -276,9 +300,9 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
 private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
     val key = ticker.uppercase()
     val background = when (key) {
-        "USD000UTSTOM" -> Color(0xFF244A87)
+        "USD000UTSTOM", "USD_RUB_CBR" -> Color(0xFF244A87)
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> Color(0xFF2454A6)
-        "CNYRUB_TOM" -> Color(0xFFB52D35)
+        "CNYRUB_TOM", "CNY_RUB_CBR" -> Color(0xFFB52D35)
         "GLDRUB_TOM" -> Color(0xFFB88B24)
         "SBER", "SBERP" -> Color(0xFF20A66A)
         "YDEX" -> Color(0xFFFF4438)
@@ -292,9 +316,9 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
         else -> MaterialTheme.colorScheme.surface
     }
     val mark = when (key) {
-        "USD000UTSTOM" -> "$"
+        "USD000UTSTOM", "USD_RUB_CBR" -> "$"
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
-        "CNYRUB_TOM" -> "¥"
+        "CNYRUB_TOM", "CNY_RUB_CBR" -> "¥"
         "GLDRUB_TOM" -> "Au"
         else -> key.take(3)
     }
