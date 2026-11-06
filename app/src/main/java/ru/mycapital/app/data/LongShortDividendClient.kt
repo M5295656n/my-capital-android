@@ -83,10 +83,29 @@ private fun parseDividendDate(value: String): LocalDate? {
         }.getOrNull()
 }
 
+private fun String.substringAfterFirstLine(): String = substringAfterFirstLineDelimiter() 
+
+private fun String.substringAfterFirstLineDelimiter(): String {
+    val newline = indexOfFirst { it == '\\n' || it == '\\r' }
+    if (newline < 0) return ""
+    var next = newline + 1
+    if (this[newline] == '\\r' && next < length && this[next] == '\\n') next++
+    return substring(next)
+}
+
 private fun parseCsvRows(rawText: String): List<List<String>> {
     // The publisher may serve CSV with comma, semicolon (locale export), or tab delimiters.
     // Detect the delimiter from the header rather than silently parsing every line as one cell.
-    val text = rawText.removePrefix("\uFEFF").removePrefix("sep=,").removePrefix("sep=;").removePrefix("sep=\\t")
+    // Some CSV exporters prepend an Excel delimiter directive (sep=, / sep=; / sep=\\t).
+    // Remove the whole directive line; removing only its characters leaves an empty first row,
+    // which makes the header parser miss every required column.
+    val withoutBom = rawText.removePrefix("\uFEFF")
+    val firstLine = withoutBom.lineSequence().firstOrNull()?.trim()
+    val text = if (firstLine in setOf("sep=,", "sep=;", "sep=\\t", "sep=\\\\t")) {
+        withoutBom.substringAfterFirstLine()
+    } else {
+        withoutBom
+    }
     val header = text.lineSequence().firstOrNull().orEmpty()
     val delimiter = listOf(',', ';', '\t').maxByOrNull { candidate ->
         header.count { it == candidate }
