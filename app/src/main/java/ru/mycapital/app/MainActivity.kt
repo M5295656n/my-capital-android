@@ -1977,6 +1977,7 @@ private fun PayoutsScreen(
         ) {
             item {
                 Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
             }
             item {
                 androidx.compose.foundation.lazy.LazyRow(
