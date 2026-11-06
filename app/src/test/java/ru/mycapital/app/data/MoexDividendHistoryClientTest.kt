@@ -9,11 +9,12 @@ class MoexDividendHistoryClientTest {
     @Test
     fun sberFiveYearGrowthTreatsVerifiedNoDividendYearAsZero() {
         val rows = listOf(
-            dividend("2021-07-12", 18.70),
+            dividend("2021-05-12", 18.70),
             // Sber paid no dividend in 2022; no event row is expected for that year.
-            dividend("2023-07-21", 25.00),
+            dividend("2023-05-11", 25.00),
             dividend("2024-07-11", 33.30),
-            dividend("2025-07-18", 34.84)
+            dividend("2025-07-18", 34.84),
+            dividend("2026-07-20", 37.64)
         )
 
         val metrics = calculateDividendHistoryMetrics(
@@ -23,7 +24,7 @@ class MoexDividendHistoryClientTest {
             annualCoverageVerified = true
         )
 
-        assertEquals(86.31, metrics.fiveYearGrowthPercent!!, 0.01)
+        assertEquals(15.02, metrics.fiveYearGrowthPercent!!, 0.01)
     }
 
     @Test
