@@ -76,8 +76,7 @@ class OverviewMarketQuoteTest {
     fun missingCurrencyAndInvalidNominalAreHandledSafely() {
         assertNull(parseCbrCurrencyRateJson("""{"Valute":{}}""", "JPY", "JPY/RUB", "JPY_RUB_CBR"))
         val json = """{"Valute":{"JPY":{"Nominal":0,"Value":54.25,"Previous":53.5}}}"""
-        val quote = parseCbrCurrencyRateJson(json, "JPY", "JPY/RUB", "JPY_RUB_CBR")
-        assertEquals(54.25, quote?.price ?: Double.NaN, 0.000001)
+        assertNull(parseCbrCurrencyRateJson(json, "JPY", "JPY/RUB", "JPY_RUB_CBR"))
     }
 
 }
