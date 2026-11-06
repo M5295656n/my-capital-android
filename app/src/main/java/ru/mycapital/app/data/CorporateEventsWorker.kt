@@ -25,18 +25,14 @@ class CorporateEventsWorker(
                 it.assetType.contains("офз", ignoreCase = true) ||
                 it.assetType.contains("bond", ignoreCase = true)
         }
-        if (equities.isEmpty()) {
-            return@withContext Result.success(
-                Data.Builder().putString("summary", "Обновление дивидендов: в портфеле пока нет акций с положительным количеством.").build()
-            )
-        }
-
+        // Bond coupon synchronization must still run when the portfolio has no equities.
         var transientFailures = 0
         var importedDividends = 0
         var matchedDividends = 0
         var feedEvents = 0
         val errors = mutableListOf<String>()
 
+        if (equities.isNotEmpty()) {
         try {
             setProgress(Data.Builder().putString("summary", "Синхронизация выплат: загружаю календарь Long/Short…").build())
             val events = LongShortDividendClient().getUpcomingDividends()
@@ -101,15 +97,20 @@ class CorporateEventsWorker(
                 .build())
         }
 
+        }
+
         // Bond coupons remain sourced from MOEX ISS; the Long/Short feed is for equities.
         val bondClient = CorporateEventsClient()
         for (asset in assets.filter {
-            it.assetType.contains("облигац", ignoreCase = true) ||
-                it.assetType.contains("офз", ignoreCase = true) ||
-                it.assetType.contains("bond", ignoreCase = true)
+            isBondInstrument(it.ticker, it.name, it.assetType)
         }.distinctBy { it.ticker.uppercase() }) {
             try {
-                val events = bondClient.getEvents(asset.ticker, asset.assetType)
+                // Older imported positions may still carry the generic type "Другое".
+                // Normalize OFZ type before syncing so future refreshes classify it consistently.
+                if (!asset.assetType.contains("облигац", ignoreCase = true)) {
+                    dao.updateAsset(asset.copy(assetType = "Облигация"))
+                }
+                val events = bondClient.getEvents(asset.ticker, "Облигация")
                 database.withTransaction {
                     events.forEach { event ->
                         val existing = dao.getPayoutBySourceKey(event.sourceKey)
