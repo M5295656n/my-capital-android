@@ -29,6 +29,28 @@ internal data class DividendHistoryFetchResult(
     val annualCoverageVerified: Boolean
 )
 
+internal fun calculateForwardDividendYieldPercent(
+    events: List<DividendCalendarEvent>,
+    ticker: String,
+    currentPrice: Double,
+    today: LocalDate
+): Double? {
+    if (!currentPrice.isFinite() || currentPrice <= 0.0) return null
+    val endDate = today.plusDays(365)
+    val amount = events.asSequence()
+        .filter { it.ticker.equals(ticker, true) }
+        .filter { it.status in setOf("ANNOUNCED", "RECOMMENDED", "FORECAST") }
+        .mapNotNull { event ->
+            val timestamp = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
+            val date = java.time.Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.of("Europe/Moscow")).toLocalDate()
+            if (!date.isBefore(today) && !date.isAfter(endDate)) event.sourceKey to event.amountPerUnit else null
+        }
+        .distinctBy { it.first }
+        .sumOf { it.second }
+    return amount.takeIf { it > 0.0 }?.div(currentPrice)?.times(100.0)
+}
+
 internal fun calculateDividendHistoryMetrics(
     dividends: List<HistoricalDividend>,
     currentPrice: Double,
