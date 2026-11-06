@@ -1941,8 +1941,33 @@ private fun PayoutsScreen(
     } else 0.0
     val portfolioValue = assets.sumOf { it.quantity.coerceAtLeast(0.0) * it.currentPrice.coerceAtLeast(0.0) }
     val payoutYield = if (portfolioValue > 0.0) totalAmount / portfolioValue * 100.0 else 0.0
-    val announcedByMonth = monthly.mapValues { (_, items) -> items.filter { it.status == "ANNOUNCED" }.sumOf(::payoutAmount) }
-    val forecastByMonth = monthly.mapValues { (_, items) -> items.filter { it.status != "ANNOUNCED" }.sumOf(::payoutAmount) }
+    // The calendar chart always represents the full 12-month period, not only months
+    // that happen to contain payouts. Status filters affect the feed; the chart keeps
+    // its announced-vs-forecast comparison visible.
+    val chartMonths = remember(selectedPeriod, today) {
+        val first = if (selectedPeriod == "forward") java.time.YearMonth.from(today)
+            else java.time.YearMonth.of(selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear, 1)
+        (0 until 12).map { first.plusMonths(it.toLong()) }
+    }
+    val chartPayouts = visiblePayouts.filter { payout ->
+        val dateMillis = payout.actualDate ?: payout.expectedDate ?: return@filter false
+        val date = java.time.Instant.ofEpochMilli(dateMillis).atZone(zone).toLocalDate()
+        val inPeriod = !date.isBefore(periodDates.first) && !date.isAfter(periodDates.second)
+        val typeOk = typeFilter == "Все" ||
+            (typeFilter == "Дивиденды" && payout.payoutType.contains("Дивиденд", true)) ||
+            (typeFilter == "Купоны" && payout.payoutType.contains("Купон", true)) ||
+            (typeFilter == "Погашения" && (payout.payoutType.contains("Погаш", true) || payout.payoutType.contains("Амортизац", true)))
+        inPeriod && typeOk && payout.status != "RECEIVED"
+    }
+    val chartMonthly = chartPayouts.groupBy { payout ->
+        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
+    }
+    val announcedByMonth = chartMonths.associateWith { month ->
+        chartMonthly[month].orEmpty().filter { it.status == "ANNOUNCED" }.sumOf(::payoutAmount)
+    }
+    val forecastByMonth = chartMonths.associateWith { month ->
+        chartMonthly[month].orEmpty().filter { it.status == "RECOMMENDED" || it.status == "FORECAST" || it.status == "EXPECTED" }.sumOf(::payoutAmount)
+    }
 
     Column(modifier.fillMaxSize()) {
         LazyColumn(
@@ -2007,6 +2032,7 @@ private fun PayoutsScreen(
             item {
                 if (monthlyTotals.isNotEmpty()) {
                     PayoutCalendarChart(
+                        months = chartMonths,
                         announced = announcedByMonth,
                         forecast = forecastByMonth
                     )
@@ -2132,41 +2158,90 @@ private fun PayoutsScreen(
 
 @Composable
 private fun PayoutCalendarChart(
+    months: List<java.time.YearMonth>,
     announced: Map<java.time.YearMonth, Double>,
     forecast: Map<java.time.YearMonth, Double>
 ) {
-    val months = (announced.keys + forecast.keys).distinct().sorted()
     if (months.isEmpty()) return
-    val maxValue = months.maxOf { (announced[it] ?: 0.0) + (forecast[it] ?: 0.0) }.coerceAtLeast(1.0)
-    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(154.dp)) {
-            val slot = size.width / months.size.coerceAtMost(12)
-            val barWidth = (slot * 0.62f).coerceAtLeast(7f)
-            val visibleMonths = months.takeLast(12)
-            visibleMonths.forEachIndexed { index, month ->
-                val x = slot * index + (slot - barWidth) / 2f
+    val maxValue = months.maxOfOrNull { (announced[it] ?: 0.0) + (forecast[it] ?: 0.0) }
+        ?.coerceAtLeast(1.0) ?: 1.0
+    val announcedColor = Color(0xFF48A9E8)
+    val forecastColor = Color(0xFF087BAA)
+    val locale = java.util.Locale("ru", "RU")
+    fun compactAmount(value: Double): String = when {
+        value >= 1_000_000.0 -> String.format(locale, "%.1fм", value / 1_000_000.0)
+        value >= 10_000.0 -> String.format(locale, "%.0fк", value / 1_000.0)
+        value >= 1_000.0 -> String.format(locale, "%.1fк", value / 1_000.0)
+        else -> String.format(locale, "%.0f", value)
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            months.forEach { month ->
                 val announcedValue = announced[month] ?: 0.0
                 val forecastValue = forecast[month] ?: 0.0
                 val total = announcedValue + forecastValue
-                val totalHeight = (total / maxValue * (size.height - 18.dp.toPx())).toFloat()
-                val announcedHeight = (announcedValue / maxValue * (size.height - 18.dp.toPx())).toFloat()
-                val forecastHeight = (forecastValue / maxValue * (size.height - 18.dp.toPx())).toFloat()
-                drawRoundRect(Color(0xFF48A9E8), Offset(x, size.height - announcedHeight), androidx.compose.ui.geometry.Size(barWidth, announcedHeight), androidx.compose.ui.geometry.CornerRadius(5f, 5f))
-                drawRoundRect(Color(0xFF087BAA), Offset(x, size.height - announcedHeight - forecastHeight), androidx.compose.ui.geometry.Size(barWidth, forecastHeight), androidx.compose.ui.geometry.CornerRadius(5f, 5f))
+                Column(
+                    Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        if (total > 0.0) compactAmount(total) else "—",
+                        fontSize = 8.sp,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Canvas(Modifier.fillMaxWidth().height(112.dp).padding(horizontal = 2.dp)) {
+                        val plotHeight = size.height - 2.dp.toPx()
+                        val totalHeight = (total / maxValue * plotHeight).toFloat().coerceAtLeast(0f)
+                        val announcedHeight = (announcedValue / maxValue * plotHeight).toFloat()
+                        val forecastHeight = (forecastValue / maxValue * plotHeight).toFloat()
+                        val barWidth = size.width * 0.72f
+                        val left = (size.width - barWidth) / 2f
+                        val bottom = size.height
+                        if (announcedHeight > 0.5f) {
+                            drawRoundRect(
+                                announcedColor,
+                                Offset(left, bottom - announcedHeight),
+                                androidx.compose.ui.geometry.Size(barWidth, announcedHeight),
+                                androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                            )
+                        }
+                        if (forecastHeight > 0.5f) {
+                            drawRoundRect(
+                                forecastColor,
+                                Offset(left, bottom - totalHeight),
+                                androidx.compose.ui.geometry.Size(barWidth, forecastHeight),
+                                androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                            )
+                        }
+                    }
+                    Text(
+                        month.month.getDisplayName(java.time.format.TextStyle.SHORT, locale)
+                            .replace(".", "").take(3).lowercase(locale),
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 5.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF48A9E8)))
+                Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(announcedColor))
                 Text("Объявлены", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(12.dp))
-                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF087BAA)))
+                Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(forecastColor))
                 Text("Прогноз", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
-
 @Composable
 private fun ReceivePayoutDialog(
     payout: PayoutEntity,
