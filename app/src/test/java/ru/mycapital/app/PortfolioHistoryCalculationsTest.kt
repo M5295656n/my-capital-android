@@ -65,6 +65,28 @@ class PortfolioHistoryCalculationsTest {
     }
 
     @Test
+    fun xirrMatchesExcelStyleAnnualizedReturnOver365Days() {
+        val start = java.time.LocalDate.of(2025, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        val end = java.time.LocalDate.of(2026, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+
+        assertEquals(10.0, annualizedReturnPercent(listOf(start to -100.0, end to 110.0))!!, 0.0001)
+    }
+
+    @Test
+    fun xirrAnnualizesPeriodsShorterThanOneYear() {
+        val start = java.time.LocalDate.of(2025, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        val end = java.time.LocalDate.of(2025, 7, 2).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+
+        val result = annualizedReturnPercent(listOf(start to -100.0, end to 110.0))
+        assertTrue(result != null && result > 20.0)
+    }
+
+    @Test
+    fun xirrReturnsNullWhenThereIsNoPositiveDuration() {
+        assertEquals(null, annualizedReturnPercent(listOf(1L to -100.0, 1L to 110.0)))
+    }
+
+    @Test
     fun allRangeKeepsFullHistory() {
         val points = calculatePortfolioHistoryPoints(
             listOf(snapshot("2025-01-01", 1_000.0), snapshot("2026-11-01", 1_100.0)),
