@@ -1078,7 +1078,7 @@ private fun AssetDetailScreen(
     var dividendHistoryMetrics by remember(asset.ticker) { mutableStateOf<ru.mycapital.app.data.DividendHistoryMetrics?>(null) }
     var dividendHistoryLoading by remember(asset.ticker) { mutableStateOf(false) }
     var dividendHistoryError by remember(asset.ticker) { mutableStateOf<String?>(null) }
-    LaunchedEffect(asset.ticker, price, bondAssetType(asset.assetType)) {
+    LaunchedEffect(asset.ticker, price, (asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true))) {
         if (!bondAssetType(asset.assetType)) {
             dividendHistoryLoading = true
             dividendHistoryError = null
