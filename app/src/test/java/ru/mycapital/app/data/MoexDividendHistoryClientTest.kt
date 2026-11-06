@@ -2,39 +2,19 @@ package ru.mycapital.app.data
 
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import java.time.ZoneId
 import org.junit.Test
 
 class MoexDividendHistoryClientTest {
     @Test
-    fun sberFiveYearGrowthTreatsVerifiedNoDividendYearAsZero() {
+    fun sberFiveYearGrowthUsesLatestCompletedFiveYearPeriod() {
         val rows = listOf(
-            dividend("2021-05-12", 18.70),
+            dividend("2020-05-12", 18.70),
             // Sber paid no dividend in 2022; no event row is expected for that year.
-            dividend("2023-05-11", 25.00),
-            dividend("2024-07-11", 33.30),
-            dividend("2025-07-18", 34.84),
-            dividend("2026-07-20", 37.64)
-        )
-
-        val metrics = calculateDividendHistoryMetrics(
-            rows,
-            currentPrice = 292.43,
-            today = LocalDate.of(2026, 11, 6),
-            annualCoverageVerified = true
-        )
-
-        assertEquals(15.02, metrics.fiveYearGrowthPercent!!, 0.01)
-    }
-
-    @Test
-    fun missingYearIsNotAssumedZeroWhenHistoryCoverageIsUnverified() {
-        val rows = listOf(
-            dividend("2021-07-12", 18.70),
-            dividend("2023-07-21", 25.00),
-            dividend("2024-07-11", 33.30),
-            dividend("2025-07-18", 34.84)
+            dividend("2022-05-11", 25.00),
+            dividend("2023-07-11", 33.30),
+            dividend("2024-07-18", 34.84),
+            dividend("2025-07-20", 37.64)
         )
 
         val metrics = calculateDividendHistoryMetrics(
@@ -44,7 +24,20 @@ class MoexDividendHistoryClientTest {
             annualCoverageVerified = false
         )
 
-        assertNull(metrics.fiveYearGrowthPercent)
+        assertEquals((Math.pow(37.64 / 18.70, 1.0 / 5.0) - 1.0) * 100.0, metrics.fiveYearGrowthPercent!!, 0.01)
+    }
+
+    @Test
+    fun currentPartialYearIsExcludedFromFiveYearGrowth() {
+        val rows = listOf(
+            dividend("2020-07-12", 10.0),
+            dividend("2025-07-18", 20.0),
+            dividend("2026-07-18", 100.0)
+        )
+        val metrics = calculateDividendHistoryMetrics(
+            rows, 100.0, LocalDate.of(2026, 11, 6), annualCoverageVerified = false
+        )
+        assertEquals((Math.pow(2.0, 1.0 / 5.0) - 1.0) * 100.0, metrics.fiveYearGrowthPercent!!, 0.001)
     }
 
     @Test
