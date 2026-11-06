@@ -47,18 +47,21 @@ internal fun calculateDividendHistoryMetrics(
         trailingAmount / currentPrice * 100.0
     } else null
 
-    // Five completed calendar years: compare the first and last annual totals.
-    // Missing years are not treated as zero; the metric stays unavailable instead.
-    val lastCompletedYear = today.year - 1
-    val years = (lastCompletedYear - 4..lastCompletedYear).toList()
+    // Five-year annualized dividend growth (CAGR), matching Snowball:
+    // compare the annual per-share payout five years ago with the latest year.
+    // Intermediate years with no payout do not become fabricated dividend rows.
+    val firstYear = today.year - 5
+    val lastYear = today.year
     val annual = rubleDividends.groupBy { it.recordDate.year }.mapValues { (_, rows) ->
         rows.sumOf { it.amountPerShare }
     }
-    val complete = years.all { annual.containsKey(it) || annualCoverageVerified }
-    val first = annual[years.first()] ?: if (annualCoverageVerified) 0.0 else null
-    val last = annual[years.last()] ?: if (annualCoverageVerified) 0.0 else null
-    val growth = if (complete && first != null && last != null && first > 0.0 && last > 0.0) {
-        (last / first - 1.0) * 100.0
+    val first = annual[firstYear]
+    val last = annual[lastYear]
+    val growth = if (
+        annualCoverageVerified && first != null && last != null &&
+        first > 0.0 && last > 0.0
+    ) {
+        (Math.pow(last / first, 1.0 / 5.0) - 1.0) * 100.0
     } else null
     return DividendHistoryMetrics(yieldPercent, growth, rubleDividends.size)
 }
