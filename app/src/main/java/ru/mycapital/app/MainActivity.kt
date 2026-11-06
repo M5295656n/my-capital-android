@@ -1081,27 +1081,36 @@ private fun AssetDetailScreen(
     }
     var dividendHistoryLoading by remember(asset.ticker) { mutableStateOf(false) }
     var dividendHistoryError by remember(asset.ticker) { mutableStateOf<String?>(null) }
+    var dividendForecast by remember(asset.ticker) {
+        mutableStateOf<List<ru.mycapital.app.data.DividendCalendarEvent>>(emptyList())
+    }
 
-    // Fetch the issuer history only when the ticker changes. Price updates must not
-    // cancel and restart the network request; metrics below are recalculated locally.
+    // История и прогноз загружаются независимо: сбой одного источника не скрывает второй показатель.
     LaunchedEffect(asset.ticker, isDividendAsset) {
         if (isDividendAsset) {
             dividendHistoryLoading = true
             dividendHistoryError = null
             dividendHistory = null
+            dividendForecast = emptyList()
             try {
-                dividendHistory = withContext(Dispatchers.IO) {
-                    ru.mycapital.app.data.MoexDividendHistoryClient().getHistory(asset.ticker)
+                val historyResult = withContext(Dispatchers.IO) {
+                    runCatching { ru.mycapital.app.data.MoexDividendHistoryClient().getHistory(asset.ticker) }
+                }
+                historyResult.onSuccess { dividendHistory = it }
+                    .onFailure { dividendHistoryError = it.message ?: "Не удалось загрузить историю дивидендов" }
+                dividendForecast = withContext(Dispatchers.IO) {
+                    runCatching { ru.mycapital.app.data.LongShortDividendClient().getUpcomingDividends() }
+                        .getOrDefault(emptyList())
+                        .filter { it.ticker.equals(asset.ticker, true) }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                dividendHistoryError = e.message ?: "Не удалось загрузить историю дивидендов"
             } finally {
                 dividendHistoryLoading = false
             }
         } else {
             dividendHistory = null
+            dividendForecast = emptyList()
             dividendHistoryError = null
             dividendHistoryLoading = false
         }
@@ -1115,6 +1124,21 @@ private fun AssetDetailScreen(
                 history.annualCoverageVerified
             )
         }
+    }
+    val forwardDividendYieldPercent = remember(dividendForecast, price) {
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+        val endDate = today.plusDays(365)
+        val forecastAmount = dividendForecast
+            .filter { it.status in setOf("ANNOUNCED", "RECOMMENDED", "FORECAST") }
+            .mapNotNull { event ->
+                val timestamp = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
+                val date = java.time.Instant.ofEpochMilli(timestamp)
+                    .atZone(java.time.ZoneId.of("Europe/Moscow")).toLocalDate()
+                if (!date.isBefore(today) && !date.isAfter(endDate)) event.sourceKey to event.amountPerUnit else null
+            }
+            .distinctBy { it.first }
+            .sumOf { it.second }
+        if (price.isFinite() && price > 0.0 && forecastAmount > 0.0) forecastAmount / price * 100.0 else null
     }
     val previous = candles.dropLast(1).lastOrNull()?.close
     val change = previous?.let { price - it }
@@ -1325,10 +1349,10 @@ private fun AssetDetailScreen(
             } else {
                 val metrics = dividendHistoryMetrics
                 AssetDetailMetric(
-                    "Дивидендная доходность за 12 месяцев",
+                    "Дивидендная доходность",
                     when {
                         dividendHistoryLoading -> "Загрузка…"
-                        metrics?.trailingTwelveMonthYieldPercent != null -> String.format(java.util.Locale("ru", "RU"), "%.2f%%", metrics.trailingTwelveMonthYieldPercent)
+                        forwardDividendYieldPercent != null -> String.format(java.util.Locale("ru", "RU"), "%.2f%%", forwardDividendYieldPercent)
                         else -> "Нет проверяемых данных"
                     }
                 )
@@ -1340,9 +1364,6 @@ private fun AssetDetailScreen(
                         else -> "Нет проверяемых данных"
                     }
                 )
-                if (dividendHistoryError != null) {
-                    Text("История дивидендов: ${dividendHistoryError}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                }
             }
         }
         AssetDetailSection("Операции") {
