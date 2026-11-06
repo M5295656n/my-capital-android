@@ -1083,7 +1083,13 @@ private fun AssetDetailScreen(
     LaunchedEffect(asset.ticker, isDividendAsset) {
         dividendForecast = if (isDividendAsset) {
             withContext(Dispatchers.IO) {
-                runCatching { ru.mycapital.app.data.LongShortDividendClient().getUpcomingDividends() }
+                runCatching {
+                        val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                        ru.mycapital.app.data.mergeOfficialDividendAnnouncements(
+                            ru.mycapital.app.data.LongShortDividendClient().getUpcomingDividends(today),
+                            today
+                        )
+                    }
                     .getOrDefault(emptyList())
                     .filter { it.ticker.equals(asset.ticker, true) }
             }
