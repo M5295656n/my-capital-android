@@ -217,6 +217,17 @@ class SberBrokerReportParserTest {
     }
 
     @Test
+    fun parsesBondRedemptionAndResolvesItsSecurityTicker() {
+        val html = sampleHtml(includeMatchingIisRegisterRows = false)
+            .replace("Выплата купонов ОФЗ 26228, номер купона 15", "Погашение номинала ОФЗ 26228")
+        val report = parseWithDiagnostics(html)
+        val redemption = report.cashFlows.single { it.kind == BrokerCashFlowKind.REDEMPTION }
+
+        assertEquals("SU26228RMFS5", redemption.ticker)
+        assertEquals(38.15, redemption.credit, 0.001)
+    }
+
+    @Test
     fun classifiesOnlyKnownExternalFlowsAndPayouts() {
         assertEquals(BrokerCashFlowKind.DEPOSIT, classifyBrokerCashFlow("Зачисление д/с"))
         assertEquals(BrokerCashFlowKind.WITHDRAWAL, classifyBrokerCashFlow("Вывод средств"))
