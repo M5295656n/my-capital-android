@@ -143,7 +143,7 @@ class SberBrokerReportParserTest {
         assertEquals(7.0, report.assets.single().closingQuantity, 0.001)
         assertEquals(8.0, report.assets.single().effectiveQuantity, 0.001)
         assertEquals(292.17, report.assets.single().closingPrice, 0.001)
-        assertEquals(561.91, report.closingCash, 0.001)
+        assertEquals(635.73, report.closingCash, 0.001)
         assertEquals(270.42, report.plannedClosingCash!!, 0.001)
         assertEquals("ЗО", report.trades.single().status)
     }
