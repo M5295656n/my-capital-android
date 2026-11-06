@@ -8,6 +8,8 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private fun normalizeDividendTicker(value: String): String = value.trim().uppercase(java.util.Locale.ROOT)
+
 class CorporateEventsWorker(
     appContext: Context,
     params: WorkerParameters
@@ -40,31 +42,49 @@ class CorporateEventsWorker(
             // good cache instead of deleting all dividends because of a temporary outage.
             if (events.isEmpty()) throw java.io.IOException("Источник вернул 0 предстоящих дивидендов")
             feedEvents = events.size
-            val byTicker = equities.associateBy { it.ticker.trim().uppercase() }
-            val matched = events.filter { it.ticker.trim().uppercase() in byTicker }
+            val byTicker = equities.associateBy { normalizeDividendTicker(it.ticker) }
+            val matched = events.filter { normalizeDividendTicker(it.ticker) in byTicker }
             matchedDividends = matched.size
+            // Never erase the cache when the feed is valid but does not contain any
+            // portfolio ticker: this can happen after a provider schema/ticker change.
+            if (matched.isEmpty()) {
+                val portfolioTickers = equities.joinToString(", ") { it.ticker }
+                throw java.io.IOException(
+                    "Выгрузка содержит $feedEvents событий, но ни одно не совпало с тикерами портфеля ($portfolioTickers). Старые данные сохранены."
+                )
+            }
             database.withTransaction {
-                dao.deleteUnreceivedLongShortDividendEvents()
+                // Replace only the tickers for which the provider returned matching
+                // events. A partial feed must not wipe forecasts for other holdings.
+                val refreshedTickers = matched.map { normalizeDividendTicker(it.ticker) }.toSet()
+                refreshedTickers.forEach { ticker ->
+                    dao.deleteUnreceivedLongShortDividendEventsForTicker(ticker)
+                }
                 matched.forEach { event ->
-                    val asset = byTicker[event.ticker.trim().uppercase()] ?: return@forEach
-                    val inserted = dao.insertPayout(
-                        PayoutEntity(
-                            assetId = asset.id,
-                            ticker = event.ticker,
-                            payoutType = "Дивиденд",
-                            amountPerUnit = event.amountPerUnit,
-                            quantity = asset.quantity,
-                            totalAmount = event.amountPerUnit * asset.quantity,
-                            taxAmount = 0.0,
-                            expectedDate = event.paymentDate,
-                            actualDate = null,
-                            status = event.status,
-                            sourceKey = event.sourceKey,
-                            recordDate = event.recordDate,
-                            sourceName = "Long/Short"
-                        )
+                    val ticker = normalizeDividendTicker(event.ticker)
+                    val asset = byTicker[ticker] ?: return@forEach
+                    val payout = PayoutEntity(
+                        assetId = asset.id,
+                        ticker = asset.ticker,
+                        payoutType = "Дивиденд",
+                        amountPerUnit = event.amountPerUnit,
+                        quantity = asset.quantity,
+                        totalAmount = event.amountPerUnit * asset.quantity,
+                        taxAmount = 0.0,
+                        expectedDate = event.paymentDate,
+                        actualDate = null,
+                        status = event.status,
+                        sourceKey = event.sourceKey,
+                        recordDate = event.recordDate,
+                        sourceName = "Long/Short"
                     )
-                    if (inserted != -1L) importedDividends++
+                    val existing = dao.getPayoutBySourceKey(event.sourceKey)
+                    if (existing == null) {
+                        if (dao.insertPayout(payout) != -1L) importedDividends++
+                    } else if (existing.status != "RECEIVED") {
+                        dao.updatePayout(payout.copy(id = existing.id))
+                        importedDividends++
+                    }
                 }
             }
         } catch (error: Exception) {
@@ -123,7 +143,7 @@ class CorporateEventsWorker(
         }
 
         val summary = buildString {
-            append("Дивидендный источник: событий получено $feedEvents; совпадений с акциями портфеля $matchedDividends; новых записей $importedDividends.")
+            append("Дивидендный источник: событий получено $feedEvents; совпадений с акциями портфеля $matchedDividends; добавлено или обновлено записей $importedDividends.")
             if (errors.isNotEmpty()) append(" Ошибка: ").append(errors.joinToString("; "))
         }
         val output = Data.Builder()
