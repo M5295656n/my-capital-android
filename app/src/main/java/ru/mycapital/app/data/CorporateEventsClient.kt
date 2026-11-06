@@ -27,6 +27,18 @@ internal fun parseMoexEventDate(dateText: String): LocalDate? {
     return runCatching { LocalDate.parse(dateText) }.getOrNull()
 }
 
+internal fun isBondInstrument(ticker: String, name: String = "", assetType: String = ""): Boolean {
+    val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
+    val normalizedName = name.trim().lowercase(Locale.ROOT)
+    val normalizedType = assetType.trim().lowercase(Locale.ROOT)
+    return normalizedType.contains("облигац") ||
+        normalizedType.contains("офз") ||
+        normalizedType.contains("bond") ||
+        normalizedName.contains("офз") ||
+        normalizedName.contains("облигац") ||
+        Regex("^SU\\d{5}RMFS\\d$").matches(normalizedTicker)
+}
+
 class UnsupportedCorporateEventsInstrumentException(message: String) : IOException(message)
 
 data class ImportedPayoutEvent(
@@ -45,7 +57,7 @@ class CorporateEventsClient {
         .build()
 
     fun getEvents(ticker: String, assetType: String): List<ImportedPayoutEvent> {
-        val isBond = assetType.contains("облигац", ignoreCase = true)
+        val isBond = isBondInstrument(ticker = ticker, assetType = assetType)
         val encoded = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val url = if (isBond) {
             "https://iss.moex.com/iss/statistics/engines/stock/markets/bonds/bondization/$encoded.json" +
