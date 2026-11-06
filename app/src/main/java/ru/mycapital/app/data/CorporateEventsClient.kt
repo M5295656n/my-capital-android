@@ -60,8 +60,8 @@ class CorporateEventsClient {
         val isBond = isBondInstrument(ticker = ticker, assetType = assetType)
         val encoded = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val url = if (isBond) {
-            "https://iss.moex.com/iss/statistics/engines/stock/markets/bonds/bondization/$encoded.json" +
-                "?iss.meta=off&iss.only=coupons&coupons.columns=coupondate,value"
+            "https://iss.moex.com/iss/securities/$encoded/bondization.json" +
+                "?iss.meta=off&iss.only=coupons&coupons.columns=coupondate,value&start=0&limit=100"
         } else {
             "https://iss.moex.com/iss/securities/$encoded/dividends.json?iss.meta=off"
         }
