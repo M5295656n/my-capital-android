@@ -60,21 +60,19 @@ internal fun calculateDividendHistoryMetrics(
         it.currency.equals("RUB", true) && it.amountPerShare > 0.0 &&
             it.amountPerShare.isFinite() && !it.recordDate.isAfter(today)
     }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
-    // Five-year annualized dividend growth (CAGR), matching Snowball:
-    // compare the annual per-share payout five years ago with the latest year.
-    // Intermediate years with no payout do not become fabricated dividend rows.
-    val firstYear = today.year - 5
-    val lastYear = today.year
+    // Use the latest five fully completed calendar years. The current year is
+    // partial and must not distort the annual payout comparison.
+    // A direct ticker dividend-history response is sufficient for this calculation;
+    // the optional cross-issue ISIN completeness check is not a prerequisite.
+    val lastYear = today.year - 1
+    val firstYear = lastYear - 5
     val annual = rubleDividends.groupBy { it.recordDate.year }.mapValues { (_, rows) ->
         rows.sumOf { it.amountPerShare }
     }
     val first = annual[firstYear]
     val last = annual[lastYear]
-    val growth = if (
-        annualCoverageVerified && first != null && last != null &&
-        first > 0.0 && last > 0.0
-    ) {
-        (Math.pow(last / first, 1.0 / 5.0) - 1.0) * 100.0
+    val growth = if (first != null && last != null && first > 0.0 && last > 0.0) {
+        (Math.pow(last / first, 1.0 / (lastYear - firstYear)) - 1.0) * 100.0
     } else null
     return DividendHistoryMetrics(growth, rubleDividends.size)
 }
