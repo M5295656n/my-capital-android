@@ -186,7 +186,12 @@ internal fun parseCbrCurrencyRateJson(
         Regex("\\\"$field\\\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)")
             .find(fields)?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: Double.NaN
 
-    val nominal = number("Nominal").takeIf { it.isFinite() && it > 0.0 } ?: 1.0
+    val rawNominal = number("Nominal")
+    val nominal = when {
+        rawNominal.isNaN() -> 1.0
+        !rawNominal.isFinite() || rawNominal <= 0.0 -> return null
+        else -> rawNominal
+    }
     val current = number("Value") / nominal
     val previous = number("Previous") / nominal
     if (!current.isFinite() || current <= 0.0) return null
