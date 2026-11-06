@@ -15,8 +15,14 @@ data class BrokerReportAsset(
     val closingQuantity: Double,
     val closingPrice: Double,
     val closingValue: Double,
-    val assetType: String = "Другое"
-)
+    val assetType: String = "Другое",
+    val plannedClosingQuantity: Double? = null
+) {
+    // Sber reports distinguish settled holdings from the planned outgoing balance.
+    // The latter includes concluded trades awaiting settlement and is the quantity
+    // that should be reflected in the investor's current portfolio view.
+    val effectiveQuantity: Double get() = plannedClosingQuantity ?: closingQuantity
+}
 
 enum class BrokerCashFlowKind { DEPOSIT, WITHDRAWAL, DIVIDEND, COUPON, INTERNAL_TRANSFER, IGNORE }
 
@@ -74,7 +80,8 @@ data class SberBrokerReport(
     val closingCash: Double,
     val assets: List<BrokerReportAsset>,
     val cashFlows: List<BrokerReportCashFlow>,
-    val trades: List<BrokerReportTrade>
+    val trades: List<BrokerReportTrade>,
+    val plannedClosingCash: Double? = null
 )
 
 object SberBrokerReportParser {
@@ -134,13 +141,19 @@ object SberBrokerReportParser {
         val cashHeader = cashRows[cashTable.second]
         val openingIndex = cashHeader.indexOf("Начало периода")
         val closingIndex = cashHeader.indexOf("Конец периода")
+        val plannedCashIndex = cashHeader.indexOfFirst { it.startsWith("Плановый исходящий остаток", true) }
         val cashAccountRow = cashRows.drop(cashTable.second + 1).firstOrNull {
             it.firstOrNull()?.contains("Торговый счет", true) == true &&
                 it.getOrNull(cashHeader.indexOf("Валюта")) == "RUB"
         } ?: error("В отчёте не найден рублёвый денежный остаток.")
         val openingCash = number(cashAccountRow.getOrNull(openingIndex), "остаток на начало")
         val closingCash = number(cashAccountRow.getOrNull(closingIndex), "остаток на конец")
-        require(openingCash >= 0.0 && closingCash >= 0.0) { "Денежный остаток в отчёте не может быть отрицательным." }
+        val plannedClosingCash = cashAccountRow.getOrNull(plannedCashIndex)
+            ?.takeIf { plannedCashIndex >= 0 && it.isNotBlank() }
+            ?.let { number(it, "плановый исходящий денежный остаток") }
+        require(openingCash >= 0.0 && closingCash >= 0.0 && (plannedClosingCash == null || plannedClosingCash >= 0.0)) {
+            "Денежный остаток в отчёте не может быть отрицательным."
+        }
 
         val securitiesTable = locate(setOf("Наименование", "Код", "ISIN ценной бумаги"))
         val securitiesRows = rows(securitiesTable.first).drop(securitiesTable.second + 1)
@@ -263,13 +276,24 @@ object SberBrokerReportParser {
         }
 
         val assetsTable = locate(setOf("Наименование", "ISIN ценной бумаги", "Количество, шт", "Рыночная цена"))
-        val assetRows = rows(assetsTable.first).drop(assetsTable.second + 1)
+        val assetTableRows = rows(assetsTable.first)
+        val assetHeader = assetTableRows[assetsTable.second]
+        val plannedQuantityIndex = assetHeader.indexOfFirst {
+            it.startsWith("Плановый исходящий остаток", true) || it.startsWith("Плановый остаток", true)
+        }
+        val assetRows = assetTableRows.drop(assetsTable.second + 1)
         val assets = assetRows.mapNotNull { row ->
             val isin = row.getOrNull(1).orEmpty()
             if (!isin.startsWith("RU") || row.size < 18) return@mapNotNull null
             val security = securityNames.firstOrNull { it.third == isin }
             val closingQuantity = number(row.getOrNull(8), "количество на конец по ${row[0]}")
             val closingValueText = row.getOrNull(11)
+            val plannedClosingQuantity = row.getOrNull(plannedQuantityIndex)
+                ?.takeIf { plannedQuantityIndex >= 0 && it.isNotBlank() }
+                ?.let { number(it, "плановый исходящий остаток по ${row[0]}") }
+            require(plannedClosingQuantity == null || plannedClosingQuantity >= 0.0) {
+                "Плановое количество по ${row[0]} не может быть отрицательным."
+            }
             // Sber leaves market value blank for zero-quantity rows (e.g. a fully sold position).
             val closingValue = if (closingValueText.isNullOrBlank() && closingQuantity == 0.0) 0.0
                 else number(closingValueText, "стоимость позиции ${row[0]}")
@@ -287,7 +311,8 @@ object SberBrokerReportParser {
                 // Store a RUB-per-security price in the portfolio.
                 closingPrice = if (closingQuantity > 0.0) closingValue / closingQuantity
                     else number(row.getOrNull(10), "цена на конец по ${row[0]}"),
-                closingValue = closingValue
+                closingValue = closingValue,
+                plannedClosingQuantity = plannedClosingQuantity
             )
         }
 
@@ -340,7 +365,8 @@ object SberBrokerReportParser {
             closingCash = closingCash,
             assets = assets,
             cashFlows = cashFlows,
-            trades = trades
+            trades = trades,
+            plannedClosingCash = plannedClosingCash
         )
     }
 }
