@@ -16,6 +16,7 @@ class CorporateEventsWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        setProgress(Data.Builder().putString("summary", "Синхронизация выплат: запускаю проверку портфеля…").build())
         val database = PortfolioDatabase.getInstance(applicationContext)
         val dao = database.portfolioDao()
         val assets = dao.getAssets().filter { it.quantity > 0.0 }
@@ -37,11 +38,13 @@ class CorporateEventsWorker(
         val errors = mutableListOf<String>()
 
         try {
+            setProgress(Data.Builder().putString("summary", "Синхронизация выплат: загружаю календарь Long/Short…").build())
             val events = LongShortDividendClient().getUpcomingDividends()
             // An unexpectedly empty feed is treated as a source error: preserve the last
             // good cache instead of deleting all dividends because of a temporary outage.
             if (events.isEmpty()) throw java.io.IOException("Источник вернул 0 предстоящих дивидендов")
             feedEvents = events.size
+            setProgress(Data.Builder().putString("summary", "Long/Short: получено событий $feedEvents; проверяю совпадения с тикерами портфеля…").build())
             val byTicker = equities.associateBy { normalizeDividendTicker(it.ticker) }
             val matched = events.filter { normalizeDividendTicker(it.ticker) in byTicker }
             matchedDividends = matched.size
@@ -89,7 +92,13 @@ class CorporateEventsWorker(
             }
         } catch (error: Exception) {
             transientFailures++
-            errors += "Дивиденды: ${error.message ?: error.javaClass.simpleName}"
+            val message = "Дивиденды: ${error.message ?: error.javaClass.simpleName}"
+            errors += message
+            setProgress(Data.Builder()
+                .putString("summary", "Синхронизация выплат не завершена. $message Попытка ${runAttemptCount + 1} из 3.")
+                .putInt("feed_events", feedEvents)
+                .putInt("matched_dividends", matchedDividends)
+                .build())
         }
 
         // Bond coupons remain sourced from MOEX ISS; the Long/Short feed is for equities.
@@ -153,7 +162,13 @@ class CorporateEventsWorker(
             .putInt("imported_dividends", importedDividends)
             .build()
 
-        if (transientFailures > 0 && runAttemptCount < 3) Result.retry()
+        setProgress(Data.Builder()
+            .putString("summary", summary)
+            .putInt("feed_events", feedEvents)
+            .putInt("matched_dividends", matchedDividends)
+            .putInt("imported_dividends", importedDividends)
+            .build())
+        if (transientFailures > 0 && runAttemptCount < 2) Result.retry()
         else if (transientFailures > 0) Result.failure(output)
         else Result.success(output)
     }
