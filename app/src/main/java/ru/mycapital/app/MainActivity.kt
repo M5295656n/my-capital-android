@@ -303,7 +303,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     isParsingReport = isParsingReport,
@@ -1865,6 +1865,7 @@ private fun OperationsScreen(
 @Composable
 private fun PayoutsScreen(
     payouts: List<PayoutEntity>,
+    assets: List<AssetEntity>,
     accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
@@ -1873,172 +1874,294 @@ private fun PayoutsScreen(
     eventSyncMessage: String?,
     modifier: Modifier = Modifier
 ) {
-    val visiblePayouts = payouts.filter { payout ->
-        when (selectedAccountId) {
-            ALL_HISTORY_ACCOUNTS -> true
-            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(payout.sourceKey) == null
-            else -> historyAccountId(payout.sourceKey) == selectedAccountId
+    val zone = java.time.ZoneId.systemDefault()
+    val today = java.time.LocalDate.now(zone)
+    val currentYear = today.year
+    val periods = remember(currentYear) {
+        buildList {
+            add("year:$currentYear")
+            add("forward")
+            (1..6).forEach { add("year:${currentYear + it}") }
+            (1..5).reversed().forEach { offset ->
+                if (currentYear - offset >= 2000) add("year:${currentYear - offset}")
+            }
         }
     }
-    val received = visiblePayouts.filter { it.status == "RECEIVED" }.sumOf {
-        it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)
+    var selectedPeriod by remember(currentYear) { mutableStateOf("forward") }
+    var statusFilter by remember { mutableStateOf("Все") }
+    var typeFilter by remember { mutableStateOf("Все") }
+    var expandedPayoutId by remember { mutableStateOf<Long?>(null) }
+    val visiblePayouts = remember(payouts, selectedAccountId) {
+        payouts.filter { payout ->
+            when (selectedAccountId) {
+                ALL_HISTORY_ACCOUNTS -> true
+                UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(payout.sourceKey) == null
+                else -> historyAccountId(payout.sourceKey) == selectedAccountId
+            }
+        }
     }
-    val expected = visiblePayouts.filter { isUpcomingDividendStatus(it.status) || it.status == "EXPECTED" }
-        .sumOf { it.totalAmount }
-    // Keep the history compact: show near-term events, while asset cards retain the best available status.
-    val historyCutoff = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90)
-    val historyPayouts = visiblePayouts.filter { payout ->
-        val date = payout.expectedDate
-        val dividendEvent = payout.payoutType == "Дивиденд" && isUpcomingDividendStatus(payout.status)
-        // The 90-day compact view applies to bond coupons only. Dividend forecasts may
-        // have record dates many months ahead and must remain visible in the calendar.
-        dividendEvent || payout.status != "EXPECTED" || date == null ||
-            !java.time.Instant.ofEpochMilli(date).atZone(java.time.ZoneOffset.UTC).toLocalDate().isAfter(historyCutoff)
-    }.sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
-        .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
+    val periodDates = remember(selectedPeriod, today) {
+        if (selectedPeriod == "forward") {
+            today to today.plusYears(1)
+        } else {
+            val year = selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear
+            java.time.LocalDate.of(year, 1, 1) to java.time.LocalDate.of(year, 12, 31)
+        }
+    }
+    val filtered = remember(visiblePayouts, periodDates, statusFilter, typeFilter) {
+        visiblePayouts.filter { payout ->
+            val millis = payout.actualDate ?: payout.expectedDate ?: return@filter false
+            val date = java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+            val inPeriod = !date.isBefore(periodDates.first) && !date.isAfter(periodDates.second)
+            val statusOk = statusFilter == "Все" || when (statusFilter) {
+                "Объявлены" -> payout.status == "ANNOUNCED"
+                "Рекомендованы" -> payout.status == "RECOMMENDED"
+                "Прогноз" -> payout.status == "FORECAST" || payout.status == "EXPECTED"
+                "Получены" -> payout.status == "RECEIVED"
+                else -> true
+            }
+            val typeOk = typeFilter == "Все" ||
+                (typeFilter == "Дивиденды" && payout.payoutType.contains("Дивиденд", true)) ||
+                (typeFilter == "Купоны" && payout.payoutType.contains("Купон", true)) ||
+                (typeFilter == "Погашения" && (payout.payoutType.contains("Погаш", true) || payout.payoutType.contains("Амортизац", true)))
+            inPeriod && statusOk && typeOk
+        }.sortedWith(compareBy<PayoutEntity> { it.actualDate ?: it.expectedDate ?: Long.MAX_VALUE }.thenBy { it.ticker })
+    }
+    fun payoutAmount(p: PayoutEntity): Double =
+        if (p.status == "RECEIVED") (p.reportedNetAmount ?: (p.totalAmount - p.taxAmount)).coerceAtLeast(0.0)
+        else p.totalAmount.coerceAtLeast(0.0)
+    val totalAmount = filtered.sumOf(::payoutAmount)
+    val monthly = filtered.groupBy { payout ->
+        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
+    }.toSortedMap()
+    val monthlyTotals = monthly.mapValues { (_, items) -> items.sumOf(::payoutAmount) }
+    val monthAverage = if (monthly.isNotEmpty()) totalAmount / monthly.size else 0.0
+    val dayAverage = if (periodDates.second.toEpochDay() >= periodDates.first.toEpochDay()) {
+        totalAmount / (periodDates.second.toEpochDay() - periodDates.first.toEpochDay() + 1)
+    } else 0.0
+    val portfolioValue = assets.sumOf { it.quantity.coerceAtLeast(0.0) * it.currentPrice.coerceAtLeast(0.0) }
+    val payoutYield = if (portfolioValue > 0.0) totalAmount / portfolioValue * 100.0 else 0.0
+    val announcedByMonth = monthly.mapValues { (_, items) -> items.filter { it.status == "ANNOUNCED" }.sumOf(::payoutAmount) }
+    val forecastByMonth = monthly.mapValues { (_, items) -> items.filter { it.status != "ANNOUNCED" }.sumOf(::payoutAmount) }
 
-    // One page-level scroll: header, forecast, and payout history move together.
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Дивиденды и купоны: ожидаемые отдельно от полученных", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 84.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text("Календарь дивидендов и купонов", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onRefreshEvents) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
+                    }
+                }
                 if (!eventSyncMessage.isNullOrBlank()) {
                     Text(eventSyncMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
                 }
+                AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
             }
-            IconButton(onClick = onRefreshEvents) {
-                Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
-            }
-        }
-        AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
-        Card(shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                Text("Всего получено после налога", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(money(received) + " ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            }
-        }
-        Card(shape = RoundedCornerShape(16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Ожидается", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(money(expected) + " ₽", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            item {
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(periods) { period ->
+                        val label = when (period) {
+                            "forward" -> "На год вперёд"
+                            else -> period.substringAfter("year:")
+                        }
+                        FilterChip(
+                            selected = selectedPeriod == period,
+                            onClick = { selectedPeriod = period },
+                            label = { Text(label, maxLines = 1) }
+                        )
+                    }
                 }
-                Text("До налога", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
-        }
-        PayoutForecastCard(visiblePayouts)
-        if (historyPayouts.isEmpty()) {
-            Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                Text(if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет выплат в ближайшие 90 дней. Более поздние ожидаемые выплаты временно скрыты." else "Для выбранного счёта нет выплат в ближайшие 90 дней.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            item {
+                Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (selectedPeriod == "forward") "Всего за год вперёд" else "Всего за ${selectedPeriod.substringAfter("year:")}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${money(totalAmount)} ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("В месяц", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${money(monthAverage)} ₽", fontWeight = FontWeight.SemiBold)
+                        }
+                        Column {
+                            Text("В день", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${money(dayAverage)} ₽", fontWeight = FontWeight.SemiBold)
+                        }
+                        Column {
+                            Text("Доходность", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${String.format(java.util.Locale("ru", "RU"), "%.2f", payoutYield)}%", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
             }
-        } else {
-            Text("История выплат", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            historyPayouts.forEach { payout ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(payout.ticker + " · " + payout.payoutType, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(dividendStatusLabel(payout.status),
-                                color = if (payout.status == "RECEIVED") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            item {
+                if (monthlyTotals.isNotEmpty()) {
+                    PayoutCalendarChart(
+                        announced = announcedByMonth,
+                        forecast = forecastByMonth
+                    )
+                } else {
+                    Text("За выбранный период выплат с известными датами пока нет.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 20.dp))
+                }
+            }
+            item {
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(listOf("Все", "Объявлены", "Рекомендованы", "Прогноз", "Получены")) { filter ->
+                        FilterChip(selected = statusFilter == filter, onClick = { statusFilter = filter }, label = { Text(filter) })
+                    }
+                }
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(listOf("Все", "Дивиденды", "Купоны", "Погашения")) { filter ->
+                        FilterChip(selected = typeFilter == filter, onClick = { typeFilter = filter }, label = { Text(filter) })
+                    }
+                }
+            }
+            if (monthly.isEmpty()) {
+                item {
+                    Text("Нет выплат по выбранным фильтрам.", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 24.dp))
+                }
+            } else {
+                monthly.forEach { (month, itemsForMonth) ->
+                    item(key = "month-$month") {
+                        Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                month.format(java.time.format.DateTimeFormatter.ofPattern("LLLL yyyy", java.util.Locale("ru", "RU")))
+                                    .replaceFirstChar { it.titlecase(java.util.Locale("ru", "RU")) },
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                Text("+${money(itemsForMonth.sumOf(::payoutAmount))} ₽",
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                    color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
+                            }
                         }
-                        if (payout.reportedNetAmount != null) {
-                            Text("Зачислено по брокерскому отчёту: ${money(payout.reportedNetAmount)} ₽")
-                            Text("Сумма до налога и удержанный налог в отчёте отдельно не раскрыты",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            Text("Начислено: ${money(payout.totalAmount)} ₽ · Налог: ${money(payout.taxAmount)} ₽")
-                            Text(if (payout.status == "RECEIVED") "На счёт: ${money(payout.totalAmount - payout.taxAmount)} ₽" else "Ожидаемая сумма, ещё не включена в свободные деньги")
-                        }
-                        payout.recordDate?.let {
-                            Text("Дата отсечки: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        payout.expectedDate?.let {
-                            Text((if (payout.sourceName.isNullOrBlank()) "Дата выплаты: " else "Ориентировочная дата выплаты: ") +
-                                java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (!payout.sourceName.isNullOrBlank()) {
-                            Text("Источник: ${payout.sourceName}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
-                        }
-                        payout.actualDate?.let {
-                            Text("Получено: " + java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(it)),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED") {
-                            TextButton(onClick = { onConfirmReceipt(payout) }) {
-                                Text("Подтвердить получение")
+                    }
+                    val byDate = itemsForMonth.groupBy { java.time.Instant.ofEpochMilli(it.actualDate ?: it.expectedDate!!).atZone(zone).toLocalDate() }.toSortedMap()
+                    byDate.forEach { (date, dayItems) ->
+                        item(key = "date-$date") {
+                            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                    Text(
+                                        date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale("ru", "RU"))) +
+                                            ", " + date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale("ru", "RU")),
+                                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                dayItems.forEach { payout ->
+                                    val asset = assets.firstOrNull { it.id == payout.assetId }
+                                        ?: assets.firstOrNull { it.ticker.equals(payout.ticker, true) }
+                                    val expanded = expandedPayoutId == payout.id
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().clickable { expandedPayoutId = if (expanded) null else payout.id },
+                                        shape = RoundedCornerShape(14.dp)
+                                    ) {
+                                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    Modifier.size(48.dp).clip(RoundedCornerShape(9.dp))
+                                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(payout.ticker.take(5), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                                }
+                                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                                    Text("${payout.ticker}  ${asset?.name ?: payout.payoutType}",
+                                                        fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                                    Text(
+                                                        when {
+                                                            payout.status == "RECEIVED" -> "Фактически получено"
+                                                            payout.status == "ANNOUNCED" -> "Объявлены"
+                                                            payout.status == "RECOMMENDED" -> "Рекомендованы"
+                                                            else -> payout.payoutType + " · " + dividendStatusLabel(payout.status)
+                                                        },
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+                                                }
+                                                Column(horizontalAlignment = Alignment.End) {
+                                                    Text("+${money(payoutAmount(payout))} ₽", color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
+                                                    val yield = if (asset != null && asset.currentPrice > 0.0 && payout.amountPerUnit > 0.0)
+                                                        payout.amountPerUnit / asset.currentPrice * 100.0 else null
+                                                    if (yield != null) Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", yield),
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                            Text(
+                                                (if (payout.payoutType.contains("Купон", true)) "Купон" else payout.payoutType) +
+                                                    " · " + (if (payout.quantity > 0.0) "${money(payout.amountPerUnit)} ₽ на бумагу" else "сумма выплаты"),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            if (expanded) {
+                                                HorizontalDivider()
+                                                payout.recordDate?.let { Text("Дата отсечки: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
+                                                payout.expectedDate?.let { Text("Ожидаемая дата выплаты: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
+                                                payout.actualDate?.let { Text("Получено: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
+                                                if (!payout.sourceName.isNullOrBlank()) Text("Источник: ${payout.sourceName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                if (payout.status != "RECEIVED" && (isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED")) {
+                                                    TextButton(onClick = { onConfirmReceipt(payout) }) { Text("Подтвердить получение") }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(72.dp))
     }
 }
 
 @Composable
-private fun PayoutForecastCard(payouts: List<PayoutEntity>) {
-    val forecast = remember(payouts) { calculatePayoutForecast(payouts) }
-    var shownMonth by remember { mutableStateOf(YearMonth.now()) }
-    val monthForecast = forecast.monthly.firstOrNull { it.month == shownMonth }
-    Card(shape = RoundedCornerShape(16.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("Календарь ожидаемых выплат", fontWeight = FontWeight.SemiBold)
-            Text(
-                "Объявленные, рекомендованные и прогнозные выплаты с известными датами · до налога",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("30 дней", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${money(forecast.next30Days)} ₽", fontWeight = FontWeight.SemiBold)
-                }
-                Column(Modifier.weight(1f)) {
-                    Text("90 дней", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${money(forecast.next90Days)} ₽", fontWeight = FontWeight.SemiBold)
-                }
+private fun PayoutCalendarChart(
+    announced: Map<java.time.YearMonth, Double>,
+    forecast: Map<java.time.YearMonth, Double>
+) {
+    val months = (announced.keys + forecast.keys).distinct().sorted()
+    if (months.isEmpty()) return
+    val maxValue = months.maxOf { (announced[it] ?: 0.0) + (forecast[it] ?: 0.0) }.coerceAtLeast(1.0)
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(154.dp)) {
+            val slot = size.width / months.size.coerceAtMost(12)
+            val barWidth = (slot * 0.62f).coerceAtLeast(7f)
+            val visibleMonths = months.takeLast(12)
+            visibleMonths.forEachIndexed { index, month ->
+                val x = slot * index + (slot - barWidth) / 2f
+                val announcedValue = announced[month] ?: 0.0
+                val forecastValue = forecast[month] ?: 0.0
+                val total = announcedValue + forecastValue
+                val totalHeight = (total / maxValue * (size.height - 18.dp.toPx())).toFloat()
+                val announcedHeight = (announcedValue / maxValue * (size.height - 18.dp.toPx())).toFloat()
+                val forecastHeight = (forecastValue / maxValue * (size.height - 18.dp.toPx())).toFloat()
+                drawRoundRect(Color(0xFF48A9E8), Offset(x, size.height - announcedHeight), androidx.compose.ui.geometry.Size(barWidth, announcedHeight), androidx.compose.ui.geometry.CornerRadius(5f, 5f))
+                drawRoundRect(Color(0xFF087BAA), Offset(x, size.height - announcedHeight - forecastHeight), androidx.compose.ui.geometry.Size(barWidth, forecastHeight), androidx.compose.ui.geometry.CornerRadius(5f, 5f))
             }
-            HorizontalDivider()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { shownMonth = shownMonth.minusMonths(1) }) {
-                    Icon(Icons.Default.ChevronLeft, contentDescription = "Предыдущий месяц")
-                }
-                Text(
-                    shownMonth.format(java.time.format.DateTimeFormatter.ofPattern("LLLL yyyy", java.util.Locale("ru", "RU")))
-                        .replaceFirstChar { it.titlecase(java.util.Locale("ru", "RU")) },
-                    modifier = Modifier.weight(1f),
-                    fontWeight = FontWeight.SemiBold
-                )
-                IconButton(onClick = { shownMonth = shownMonth.plusMonths(1) }) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Следующий месяц")
-                }
-            }
-            if (monthForecast == null) {
-                Text("На этот месяц ожидаемых выплат с известной датой нет.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("${monthForecast.paymentCount} ${if (monthForecast.paymentCount == 1) "выплата" else if (monthForecast.paymentCount in 2..4) "выплаты" else "выплат"}")
-                    Text("${money(monthForecast.amount)} ₽", fontWeight = FontWeight.SemiBold)
-                }
-            }
-            if (forecast.monthly.isEmpty()) {
-                Text(
-                    "Пока нет ожидаемых выплат с будущей датой. Обновите корпоративные события или добавьте выплату вручную.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF48A9E8)))
+                Text("Объявлены", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(12.dp))
+                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF087BAA)))
+                Text("Прогноз", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
