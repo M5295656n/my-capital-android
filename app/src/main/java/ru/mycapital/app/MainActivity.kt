@@ -233,8 +233,21 @@ private fun MyCapitalApp() {
             )
         }
     }
-    val eventSyncMessage = eventWorkInfos.firstOrNull { it.state.isFinished }
-        ?.outputData?.getString("summary")
+    val eventSyncMessage = (
+        eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
+            ?: eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
+            ?: eventWorkInfos.firstOrNull { it.state.isFinished }
+        )?.let { info ->
+            info.outputData.getString("summary")
+                ?: info.progress.getString("summary")
+                ?: when (info.state) {
+                    androidx.work.WorkInfo.State.RUNNING -> "Синхронизация выплат выполняется…"
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Синхронизация выплат ожидает подключения к сети…"
+                    androidx.work.WorkInfo.State.FAILED -> "Синхронизация выплат завершилась ошибкой без подробностей."
+                    androidx.work.WorkInfo.State.CANCELLED -> "Синхронизация выплат отменена."
+                    else -> "Синхронизация выплат завершена без диагностического сообщения."
+                }
+        } ?: "Синхронизация выплат ещё не запускалась. Нажми кнопку обновления на этом экране."
     val refreshAllMarketData: () -> Unit = {
         refreshQuotes()
         refreshEvents()
