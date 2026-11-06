@@ -40,6 +40,24 @@ internal fun parseBondMaturityDate(value: String?): LocalDate? {
     return runCatching { LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE) }.getOrNull()
 }
 
+internal fun createBondMarketInfo(
+    maturityDate: String?,
+    couponValue: Double?,
+    couponPeriodDays: Double?,
+    couponsPerYear: Double?,
+    faceValue: Double?,
+    couponPercentFromExchange: Double?
+): BondMarketInfo = BondMarketInfo(
+    maturityDate = parseBondMaturityDate(maturityDate),
+    couponYieldPercent = calculateCouponYieldPercent(
+        couponValue = couponValue,
+        couponPeriodDays = couponPeriodDays,
+        couponsPerYear = couponsPerYear,
+        faceValue = faceValue,
+        couponPercentFromExchange = couponPercentFromExchange
+    )
+)
+
 internal fun parseBondMarketInfo(root: JSONObject): BondMarketInfo {
     val securities = root.optJSONObject("securities")
         ?: throw IOException("MOEX ISS не вернул данные облигации")
@@ -63,15 +81,13 @@ internal fun parseBondMarketInfo(root: JSONObject): BondMarketInfo {
         return row.optString(index).takeIf { it.isNotBlank() && it != "null" }
     }
 
-    return BondMarketInfo(
-        maturityDate = parseBondMaturityDate(string("MATDATE")),
-        couponYieldPercent = calculateCouponYieldPercent(
-            couponValue = number("COUPONVALUE"),
-            couponPeriodDays = number("COUPONPERIOD"),
-            couponsPerYear = number("COUPONFREQUENCY"),
-            faceValue = number("FACEVALUE"),
-            couponPercentFromExchange = number("COUPONPERCENT")
-        )
+    return createBondMarketInfo(
+        maturityDate = string("MATDATE"),
+        couponValue = number("COUPONVALUE"),
+        couponPeriodDays = number("COUPONPERIOD"),
+        couponsPerYear = number("COUPONFREQUENCY"),
+        faceValue = number("FACEVALUE"),
+        couponPercentFromExchange = number("COUPONPERCENT")
     )
 }
 
