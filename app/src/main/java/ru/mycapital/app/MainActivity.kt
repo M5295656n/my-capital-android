@@ -1235,6 +1235,18 @@ private fun AssetDetailScreen(
             AssetDetailMetric("Доходность годовых", annualized?.let { String.format(java.util.Locale("ru", "RU"), "%.2f%%", it) } ?: "Недостаточно данных")
         }
         AssetDetailSection(if (bond) "Купоны" else "Дивиденды") {
+            if (!bond) {
+                val nextCutoff = upcomingDividendPayouts
+                    .filter { it.recordDate != null }
+                    .minByOrNull { it.recordDate ?: Long.MAX_VALUE }
+                val cutoffLabel = nextCutoff?.recordDate?.let { timestamp ->
+                    java.time.Instant.ofEpochMilli(timestamp)
+                        .atZone(java.time.ZoneOffset.UTC)
+                        .toLocalDate()
+                        .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy", java.util.Locale("ru", "RU")))
+                } ?: "Пока не объявлена"
+                AssetDetailMetric("Дивидендная отсечка", cutoffLabel)
+            }
             if (bond) {
                 val nextCoupon = assetPayouts.filter { it.payoutType == "Купон" && it.status != "RECEIVED" && it.expectedDate != null }
                     .minByOrNull { it.expectedDate ?: Long.MAX_VALUE }
