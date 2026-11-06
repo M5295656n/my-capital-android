@@ -1976,19 +1976,7 @@ private fun PayoutsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                        Text("Календарь дивидендов и купонов", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    IconButton(onClick = onRefreshEvents) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Обновить календарь выплат")
-                    }
-                }
-                if (!eventSyncMessage.isNullOrBlank()) {
-                    Text(eventSyncMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
-                }
-                AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
+                Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             }
             item {
                 androidx.compose.foundation.lazy.LazyRow(
