@@ -16,21 +16,24 @@ class SberBrokerReportParserTest {
         closingQuantity: String = "3",
         closingValue: String = "33",
         tradeCode: String = "TEST",
-        includeMatchingIisRegisterRows: Boolean = true
+        includeMatchingIisRegisterRows: Boolean = true,
+        plannedClosingQuantity: String = "3",
+        plannedClosingCash: String = "635.73",
+        tradeStatus: String = "И"
     ): String {
         val assets = """
             <table>
               <tr><td>Основной рынок</td></tr>
               <tr><td>Наименование</td><td>ISIN ценной бумаги</td><td>Валюта рыночной цены</td><td>Количество, шт</td><td>Номинал</td><td>Рыночная цена ²</td><td>Рыночная стоимость</td><td>НКД</td><td>Количество, шт</td><td>Номинал</td><td>Рыночная цена ²</td><td>Рыночная стоимость</td><td>НКД</td><td>Количество, шт</td><td>Рыночная стоимость</td><td>Плановые зачисления</td><td>Плановые списания</td><td>Плановый остаток</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td>10</td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td>10</td><td>11</td><td>$closingValue</td><td>0</td><td>3</td><td>33</td><td>0</td><td>0</td><td>3</td></tr>
+              <tr><td>Тестовая акция</td><td>RU000A000001</td><td>RUB</td><td>2</td><td>10</td><td>10</td><td>20</td><td>0</td><td>$closingQuantity</td><td>10</td><td>11</td><td>$closingValue</td><td>0</td><td>3</td><td>33</td><td>0</td><td>0</td><td>$plannedClosingQuantity</td></tr>
             </table>
         """.trimIndent()
         val cash = """
             <table>
               <tr><td>Торговая площадка</td><td>Валюта</td><td>Курс на конец периода</td><td>Начало периода</td><td>Изменение за период</td><td>Конец периода</td><td>Плановые зачисления</td><td>Плановые списания</td><td>Плановый исходящий остаток</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>Торговый счет, Основной рынок</td><td>RUB</td><td></td><td>428.73</td><td>207.00</td><td>635.73</td><td>0</td><td>0</td><td>635.73</td></tr>
+              <tr><td>Торговый счет, Основной рынок</td><td>RUB</td><td></td><td>428.73</td><td>207.00</td><td>635.73</td><td>0</td><td>0</td><td>$plannedClosingCash</td></tr>
             </table>
         """.trimIndent()
         val flows = """
@@ -54,7 +57,7 @@ class SberBrokerReportParserTest {
             <table>
               <tr><td>Дата заключения</td><td>Дата расчетов</td><td>Время заключения</td><td>Наименование ЦБ</td><td>Код ЦБ</td><td>Валюта</td><td>Вид</td><td>Количество, шт.</td><td>Цена ²</td><td>Сумма</td><td>НКД ⁴</td><td>Комиссия Брокера</td><td>Комиссия Биржи</td><td>Номер сделки</td><td>Комментарий</td><td>Статус сделки ⁵</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>$tradeCode</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>123456</td><td></td><td>И</td></tr>
+              <tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>$tradeCode</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>123456</td><td></td><td>$tradeStatus</td></tr>
             </table>
         """.trimIndent()
         val securities = """
@@ -123,6 +126,26 @@ class SberBrokerReportParserTest {
             assertEquals(0.42, report.trades.single().totalFee, 0.001)
             assertEquals("SBER:123456", report.trades.single().sourceKey)
         }
+    }
+
+    @Test
+    fun parsesPlannedOutgoingBalancesAndConcludedUnsettledTrade() {
+        val report = parseWithDiagnostics(
+            sampleHtml(
+                closingQuantity = "7",
+                closingValue = "2045.19",
+                plannedClosingQuantity = "8",
+                plannedClosingCash = "270.42",
+                tradeStatus = "ЗО"
+            )
+        )
+
+        assertEquals(7.0, report.assets.single().closingQuantity, 0.001)
+        assertEquals(8.0, report.assets.single().effectiveQuantity, 0.001)
+        assertEquals(292.17, report.assets.single().closingPrice, 0.001)
+        assertEquals(561.91, report.closingCash, 0.001)
+        assertEquals(270.42, report.plannedClosingCash!!, 0.001)
+        assertEquals("ЗО", report.trades.single().status)
     }
 
     @Test
