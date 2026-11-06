@@ -1334,9 +1334,7 @@ private fun AssetDetailScreen(
                     }
                 }
             }
-            if (bond) {
-                AssetDetailMetric("Купонная доходность", "Нет проверяемых данных")
-            } else {
+            if (!bond) {
                 AssetDetailMetric(
                     "Дивидендная доходность",
                     if (forwardDividendYieldPercent != null) String.format(java.util.Locale("ru", "RU"), "%.2f%%", forwardDividendYieldPercent)
