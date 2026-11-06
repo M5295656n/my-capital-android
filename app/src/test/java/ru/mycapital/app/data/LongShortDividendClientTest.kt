@@ -24,6 +24,19 @@ X5,"X5",2027-01-10,2027-01-09,98,RUB,5.0,forecast,2027-01-25
     }
 
     @Test
+    fun parsesSberForecastWithExcelSeparatorDirective() {
+        val csv = """sep=,
+secid,company,record_date,last_buy_date,value,currency,yield_pct,status,payment_date
+SBER,"Сбербанк",2027-07-20,2027-07-19,44.68,RUB,15.3,forecast,2027-08-04
+"""
+        val event = parseLongShortDividendCsv(csv, today).single()
+        assertEquals("SBER", event.ticker)
+        assertEquals("FORECAST", event.status)
+        assertEquals(44.68, event.amountPerUnit, 0.000001)
+        assertEquals(LocalDate.of(2027, 7, 20).atStartOfDay().toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), event.recordDate)
+    }
+
+    @Test
     fun parsesSemicolonCsvAndDecimalComma() {
         val csv = """secid;company;record_date;last_buy_date;value;currency;yield_pct;status;payment_date
 LKOH;"ЛУКОЙЛ";2026-12-09;2026-12-08;"535,50";RUB;9,1;recommended;2026-12-23
