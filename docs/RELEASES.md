@@ -4,6 +4,19 @@
 
 ## Последний подтверждённый релиз
 
+### v0.3.9 — versionCode 21 — 2026-11-06
+- Статус: **готовый Release APK; CI, unit tests, сборка, подпись и artifact проверены**.
+- Ветка: `main`; commit сборки: `43a9e662c8f952f8a4827b2ebc58f719cc1c16f5`.
+- GitHub Actions: run #434, ID `42173177041`; https://github.com/M5295656n/my-capital-android/actions/runs/42173177041
+- CI: `completed / success`; job `build` — success; unit tests — **104 passed, 0 failed, 0 errors, 0 skipped** (23 XML test suites); signed release APK build — success; upload — success; Room instrumentation — skipped by agreed rule.
+- Artifact: `my-capital-release-apk`, ID `13481824374`, ZIP size 13,053,578 bytes, ZIP SHA-256 `ae9d4776426982f3b05f21d070c017ce4dbe07755645f1df1f361d3cdbc59946`.
+- Test artifact: `unit-test-results`, ID `13481784339`, ZIP size 17,187 bytes, ZIP SHA-256 `2b7b62ed392b2c023d216590302d389b95c14685aa16add800e6bd96f58f5494`.
+- Извлечённый файл: `MyCapital-0.3.9.apk`; local path `/mnt/data/MyCapital-0.3.9.apk`; size 13,577,772 bytes; APK SHA-256 `03eeb4fb4ade66964da7ed1e14f6375dada60c4ae74bbc51a13a73dbfaa08f35`.
+- Package: `ru.mycapital.app`; versionName `0.3.9`; versionCode `21` — проверены по бинарному AndroidManifest.xml.
+- APK v2 signing block inspected; certificate SHA-256 fingerprint `77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66` — **побайтно совпадает с сертификатом загруженного пользователем APK v0.3.7**, поэтому сборка совместима с обновлением установленной версии, подписанной тем же ключом.
+- Исправления котировок: USD/RUB и CNY/RUB добавлены в общий снимок курсов; EUR/RUB сохранён; золото запрашивается по инструменту `GLDRUB_TOM` на основной площадке MOEX `CETS`, с резервным отображением последней опубликованной цены вне торговой сессии. Подписи валютных карточек закреплены за соответствующими кодами.
+- Итог: versionCode увеличен с 20 до 21; прежний ключ подписи сохранён; APK предназначен для установки поверх предыдущей версии.
+
 
 ### v0.3.5 — versionCode 17
 - Дата: 2026-11-05
