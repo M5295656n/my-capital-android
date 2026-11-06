@@ -1107,6 +1107,12 @@ private fun AssetDetailScreen(
         .filter { (it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE) >= System.currentTimeMillis() }
         .sortedWith(compareBy<PayoutEntity> { dividendStatusPriority(it.status) }
             .thenBy { it.recordDate ?: it.expectedDate ?: Long.MAX_VALUE })
+        // Одна прогнозная запись на одну дату отсечки.
+        .distinctBy { payout ->
+            payout.recordDate?.let { "record:$it" }
+                ?: payout.expectedDate?.let { "expected:$it" }
+                ?: "id:${payout.id}"
+        }
     val bond = asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true)
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1280,9 +1286,6 @@ private fun AssetDetailScreen(
                     }
                     payout.expectedDate?.let { date ->
                         AssetDetailMetric("Ориентировочная дата выплаты", java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(date)))
-                    }
-                    if (!payout.sourceName.isNullOrBlank()) {
-                        Text("Источник: ${payout.sourceName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
