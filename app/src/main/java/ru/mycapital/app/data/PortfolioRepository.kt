@@ -4,9 +4,11 @@ import androidx.room.withTransaction
 import java.time.ZoneOffset
 import java.util.Locale
 
-// Sber HTML reports use "ЗИ" for executed trades; retain legacy "И".
-internal fun isFullyExecutedBrokerTrade(status: String): Boolean =
-    status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ")
+// Sber reports can contain a concluded trade that has not settled by period end:
+// "ЗО" = concluded during the period, with no obligation fulfilled yet. It is still
+// a real buy/sell and must be imported; the planned outgoing balances reconcile it.
+internal fun isImportableBrokerTrade(status: String): Boolean =
+    status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ", "ЗО")
 
 
 /**
@@ -95,14 +97,17 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             // are added, and later imports replace only that agreement's amount.
             val knownAccountCash = dao.getBrokerAccountCashAccounts()
             val oldAccountCash = dao.getBrokerAccountCash(report.accountId)
+            // Prefer Sber's planned outgoing balance when unsettled transactions exist.
+            // This keeps cash and securities on the same post-settlement basis.
+            val snapshotCash = report.plannedClosingCash ?: report.closingCash
             resultingCash = if (oldAccountCash != null) {
-                previousCash - oldAccountCash.balance + report.closingCash
+                previousCash - oldAccountCash.balance + snapshotCash
             } else if (knownAccountCash.isEmpty()) {
-                report.closingCash
+                snapshotCash
             } else {
-                previousCash + report.closingCash
+                previousCash + snapshotCash
             }
-            dao.upsertBrokerAccountCash(BrokerAccountCashEntity(report.accountId, report.closingCash))
+            dao.upsertBrokerAccountCash(BrokerAccountCashEntity(report.accountId, snapshotCash))
             dao.updateCashBalance(resultingCash.coerceAtLeast(0.0))
 
             val oldAccountAssets = dao.getBrokerAccountAssets(report.accountId).associateBy { it.ticker.uppercase() }
@@ -111,7 +116,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 .filter { it.ticker.isNotBlank() }
                 .groupBy { it.ticker.trim().uppercase() }
                 .mapValues { (_, rows) ->
-                    rows.first().copy(closingQuantity = rows.sumOf { it.closingQuantity })
+                    rows.first().copy(closingQuantity = rows.sumOf { it.effectiveQuantity })
                 }
             val isFirstAccountSnapshot = knownAccountCash.isEmpty()
 
@@ -308,7 +313,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             report.trades.forEach { trade ->
                 // Only the explicit fully executed status is imported. Other codes may
                 // represent unsettled, partially settled or pending obligations.
-                if (!isFullyExecutedBrokerTrade(trade.status)) {
+                if (!isImportableBrokerTrade(trade.status)) {
                     unsettledSkipped++
                     return@forEach
                 }
