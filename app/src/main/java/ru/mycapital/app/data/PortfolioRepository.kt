@@ -242,7 +242,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     return@forEach
                 }
                 val amount = when (kind) {
-                    BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON -> flow.credit
+                    BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON, BrokerCashFlowKind.REDEMPTION -> flow.credit
                     BrokerCashFlowKind.WITHDRAWAL -> flow.debit
                     else -> 0.0
                 }
@@ -252,9 +252,10 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     BrokerCashFlowKind.WITHDRAWAL -> "Вывод"
                     BrokerCashFlowKind.DIVIDEND -> "Дивиденд"
                     BrokerCashFlowKind.COUPON -> "Купон"
+                    BrokerCashFlowKind.REDEMPTION -> "Погашение"
                     else -> return@forEach
                 }
-                val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON
+                val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON || kind == BrokerCashFlowKind.REDEMPTION
                 val ticker = if (payout) flow.ticker else "RUB"
                 val note = when (kind) {
                     BrokerCashFlowKind.DIVIDEND ->
@@ -263,6 +264,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                         else "Чистая сумма по брокерскому отчёту; налоговая разбивка не указана"
                     BrokerCashFlowKind.COUPON ->
                         "Сумма зачисления по брокерскому отчёту; налоговая разбивка не указана"
+                    BrokerCashFlowKind.REDEMPTION ->
+                        "Фактически зачисленная сумма погашения по брокерскому отчёту"
                     else -> "Импорт из брокерского отчёта: ${flow.description}"
                 }
                 val scopedFlowKey = flow.rowKey.removePrefix("SBER:CASH:").removePrefix("CASH:")
