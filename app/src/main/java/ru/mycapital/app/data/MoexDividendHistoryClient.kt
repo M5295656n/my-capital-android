@@ -53,7 +53,7 @@ internal fun calculateDividendHistoryMetrics(
     val first = annual[priorYears.first()]
     val last = annual[recentYears.last()]
     val growth = if (complete && first != null && last != null && first > 0.0 && last > 0.0) {
-        (kotlin.math.pow(last / first, 1.0 / 5.0) - 1.0) * 100.0
+        (Math.pow(last / first, 1.0 / 5.0) - 1.0) * 100.0
     } else null
     return DividendHistoryMetrics(yieldPercent, growth, rubleDividends.size)
 }
