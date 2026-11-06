@@ -17,7 +17,7 @@ internal data class HistoricalDividend(
 )
 
 internal data class DividendHistoryMetrics(
-    val trailingTwelveMonthYieldPercent: Double?,
+    val forwardDividendYieldPercent: Double?,
     val fiveYearGrowthPercent: Double?,
     val historyCount: Int
 )
@@ -39,13 +39,8 @@ internal fun calculateDividendHistoryMetrics(
         it.currency.equals("RUB", true) && it.amountPerShare > 0.0 &&
             it.amountPerShare.isFinite() && !it.recordDate.isAfter(today)
     }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
-    val trailingStart = today.minusDays(365)
-    val trailingAmount = rubleDividends.filter {
-        !it.recordDate.isBefore(trailingStart)
-    }.sumOf { it.amountPerShare }
-    val yieldPercent = if (currentPrice.isFinite() && currentPrice > 0.0 && trailingAmount > 0.0) {
-        trailingAmount / currentPrice * 100.0
-    } else null
+    // Forward yield is calculated from declared/forecast payments separately below.
+    val yieldPercent: Double? = null
 
     // Five-year annualized dividend growth (CAGR), matching Snowball:
     // compare the annual per-share payout five years ago with the latest year.
@@ -85,20 +80,28 @@ internal class MoexDividendHistoryClient {
         var annualCoverageVerified = false
         if (!isin.isNullOrBlank()) {
             annualCoverageVerified = runCatching {
-                val search = requestJson("https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off")
-                val rows = table(search, "securities")
-                val matchingRows = rows.filter { it.optString("isin").equals(isin, true) }
-                matchingRows.forEach { row ->
-                    val candidate = row.optString("secid")
-                    if (candidate.isNotBlank()) secids += candidate
-                }
-                val cursor = search.optJSONObject("securities.cursor")
-                val cursorColumns = cursor?.optJSONArray("columns")
-                val cursorData = cursor?.optJSONArray("data")?.optJSONArray(0)
-                val totalIndex = (0 until (cursorColumns?.length() ?: 0))
-                    .firstOrNull { cursorColumns?.optString(it)?.equals("TOTAL", true) == true }
-                val total = totalIndex?.let { cursorData?.optInt(it) }
-                matchingRows.isNotEmpty() && (total == null || rows.size >= total)
+                var start = 0
+                var total: Int? = null
+                var foundAny = false
+                do {
+                    val search = requestJson("https://iss.moex.com/iss/securities.json?q=$isin&start=$start&iss.meta=off")
+                    val rows = table(search, "securities")
+                    val matchingRows = rows.filter { it.optString("isin").equals(isin, true) }
+                    matchingRows.forEach { row ->
+                        val candidate = row.optString("secid")
+                        if (candidate.isNotBlank()) secids += candidate
+                    }
+                    foundAny = foundAny || matchingRows.isNotEmpty()
+                    val cursor = search.optJSONObject("securities.cursor")
+                    val cursorColumns = cursor?.optJSONArray("columns")
+                    val cursorData = cursor?.optJSONArray("data")?.optJSONArray(0)
+                    val totalIndex = (0 until (cursorColumns?.length() ?: 0))
+                        .firstOrNull { cursorColumns?.optString(it)?.equals("TOTAL", true) == true }
+                    total = totalIndex?.let { cursorData?.optInt(it) }
+                    start += rows.size
+                    if (rows.isEmpty()) break
+                } while (total != null && start < total!!)
+                foundAny && (total == null || start >= total!!)
             }.getOrDefault(false)
         }
         val result = mutableListOf<HistoricalDividend>()
@@ -131,7 +134,7 @@ internal class MoexDividendHistoryClient {
     private fun requestJson(url: String): JSONObject {
         val request = Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", "MyCapital-Android/0.3.24")
+            .header("User-Agent", "MyCapital-Android/0.3.25")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
