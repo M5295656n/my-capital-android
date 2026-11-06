@@ -21,9 +21,7 @@ class CorporateEventsWorker(
         val dao = database.portfolioDao()
         val assets = dao.getAssets().filter { it.quantity > 0.0 }
         val equities = assets.filterNot {
-            it.assetType.contains("облиг", ignoreCase = true) ||
-                it.assetType.contains("офз", ignoreCase = true) ||
-                it.assetType.contains("bond", ignoreCase = true)
+            isBondInstrument(it.ticker, it.name, it.assetType)
         }
         // Bond coupon synchronization must still run when the portfolio has no equities.
         var transientFailures = 0
