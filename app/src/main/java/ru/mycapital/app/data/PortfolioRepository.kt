@@ -242,7 +242,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     return@forEach
                 }
                 val amount = when (kind) {
-                    BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON, BrokerCashFlowKind.REDEMPTION -> flow.credit
+                    BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON, BrokerCashFlowKind.REDEMPTION, BrokerCashFlowKind.AMORTIZATION -> flow.credit
                     BrokerCashFlowKind.WITHDRAWAL -> flow.debit
                     else -> 0.0
                 }
@@ -253,9 +253,10 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     BrokerCashFlowKind.DIVIDEND -> "Дивиденд"
                     BrokerCashFlowKind.COUPON -> "Купон"
                     BrokerCashFlowKind.REDEMPTION -> "Погашение"
+                    BrokerCashFlowKind.AMORTIZATION -> "Амортизация"
                     else -> return@forEach
                 }
-                val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON || kind == BrokerCashFlowKind.REDEMPTION
+                val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON || kind == BrokerCashFlowKind.REDEMPTION || kind == BrokerCashFlowKind.AMORTIZATION
                 val ticker = if (payout) flow.ticker else "RUB"
                 val note = when (kind) {
                     BrokerCashFlowKind.DIVIDEND ->
@@ -265,7 +266,9 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     BrokerCashFlowKind.COUPON ->
                         "Сумма зачисления по брокерскому отчёту; налоговая разбивка не указана"
                     BrokerCashFlowKind.REDEMPTION ->
-                        "Фактически зачисленная сумма погашения по брокерскому отчёту"
+                        "Погашение по брокерскому отчёту: ${flow.description}"
+                    BrokerCashFlowKind.AMORTIZATION ->
+                        "Амортизация по брокерскому отчёту: ${flow.description}"
                     else -> "Импорт из брокерского отчёта: ${flow.description}"
                 }
                 val scopedFlowKey = flow.rowKey.removePrefix("SBER:CASH:").removePrefix("CASH:")
