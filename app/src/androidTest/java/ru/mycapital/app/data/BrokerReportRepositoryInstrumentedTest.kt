@@ -56,19 +56,80 @@ class BrokerReportRepositoryInstrumentedTest {
         val first = repository.importBrokerReportHistory(report)
         val second = repository.importBrokerReportHistory(report)
 
-        assertEquals(2, first.imported)
+        assertEquals(3, first.imported)
         assertEquals(0, first.duplicates)
-        assertEquals(1, first.unsettledSkipped)
+        assertEquals(0, first.unsettledSkipped)
         assertEquals(0, second.imported)
-        assertEquals(2, second.duplicates)
-        assertEquals(1, second.unsettledSkipped)
+        assertEquals(3, second.duplicates)
+        assertEquals(0, second.unsettledSkipped)
         assertEquals(100.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(3.0, dao.getAsset(assetId)!!.quantity, 0.000001)
-        assertEquals(2, dao.observeOperations().first().size)
+        assertEquals(3, dao.observeOperations().first().size)
         assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:CASH:1"))
         assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:TRADE:101"))
+        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:TRADE:102"))
     }
 
+
+    @Test
+    fun unsettledBuyUsesPlannedSnapshotAndIsNotCountedAgainAfterSettlement() = runBlocking {
+        val pendingTrade = trade("18024861254", "ЗО").copy(
+            tradeDate = LocalDate.parse("2026-11-03"),
+            settlementDate = LocalDate.parse("2026-11-05"),
+            name = "Сбербанк России",
+            ticker = "SBER",
+            quantity = 1.0,
+            price = 291.23,
+            grossAmount = 291.23,
+            brokerFee = 0.17,
+            exchangeFee = 0.09
+        )
+        val pendingReport = report(
+            accountId = "403RY0J",
+            closingCash = 561.91,
+            plannedClosingCash = 270.42,
+            assets = listOf(
+                BrokerReportAsset(
+                    name = "Сбербанк России",
+                    ticker = "SBER",
+                    isin = "RU0009029540",
+                    openingQuantity = 7.0,
+                    closingQuantity = 7.0,
+                    closingPrice = 292.17,
+                    closingValue = 2045.19,
+                    assetType = "Акция",
+                    plannedClosingQuantity = 8.0
+                )
+            ),
+            trades = listOf(pendingTrade)
+        )
+
+        val first = repository.importAndReconcileBrokerReport(pendingReport)
+        assertEquals(1, first.history.imported)
+        assertEquals(0, first.history.unsettledSkipped)
+        assertEquals(8.0, dao.getAssetByTicker("SBER")!!.quantity, 0.000001)
+        assertEquals(270.42, dao.getCashBalance()!!, 0.000001)
+        val importedTrade = dao.getOperationBySourceKey("SBER:403RY0J:TRADE:18024861254")
+        assertNotNull(importedTrade)
+        assertEquals(291.49, importedTrade!!.quantity * importedTrade.price + importedTrade.commission, 0.001)
+
+        // A later statement shows the same purchase as settled and the planned
+        // balances now equal the settled balances. Re-import must not add it twice.
+        val settledReport = pendingReport.copy(
+            closingCash = 270.42,
+            plannedClosingCash = 270.42,
+            assets = pendingReport.assets.map {
+                it.copy(closingQuantity = 8.0, plannedClosingQuantity = 8.0)
+            },
+            trades = listOf(pendingTrade.copy(status = "И"))
+        )
+        val second = repository.importAndReconcileBrokerReport(settledReport)
+        assertEquals(0, second.history.imported)
+        assertEquals(1, second.history.duplicates)
+        assertEquals(8.0, dao.getAssetByTicker("SBER")!!.quantity, 0.000001)
+        assertEquals(270.42, dao.getCashBalance()!!, 0.000001)
+        assertEquals(1, dao.observeOperations().first().count { it.sourceKey == "SBER:403RY0J:TRADE:18024861254" })
+    }
 
     @Test
     fun payoutImportsUseCreditedNetAmountsAndIgnoreInternalTransfers() = runBlocking {
@@ -256,6 +317,7 @@ class BrokerReportRepositoryInstrumentedTest {
     private fun report(
         accountId: String = "403RY0J",
         closingCash: Double = 100.0,
+        plannedClosingCash: Double? = null,
         assets: List<BrokerReportAsset> = emptyList(),
         cashFlows: List<BrokerReportCashFlow> = emptyList(),
         trades: List<BrokerReportTrade> = emptyList()
@@ -269,7 +331,8 @@ class BrokerReportRepositoryInstrumentedTest {
         closingCash = closingCash,
         assets = assets,
         cashFlows = cashFlows,
-        trades = trades
+        trades = trades,
+        plannedClosingCash = plannedClosingCash
     )
 
     private fun trade(number: String, status: String) = BrokerReportTrade(
