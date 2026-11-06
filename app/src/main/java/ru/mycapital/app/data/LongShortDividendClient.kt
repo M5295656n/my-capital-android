@@ -84,27 +84,12 @@ private fun parseDividendDate(value: String): LocalDate? {
 }
 
 private fun parseCsvRows(rawText: String): List<List<String>> {
-    // The publisher may serve CSV with comma, semicolon (locale export), or tab delimiters.
-    // Detect the delimiter from the header rather than silently parsing every line as one cell.
-    // Some CSV exporters prepend an Excel delimiter directive (sep=, / sep=; / sep=\\t).
-    // Strip its entire line so it cannot be mistaken for the CSV header.
+    // Strip an optional Excel delimiter directive before parsing the actual header.
     val withoutBom = rawText.removePrefix("\uFEFF")
     val firstLine = withoutBom.lineSequence().firstOrNull()?.trim()
     val text = if (firstLine?.startsWith("sep=") == true) {
-        val newline = withoutBom.indexOf('\\n')
-        if (newline < 0) "" else withoutBom.substring(newline + 1).trimStart('\\r', '\\n')
-    } else {
-        withoutBom
-    }
-    // The publisher may serve CSV with comma, semicolon (locale export), or tab delimiters.
-    // Detect the delimiter from the header rather than silently parsing every line as one cell.
-    // Some CSV exporters prepend an Excel delimiter directive (sep=, / sep=; / sep=\\t).
-    // Remove the whole directive line; removing only its characters leaves an empty first row,
-    // which makes the header parser miss every required column.
-    val withoutBom = rawText.removePrefix("\uFEFF")
-    val firstLine = withoutBom.lineSequence().firstOrNull()?.trim()
-    val text = if (firstLine in setOf("sep=,", "sep=;", "sep=\\t", "sep=\\\\t")) {
-        withoutBom.substringAfterFirstLine()
+        val newline = withoutBom.indexOf('\n')
+        if (newline < 0) "" else withoutBom.substring(newline + 1).trimStart('\r', '\n')
     } else {
         withoutBom
     }
