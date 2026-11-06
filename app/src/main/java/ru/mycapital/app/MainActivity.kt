@@ -1075,6 +1075,28 @@ private fun AssetDetailScreen(
         } finally { loading = false }
     }
     val price = candles.lastOrNull()?.close ?: asset.currentPrice
+    var dividendHistoryMetrics by remember(asset.ticker) { mutableStateOf<ru.mycapital.app.data.DividendHistoryMetrics?>(null) }
+    var dividendHistoryLoading by remember(asset.ticker) { mutableStateOf(false) }
+    var dividendHistoryError by remember(asset.ticker) { mutableStateOf<String?>(null) }
+    LaunchedEffect(asset.ticker, price, bondAssetType(asset.assetType)) {
+        if (!bondAssetType(asset.assetType)) {
+            dividendHistoryLoading = true
+            dividendHistoryError = null
+            try {
+                val history = withContext(Dispatchers.IO) {
+                    ru.mycapital.app.data.MoexDividendHistoryClient().getHistory(asset.ticker)
+                }
+                dividendHistoryMetrics = ru.mycapital.app.data.calculateDividendHistoryMetrics(
+                    history, price, java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                )
+            } catch (e: Exception) {
+                dividendHistoryMetrics = null
+                dividendHistoryError = e.message ?: "Не удалось загрузить историю дивидендов"
+            } finally {
+                dividendHistoryLoading = false
+            }
+        }
+    }
     val previous = candles.dropLast(1).lastOrNull()?.close
     val change = previous?.let { price - it }
     val changePct = previous?.takeIf { it != 0.0 }?.let { (price - it) / it * 100.0 }
@@ -1279,8 +1301,30 @@ private fun AssetDetailScreen(
                     }
                 }
             }
-            AssetDetailMetric(if (bond) "Купонная доходность" else "Дивидендная доходность", "Нет проверяемых данных")
-            if (!bond) AssetDetailMetric("Рост дивидендов за 5 лет", "Нет проверяемых данных")
+            if (bond) {
+                AssetDetailMetric("Купонная доходность", "Нет проверяемых данных")
+            } else {
+                val metrics = dividendHistoryMetrics
+                AssetDetailMetric(
+                    "Дивидендная доходность за 12 месяцев",
+                    when {
+                        dividendHistoryLoading -> "Загрузка…"
+                        metrics?.trailingTwelveMonthYieldPercent != null -> String.format(java.util.Locale("ru", "RU"), "%.2f%%", metrics.trailingTwelveMonthYieldPercent)
+                        else -> "Нет проверяемых данных"
+                    }
+                )
+                AssetDetailMetric(
+                    "Рост дивидендов за 5 лет",
+                    when {
+                        dividendHistoryLoading -> "Загрузка…"
+                        metrics?.fiveYearGrowthPercent != null -> String.format(java.util.Locale("ru", "RU"), "%.2f%% в год", metrics.fiveYearGrowthPercent)
+                        else -> "Нет проверяемых данных"
+                    }
+                )
+                if (dividendHistoryError != null) {
+                    Text("История дивидендов: ${dividendHistoryError}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         AssetDetailSection("Операции") {
             if (actual.isEmpty() && trades.isEmpty()) Text("История операций отсутствует", color = MaterialTheme.colorScheme.onSurfaceVariant)
