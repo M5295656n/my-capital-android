@@ -14,7 +14,7 @@ class BondMarketInfoClientTest {
             """{
               "securities": {
                 "columns": ["SECID", "MATDATE", "COUPONVALUE", "COUPONFREQUENCY", "COUPONPERIOD"],
-                "data": [["SU26212RMFS9", "2033-01-18", 35.15, 2, 182]]
+                "data": [["SU26212RMFS9", "2028-01-19", 35.15, 2, 182]]
               },
               "marketdata": {
                 "columns": ["SECID", "BOARDID", "ACCRUEDINT"],
@@ -25,7 +25,7 @@ class BondMarketInfoClientTest {
 
         val result = parseBondMarketInfo(json, currentDirtyPrice = 1035.0)
 
-        assertEquals(LocalDate.of(2033, 1, 18), result.maturityDate)
+        assertEquals(LocalDate.of(2028, 1, 19), result.maturityDate)
         assertNotNull(result.couponYieldPercent)
         assertEquals(35.15 * 2.0 / 1025.0 * 100.0, result.couponYieldPercent!!, 0.000001)
     }
