@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.mycapital.app.data.PortfolioSnapshotEntity
+import ru.mycapital.app.data.OperationEntity
+import ru.mycapital.app.data.PayoutEntity
 
 class PortfolioHistoryCalculationsTest {
     private fun snapshot(date: String, total: Double, flow: Double = 0.0) =
@@ -62,6 +64,30 @@ class PortfolioHistoryCalculationsTest {
 
         assertEquals("2026-11-01", points.first().dateKey)
         assertTrue(points.last().totalValue > points.first().totalValue)
+    }
+
+    @Test
+    fun assetXirrFlowsIncludeTradeFeesNetPayoutsExpensesAndRedemptionOnce() {
+        val operations = listOf(
+            OperationEntity(assetId = 1, operationType = "Покупка", ticker = "BOND", quantity = 1.0, price = 100.0, commission = 1.0, operationDate = 1L),
+            OperationEntity(assetId = 1, operationType = "Продажа", ticker = "BOND", quantity = 0.5, price = 120.0, commission = 1.0, operationDate = 2L),
+            OperationEntity(assetId = 1, operationType = "Налог", ticker = "BOND", quantity = 1.0, price = 2.0, operationDate = 3L),
+            // Imported payout operation rows are intentionally ignored here;
+            // their matching PayoutEntity records below are the source of truth.
+            OperationEntity(assetId = 1, operationType = "Погашение", ticker = "BOND", quantity = 1.0, price = 100.0, operationDate = 4L)
+        )
+        val payouts = listOf(
+            PayoutEntity(assetId = 1, ticker = "BOND", payoutType = "Купон", amountPerUnit = 12.0, quantity = 1.0, totalAmount = 12.0, taxAmount = 2.0, actualDate = 3L, status = "RECEIVED"),
+            PayoutEntity(assetId = 1, ticker = "BOND", payoutType = "Купон", amountPerUnit = 10.0, quantity = 1.0, totalAmount = 10.0, expectedDate = 5L, status = "EXPECTED"),
+            PayoutEntity(assetId = 1, ticker = "BOND", payoutType = "Погашение", amountPerUnit = 0.0, quantity = 0.0, totalAmount = 0.0, reportedNetAmount = 100.0, actualDate = 4L, status = "RECEIVED")
+        )
+
+        val flows = buildAssetReturnCashFlows(operations, payouts, currentValue = 50.0, valuationDate = 6L)
+
+        assertEquals(
+            listOf(1L to -101.0, 2L to 59.0, 3L to -2.0, 3L to 10.0, 4L to 100.0, 6L to 50.0),
+            flows
+        )
     }
 
     @Test
