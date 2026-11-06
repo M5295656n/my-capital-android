@@ -24,7 +24,7 @@ data class BrokerReportAsset(
     val effectiveQuantity: Double get() = plannedClosingQuantity ?: closingQuantity
 }
 
-enum class BrokerCashFlowKind { DEPOSIT, WITHDRAWAL, DIVIDEND, COUPON, REDEMPTION, INTERNAL_TRANSFER, IGNORE }
+enum class BrokerCashFlowKind { DEPOSIT, WITHDRAWAL, DIVIDEND, COUPON, REDEMPTION, AMORTIZATION, INTERNAL_TRANSFER, IGNORE }
 
 data class BrokerReportCashFlow(
     val date: LocalDate,
@@ -45,8 +45,8 @@ internal fun classifyBrokerCashFlow(description: String): BrokerCashFlowKind {
         value.startsWith("вывод средств") || value.startsWith("вывод д/с") -> BrokerCashFlowKind.WITHDRAWAL
         value.startsWith("выплата дивидендов") -> BrokerCashFlowKind.DIVIDEND
         value.startsWith("выплата купонов") -> BrokerCashFlowKind.COUPON
-        value.startsWith("погашение") ||
-            value.startsWith("выплата номинала") -> BrokerCashFlowKind.REDEMPTION
+        value.contains("частич") || value.contains("амортизац") -> BrokerCashFlowKind.AMORTIZATION
+        value.startsWith("погашение") || value.startsWith("выплата номинала") -> BrokerCashFlowKind.REDEMPTION
         value.startsWith("перевод д/с") || value.startsWith("перевод денежных средств") -> BrokerCashFlowKind.INTERNAL_TRANSFER
         else -> BrokerCashFlowKind.IGNORE
     }
