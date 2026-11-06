@@ -84,10 +84,10 @@ internal class MoexDividendHistoryClient {
             annualCoverageVerified = runCatching {
                 val search = requestJson("https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off")
                 val rows = table(search, "securities")
-                rows.forEach { row ->
-                    val candidateIsin = row.optString("isin")
+                val matchingRows = rows.filter { it.optString("isin").equals(isin, true) }
+                matchingRows.forEach { row ->
                     val candidate = row.optString("secid")
-                    if (candidateIsin.equals(isin, true) && candidate.isNotBlank()) secids += candidate
+                    if (candidate.isNotBlank()) secids += candidate
                 }
                 val cursor = search.optJSONObject("securities.cursor")
                 val cursorColumns = cursor?.optJSONArray("columns")
@@ -95,7 +95,7 @@ internal class MoexDividendHistoryClient {
                 val totalIndex = (0 until (cursorColumns?.length() ?: 0))
                     .firstOrNull { cursorColumns?.optString(it)?.equals("TOTAL", true) == true }
                 val total = totalIndex?.let { cursorData?.optInt(it) }
-                total == null || rows.size >= total
+                matchingRows.isNotEmpty() && (total == null || rows.size >= total)
             }.getOrDefault(false)
         }
         val result = mutableListOf<HistoricalDividend>()
