@@ -222,6 +222,7 @@ class SberBrokerReportParserTest {
         assertEquals(BrokerCashFlowKind.WITHDRAWAL, classifyBrokerCashFlow("Вывод средств"))
         assertEquals(BrokerCashFlowKind.DIVIDEND, classifyBrokerCashFlow("Выплата дивидендов Татнефть. Налог удержан."))
         assertEquals(BrokerCashFlowKind.COUPON, classifyBrokerCashFlow("Выплата купонов ОФЗ 26228"))
+        assertEquals(BrokerCashFlowKind.REDEMPTION, classifyBrokerCashFlow("Погашение номинала ОФЗ 26228"))
         assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, classifyBrokerCashFlow("Перевод д/с с договора A на договор B"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Комиссия Биржи от 01.10.2026"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Сделка от 01.10.2026"))
