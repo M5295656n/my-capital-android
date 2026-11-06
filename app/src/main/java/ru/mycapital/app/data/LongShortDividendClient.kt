@@ -144,7 +144,7 @@ internal class LongShortDividendClient {
         val request = Request.Builder()
             .url("https://long-short.ru/data/dividends-ru.csv")
             .header("Accept", "text/csv,*/*")
-            .header("User-Agent", "MyCapital-Android/0.3.13")
+            .header("User-Agent", "MyCapital-Android/0.3.14")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Long/Short вернул HTTP ${response.code}")
