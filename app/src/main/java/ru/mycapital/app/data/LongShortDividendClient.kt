@@ -24,8 +24,26 @@ internal fun parseLongShortDividendCsv(
 ): List<DividendCalendarEvent> {
     val rows = parseCsvRows(csv)
     if (rows.isEmpty()) throw IOException("Пустая выгрузка дивидендов Long/Short")
-    val headers = rows.first().mapIndexed { index, value ->
-        value.trim().removePrefix("\uFEFF").removeSurrounding("\"").lowercase(Locale.ROOT) to index
+
+    // Some CDN/proxy responses prepend a notice or metadata row. Find the real
+    // CSV header by its required field instead of assuming it is always row 0.
+    fun normalizeHeader(value: String): String = value
+        .trim()
+        .removePrefix("\uFEFF")
+        .removeSurrounding("\"")
+        .trim()
+        .lowercase(Locale.ROOT)
+    val headerRowIndex = rows.indexOfFirst { row ->
+        row.any { normalizeHeader(it) == "secid" } &&
+            row.any { normalizeHeader(it) == "value" } &&
+            row.any { normalizeHeader(it) == "status" }
+    }
+    if (headerRowIndex < 0) {
+        val preview = csv.replace(Regex("\\s+"), " ").take(220)
+        throw IOException("Не найден заголовок CSV (secid/value/status). Ответ сервера: $preview")
+    }
+    val headers = rows[headerRowIndex].mapIndexed { index, value ->
+        normalizeHeader(value) to index
     }.toMap()
     fun index(name: String): Int = headers[name] ?: throw IOException("В CSV дивидендов отсутствует столбец $name")
     val tickerIndex = index("secid")
@@ -35,7 +53,7 @@ internal fun parseLongShortDividendCsv(
     val recordIndex = index("record_date")
     val paymentIndex = index("payment_date")
 
-    val parsed = rows.drop(1).mapNotNull { row ->
+    val parsed = rows.drop(headerRowIndex + 1).mapNotNull { row ->
         fun cell(i: Int): String = row.getOrNull(i)?.trim().orEmpty()
         val ticker = cell(tickerIndex).uppercase(Locale.ROOT)
         if (ticker.isBlank()) return@mapNotNull null
