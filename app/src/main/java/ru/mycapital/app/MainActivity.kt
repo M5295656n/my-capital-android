@@ -1149,7 +1149,7 @@ private fun AssetDetailScreen(
             bondInfoLoading = true
             bondMarketInfo = withContext(Dispatchers.IO) {
                 runCatching {
-                    ru.mycapital.app.data.BondMarketInfoClient().getInfo(asset.ticker, asset.currentPrice)
+                    ru.mycapital.app.data.BondMarketInfoClient().getInfo(asset.ticker)
                 }.getOrNull()
             }
             bondInfoLoading = false
