@@ -1087,7 +1087,10 @@ private fun AssetDetailScreen(
                     ru.mycapital.app.data.MoexDividendHistoryClient().getHistory(asset.ticker)
                 }
                 dividendHistoryMetrics = ru.mycapital.app.data.calculateDividendHistoryMetrics(
-                    history, price, java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                    history.dividends,
+                    price,
+                    java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
+                    history.annualCoverageVerified
                 )
             } catch (e: Exception) {
                 dividendHistoryMetrics = null
