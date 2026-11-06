@@ -26,6 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
@@ -1122,18 +1125,92 @@ private fun AssetDetailScreen(
                 }
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (candles.size > 1) {
-                    val points = candles.map { it.close }
-                    val min = points.minOrNull() ?: 0.0
-                    val span = ((points.maxOrNull() ?: min) - min).takeIf { it > 0.0 } ?: 1.0
+                    val chartValues = candles.map { it.close }
+                    val rawMin = chartValues.minOrNull() ?: 0.0
+                    val rawMax = chartValues.maxOrNull() ?: rawMin
+                    val rawSpan = (rawMax - rawMin).takeIf { it > 0.0 } ?: maxOf(kotlin.math.abs(rawMax) * 0.02, 1.0)
+                    val chartMin = rawMin - rawSpan * 0.08
+                    val chartMax = rawMax + rawSpan * 0.08
+                    val chartSpan = (chartMax - chartMin).takeIf { it > 0.0 } ?: 1.0
                     val chartColor = MaterialTheme.colorScheme.primary
-                    Canvas(Modifier.fillMaxWidth().height(145.dp)) {
-                        val path = Path()
-                        points.forEachIndexed { i, v ->
-                            val x = size.width * i / (points.size - 1).toFloat()
-                            val y = size.height - ((v - min) / span * (size.height - 8.dp.toPx())).toFloat() - 4.dp.toPx()
-                            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+                    val markerOperations = trades.mapNotNull { operation ->
+                        val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
+                            .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                        val index = candles.indexOfFirst { !it.date.isBefore(operationDate) }
+                        if (index < 0 || operationDate.isBefore(candles.first().date)) null
+                        else Triple(index, operation.operationType, operation.id)
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            Modifier.width(54.dp).height(154.dp).padding(end = 6.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            Text(money(chartMax), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            Text(money((chartMax + chartMin) / 2.0), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            Text(money(chartMin), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
-                        drawPath(path, chartColor, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                        Canvas(Modifier.weight(1f).height(154.dp)) {
+                            val topInset = 7.dp.toPx()
+                            val plotHeight = size.height - topInset - 7.dp.toPx()
+                            fun pointY(value: Double): Float = topInset + ((chartMax - value) / chartSpan).toFloat() * plotHeight
+                            val coordinates = chartValues.mapIndexed { index, value ->
+                                Offset(size.width * index / (chartValues.size - 1).toFloat(), pointY(value))
+                            }
+                            for (gridIndex in 0..2) {
+                                val y = topInset + plotHeight * gridIndex / 2f
+                                drawLine(axisColor, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                            }
+                            val linePath = Path().apply {
+                                moveTo(coordinates.first().x, coordinates.first().y)
+                                for (index in 0 until coordinates.lastIndex) {
+                                    val start = coordinates[index]
+                                    val end = coordinates[index + 1]
+                                    val dx = (end.x - start.x) / 3f
+                                    cubicTo(start.x + dx, start.y, end.x - dx, end.y, end.x, end.y)
+                                }
+                            }
+                            val areaPath = Path().apply {
+                                addPath(linePath)
+                                lineTo(coordinates.last().x, size.height)
+                                lineTo(coordinates.first().x, size.height)
+                                close()
+                            }
+                            drawPath(areaPath, brush = Brush.verticalGradient(
+                                colors = listOf(chartColor.copy(alpha = 0.30f), chartColor.copy(alpha = 0.015f)),
+                                startY = 0f, endY = size.height
+                            ))
+                            drawLine(
+                                chartColor.copy(alpha = 0.72f),
+                                Offset(0f, coordinates.last().y), Offset(size.width, coordinates.last().y),
+                                strokeWidth = 1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+                            )
+                            drawPath(linePath, chartColor, style = Stroke(2.8.dp.toPx(), cap = StrokeCap.Round))
+                            markerOperations.forEach { (index, type, _) ->
+                                val markerColor = if (type == "Покупка") Color(0xFF35C98A) else Color(0xFFFF6B6B)
+                                drawCircle(markerColor.copy(alpha = 0.22f), radius = 7.dp.toPx(), center = coordinates[index])
+                                drawCircle(markerColor, radius = 3.8.dp.toPx(), center = coordinates[index])
+                            }
+                            drawCircle(MaterialTheme.colorScheme.surface, radius = 5.dp.toPx(), center = coordinates.last())
+                            drawCircle(chartColor, radius = 3.2.dp.toPx(), center = coordinates.last())
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(start = 60.dp, top = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        val dateFormatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yy", java.util.Locale("ru", "RU"))
+                        Text(candles.first().date.format(dateFormatter), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(candles.last().date.format(dateFormatter), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(Modifier.fillMaxWidth().padding(start = 60.dp, top = 7.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(7.dp).background(Color(0xFF35C98A), CircleShape))
+                            Text("Покупка", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(7.dp).background(Color(0xFFFF6B6B), CircleShape))
+                            Text("Продажа", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     Text("MOEX · дневные закрытия · котировки могут быть задержаны", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else Text(error ?: "История котировок загружается", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
