@@ -54,23 +54,12 @@ internal fun parseBondMaturityEvent(
     body: String,
     today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))
 ): ImportedPayoutEvent? {
-    val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
-    val table = root.optJSONObject("description") ?: return null
-    val columns = table.optJSONArray("columns") ?: return null
-    val rows = table.optJSONArray("data") ?: return null
-    val indexes = (0 until columns.length()).associate {
-        columns.getString(it).lowercase(Locale.ROOT) to it
-    }
-    val nameIndex = indexes["name"] ?: return null
-    val valueIndex = indexes["value"] ?: return null
-    val values = buildMap {
-        for (i in 0 until rows.length()) {
-            val row = rows.optJSONArray(i) ?: continue
-            if (nameIndex < row.length() && valueIndex < row.length()) {
-                put(row.optString(nameIndex).uppercase(Locale.ROOT), row.optString(valueIndex))
-            }
+    // Keep this parser JVM-testable: org.json is an Android platform stub in local unit tests.
+    val values = Regex("""\[\s*"([^"]+)"\s*,\s*(?:"([^"]*)"|null)\s*\]""")
+        .findAll(body)
+        .associate { match ->
+            match.groupValues[1].uppercase(Locale.ROOT) to match.groupValues[2]
         }
-    }
     val maturityDate = parseMoexEventDate(values["MATDATE"].orEmpty()) ?: return null
     if (!isEventDateUpcoming(maturityDate, today)) return null
     val faceValue = values["FACEVALUE"]?.replace(',', '.')?.toDoubleOrNull()
