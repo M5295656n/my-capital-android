@@ -1945,8 +1945,11 @@ private fun PayoutsScreen(
     // that happen to contain payouts. Status filters affect the feed; the chart keeps
     // its announced-vs-forecast comparison visible.
     val chartMonths = remember(selectedPeriod, today) {
-        val first = if (selectedPeriod == "forward") java.time.YearMonth.from(today)
-            else java.time.YearMonth.of(selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear, 1)
+        val first = java.time.YearMonth.of(
+            if (selectedPeriod == "forward") currentYear
+            else selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear,
+            1
+        )
         (0 until 12).map { first.plusMonths(it.toLong()) }
     }
     val chartPayouts = visiblePayouts.filter { payout ->
@@ -2019,17 +2022,11 @@ private fun PayoutsScreen(
                 }
             }
             item {
-                if (monthlyTotals.isNotEmpty()) {
-                    PayoutCalendarChart(
-                        months = chartMonths,
-                        announced = announcedByMonth,
-                        forecast = forecastByMonth
-                    )
-                } else {
-                    Text("За выбранный период выплат с известными датами пока нет.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 20.dp))
-                }
+                PayoutCalendarChart(
+                    months = chartMonths,
+                    announced = announcedByMonth,
+                    forecast = forecastByMonth
+                )
             }
             item {
                 androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2155,7 +2152,7 @@ private fun PayoutCalendarChart(
     val maxValue = months.maxOfOrNull { (announced[it] ?: 0.0) + (forecast[it] ?: 0.0) }
         ?.coerceAtLeast(1.0) ?: 1.0
     val announcedColor = Color(0xFF48A9E8)
-    val forecastColor = Color(0xFF087BAA)
+    val forecastColor = Color(0xFF087BAA).copy(alpha = 0.32f)
     val locale = java.util.Locale("ru", "RU")
     fun compactAmount(value: Double): String = when {
         value >= 1_000_000.0 -> String.format(locale, "%.1fм", value / 1_000_000.0)
@@ -2200,7 +2197,7 @@ private fun PayoutCalendarChart(
                         if (forecastHeight > 0.5f) {
                             drawRoundRect(
                                 forecastColor,
-                                Offset(left, bottom - totalHeight),
+                                Offset(left, bottom - announcedHeight - forecastHeight),
                                 androidx.compose.ui.geometry.Size(barWidth, forecastHeight),
                                 androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
                             )
