@@ -119,7 +119,6 @@ private fun MyCapitalApp() {
     var selectedOperationAccount by remember { mutableStateOf("ALL") }
     var selectedPayoutAccount by remember { mutableStateOf("ALL") }
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
-    var showAddPayout by remember { mutableStateOf(false) }
     var payoutToConfirm by remember { mutableStateOf<PayoutEntity?>(null) }
     var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
@@ -272,9 +271,9 @@ private fun MyCapitalApp() {
     )) {
         Scaffold(
             floatingActionButton = {
-                if (selectedAssetDetail == null && (selected == Screen.Assets || selected == Screen.Operations || selected == Screen.Payouts)) {
-                    FloatingActionButton(onClick = { when (selected) { Screen.Assets -> showAddAsset = true; Screen.Operations -> showAddOperation = true; Screen.Payouts -> showAddPayout = true; else -> Unit } }) {
-                        Icon(Icons.Default.Add, contentDescription = "Добавить актив")
+                if (selectedAssetDetail == null && (selected == Screen.Assets || selected == Screen.Operations)) {
+                    FloatingActionButton(onClick = { when (selected) { Screen.Assets -> showAddAsset = true; Screen.Operations -> showAddOperation = true; else -> Unit } }) {
+                        Icon(Icons.Default.Add, contentDescription = "Добавить")
                     }
                 }
             },
@@ -383,22 +382,6 @@ private fun MyCapitalApp() {
             title = { Text("Не удалось прочитать отчёт") },
             text = { Text(importError.orEmpty()) },
             confirmButton = { TextButton(onClick = { importError = null }) { Text("Понятно") } }
-        )
-    }
-    if (showAddPayout) {
-        AddPayoutDialog(
-            assets = assets,
-            onDismiss = { showAddPayout = false },
-            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received, expectedDate ->
-                scope.launch {
-                    try {
-                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received, expectedDate)
-                        showAddPayout = false
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "Не удалось сохранить выплату"
-                    }
-                }
-            }
         )
     }
     if (payoutToConfirm != null) {
@@ -1457,12 +1440,16 @@ private fun AssetTypeIcon(
     val context = LocalContext.current
 
     if (isBond) {
+        // OFZ emblem follows the supplied reference: white double-headed eagle
+        // on a dark blue circular medallion with a subtle outer ring.
         Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = androidx.compose.ui.graphics.Color.Black,
-            modifier = Modifier.size(46.dp)
+            shape = CircleShape,
+            color = Color(0xFF29354F),
+            modifier = Modifier
+                .size(46.dp)
+                .border(1.dp, Color(0xFF53617D), CircleShape)
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(6.dp)) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(4.dp)) {
                 DoubleHeadedEagleIcon()
             }
         }
@@ -2234,68 +2221,6 @@ private fun ReceivePayoutDialog(
         },
         confirmButton = {
             TextButton(enabled = valid, onClick = { onConfirm(tax) }) { Text("Подтвердить") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
-    )
-}
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun AddPayoutDialog(
-    assets: List<AssetEntity>,
-    onDismiss: () -> Unit,
-    onSave: (AssetEntity?, String, Double, Double, Double, Boolean, Long?) -> Unit
-) {
-    var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
-    var payoutType by remember { mutableStateOf("Дивиденд") }
-    var amountText by remember { mutableStateOf("") }
-    var quantityText by remember { mutableStateOf("1") }
-    var taxText by remember { mutableStateOf("0") }
-    var expectedDateText by remember { mutableStateOf("") }
-    var received by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(false) }
-    val asset = assets.firstOrNull { it.id == assetId }
-    val amount = parseDecimalInput(amountText) ?: 0.0
-    val quantity = parseDecimalInput(quantityText) ?: 0.0
-    val tax = parseDecimalInput(taxText) ?: -1.0
-    val gross = amount * quantity
-    val parsedExpectedDate = runCatching { java.time.LocalDate.parse(expectedDateText, java.time.format.DateTimeFormatter.ofPattern("dd.MM.uuuu")) }.getOrNull()
-    val expectedDate = parsedExpectedDate?.atStartOfDay(java.time.ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
-    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross && (received || expectedDate != null)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Добавить выплату") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(value = asset?.ticker ?: "Нет активов", onValueChange = {}, readOnly = true,
-                        label = { Text("Бумага") }, modifier = Modifier.menuAnchor().fillMaxWidth())
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        assets.forEach { item ->
-                            DropdownMenuItem(text = { Text(item.ticker) }, onClick = { assetId = item.id; expanded = false })
-                        }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = payoutType == "Дивиденд", onClick = { payoutType = "Дивиденд" }, label = { Text("Дивиденд") })
-                    FilterChip(selected = payoutType == "Купон", onClick = { payoutType = "Купон" }, label = { Text("Купон") })
-                }
-                OutlinedTextField(amountText, { amountText = it }, label = { Text("Сумма на акцию / облигацию, ₽") }, singleLine = true)
-                OutlinedTextField(quantityText, { quantityText = it }, label = { Text("Количество бумаг") }, singleLine = true)
-                OutlinedTextField(taxText, { taxText = it }, label = { Text("Налог, ₽") }, singleLine = true)
-                if (!received) {
-                    OutlinedTextField(expectedDateText, { expectedDateText = it }, label = { Text("Дата выплаты, ДД.ММ.ГГГГ") }, placeholder = { Text("20.01.2027") }, singleLine = true)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = received, onCheckedChange = { received = it })
-                    Text("Уже фактически получено")
-                }
-                Text("Начислено: ${money(gross)} ₽ · К получению: ${money((gross - tax).coerceAtLeast(0.0))} ₽",
-                    style = MaterialTheme.typography.bodySmall)
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received, expectedDate) }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
