@@ -350,27 +350,10 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
         }
     } else if (isGold) {
         Box(
-            modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF332713)),
+            modifier.clip(CircleShape).background(Color(0xFFFFD76A)),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(Modifier.fillMaxWidth(.82f).fillMaxHeight(.82f)) {
-                val w = size.width
-                val h = size.height
-                fun ingot(left: Float, top: Float, width: Float, height: Float, shade: Color) {
-                    val path = Path().apply {
-                        moveTo(left + width * .18f, top)
-                        lineTo(left + width * .82f, top)
-                        lineTo(left + width, top + height)
-                        lineTo(left, top + height)
-                        close()
-                    }
-                    drawPath(path, shade)
-                    drawLine(Color(0xFFFFE9A6), Offset(left + width * .2f, top + height * .28f), Offset(left + width * .8f, top + height * .28f), strokeWidth = 1.2f)
-                }
-                ingot(w * .02f, h * .12f, w * .43f, h * .35f, Color(0xFFD99B24))
-                ingot(w * .55f, h * .12f, w * .43f, h * .35f, Color(0xFFF0C65A))
-                ingot(w * .27f, h * .52f, w * .46f, h * .38f, Color(0xFFFFD76A))
-            }
+            Text("Au", color = Color(0xFF5A3B00), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
         }
     } else if (isOfz) {
         Box(
