@@ -285,7 +285,7 @@ private fun sectorColor(index: Int): Color = when (index % 8) {
     4 -> Color(0xFFE27A64)
     5 -> Color(0xFF67A56B)
     6 -> Color(0xFF4FABC5)
-    else -> Color(0xFF8E98A8)
+    else -> Color(0xFFE052B5)
 }
 
 @Composable
