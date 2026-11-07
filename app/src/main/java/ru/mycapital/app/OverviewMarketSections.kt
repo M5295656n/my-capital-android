@@ -326,9 +326,53 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
 private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
     val key = ticker.trim().uppercase()
     val context = LocalContext.current
+    val isCurrency = key in setOf("USD000UTSTOM", "USD_RUB_CBR", "EUR_RUB__TOM", "EUR_RUB_CBR", "CNYRUB_TOM", "CNY_RUB_CBR")
+    val isGold = key == "GLDRUB_TOM"
+    val currencyMark = when (key) {
+        "USD000UTSTOM", "USD_RUB_CBR" -> "$"
+        "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
+        "CNYRUB_TOM", "CNY_RUB_CBR" -> "¥"
+        else -> ""
+    }
+    val currencyColor = when (key) {
+        "USD000UTSTOM", "USD_RUB_CBR" -> Color(0xFF238B57)
+        "EUR_RUB__TOM", "EUR_RUB_CBR" -> Color(0xFF2869C7)
+        else -> Color(0xFFC83D48)
+    }
     val isOfz = key.startsWith("SU")
-    val logoPath = if (isOfz) null else AssetLogoCatalog.assetPathFor(key)
-    if (isOfz) {
+    val logoPath = if (isOfz || isCurrency || isGold) null else AssetLogoCatalog.assetPathFor(key)
+    if (isCurrency) {
+        Box(
+            modifier.clip(CircleShape).background(currencyColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(currencyMark, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        }
+    } else if (isGold) {
+        Box(
+            modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF332713)),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.fillMaxWidth(.82f).fillMaxHeight(.82f)) {
+                val w = size.width
+                val h = size.height
+                fun ingot(left: Float, top: Float, width: Float, height: Float, shade: Color) {
+                    val path = Path().apply {
+                        moveTo(left + width * .18f, top)
+                        lineTo(left + width * .82f, top)
+                        lineTo(left + width, top + height)
+                        lineTo(left, top + height)
+                        close()
+                    }
+                    drawPath(path, shade)
+                    drawLine(Color(0xFFFFE9A6), Offset(left + width * .2f, top + height * .28f), Offset(left + width * .8f, top + height * .28f), strokeWidth = 1.2f)
+                }
+                ingot(w * .02f, h * .12f, w * .43f, h * .35f, Color(0xFFD99B24))
+                ingot(w * .55f, h * .12f, w * .43f, h * .35f, Color(0xFFF0C65A))
+                ingot(w * .27f, h * .52f, w * .46f, h * .38f, Color(0xFFFFD76A))
+            }
+        }
+    } else if (isOfz) {
         Box(
             modifier.clip(CircleShape).background(Color(0xFF29354F)),
             contentAlignment = Alignment.Center
@@ -358,15 +402,8 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
                 .padding(2.dp)
         )
     } else {
-        // Currency and commodity symbols are not company logos. Unknown issuers
-        // keep a neutral ticker fallback until their authentic offline logo is verified.
-        val mark = when (key) {
-            "USD000UTSTOM", "USD_RUB_CBR" -> "$"
-            "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
-            "CNYRUB_TOM", "CNY_RUB_CBR" -> "¥"
-            "GLDRUB_TOM" -> "Au"
-            else -> key.take(3)
-        }
+        // Unknown issuers keep a neutral ticker fallback until their authentic offline logo is verified.
+        val mark = key.take(3)
         Box(
             modifier.clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
