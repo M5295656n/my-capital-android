@@ -27,6 +27,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -299,33 +303,44 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
 
 @Composable
 private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
-    val key = ticker.uppercase()
-    val background = when (key) {
-        "USD000UTSTOM", "USD_RUB_CBR" -> Color(0xFF244A87)
-        "EUR_RUB__TOM", "EUR_RUB_CBR" -> Color(0xFF2454A6)
-        "CNYRUB_TOM", "CNY_RUB_CBR" -> Color(0xFFB52D35)
-        "GLDRUB_TOM" -> Color(0xFFB88B24)
-        "SBER", "SBERP" -> Color(0xFF20A66A)
-        "YDEX" -> Color(0xFFFF4438)
-        "ROSN" -> Color(0xFF252525)
-        "TATN" -> Color(0xFF168A59)
-        "T" -> Color(0xFFFFD400)
-        "LKOH" -> Color(0xFFB51F2A)
-        "GAZP" -> Color(0xFF168BCB)
-        "X5" -> Color(0xFF00A66C)
-        "MOEX" -> Color(0xFF2464A8)
-        else -> MaterialTheme.colorScheme.surface
-    }
-    val mark = when (key) {
-        "USD000UTSTOM", "USD_RUB_CBR" -> "$"
-        "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
-        "CNYRUB_TOM", "CNY_RUB_CBR" -> "¥"
-        "GLDRUB_TOM" -> "Au"
-        else -> key.take(3)
-    }
-    Box(modifier.clip(RoundedCornerShape(10.dp)).background(background), contentAlignment = Alignment.Center) {
-        Text(mark, color = if (key == "T") Color(0xFF171717) else Color.White,
-            fontWeight = FontWeight.Bold, fontSize = if (mark.length > 2) 10.sp else 15.sp)
+    val key = ticker.trim().uppercase()
+    val context = LocalContext.current
+    val logoPath = AssetLogoCatalog.assetPathFor(key)
+    if (logoPath != null) {
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data("file:///android_asset/$logoPath")
+                .crossfade(false)
+                .build(),
+            imageLoader = AssetLogoCatalog.imageLoader(context),
+            contentDescription = "Логотип $key",
+            contentScale = ContentScale.Fit,
+            modifier = modifier.clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(2.dp)
+        )
+    } else {
+        // Currency and commodity symbols are not company logos. Unknown issuers
+        // keep a neutral ticker fallback until their authentic offline logo is verified.
+        val mark = when (key) {
+            "USD000UTSTOM", "USD_RUB_CBR" -> "$"
+            "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
+            "CNYRUB_TOM", "CNY_RUB_CBR" -> "¥"
+            "GLDRUB_TOM" -> "Au"
+            else -> key.take(3)
+        }
+        Box(
+            modifier.clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                mark,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (mark.length > 2) 10.sp else 13.sp
+            )
+        }
     }
 }
 
