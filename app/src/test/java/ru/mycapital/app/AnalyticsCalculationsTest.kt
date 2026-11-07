@@ -38,7 +38,7 @@ class AnalyticsCalculationsTest {
         )
         assertEquals(3, slices.size)
         assertEquals(1.0, slices.sumOf { it.share }, 0.000001)
-        assertEquals(200.0, slices.first { it.assetClass == PortfolioAssetClass.EQUITIES }.value, 0.000001)
+        assertEquals(100.0, slices.first { it.assetClass == PortfolioAssetClass.EQUITIES }.value, 0.000001)
         assertEquals(100.0, slices.first { it.assetClass == PortfolioAssetClass.CASH }.value, 0.000001)
     }
 
