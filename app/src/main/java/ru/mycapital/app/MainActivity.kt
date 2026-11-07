@@ -375,7 +375,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
@@ -1982,6 +1982,7 @@ private fun PayoutsScreen(
     payouts: List<PayoutEntity>,
     assets: List<AssetEntity>,
     accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
+    accountAssets: List<ru.mycapital.app.data.BrokerAccountAssetEntity>,
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
     onConfirmReceipt: (PayoutEntity) -> Unit,
@@ -2010,15 +2011,29 @@ private fun PayoutsScreen(
     var statusFilter by remember { mutableStateOf("Все") }
     var typeFilter by remember { mutableStateOf("Все") }
     var expandedPayoutId by remember { mutableStateOf<Long?>(null) }
-    val visiblePayouts = remember(payouts, selectedAccountId) {
+    val visiblePayouts = remember(payouts, selectedAccountId, accountAssets) {
+        val selectedTickers = if (selectedAccountId == ALL_HISTORY_ACCOUNTS || selectedAccountId == UNASSIGNED_HISTORY_ACCOUNT) {
+            emptySet()
+        } else {
+            accountAssets.asSequence()
+                .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+                .map { it.ticker.uppercase() }
+                .toSet()
+        }
         payouts.filter { payout ->
             when (selectedAccountId) {
                 ALL_HISTORY_ACCOUNTS -> true
                 UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(payout.sourceKey) == null
-                // Market/provider forecasts and manually entered payouts are portfolio-level
-                // events without a broker account. Keep them visible alongside the selected
-                // account's imported cash receipts instead of making the screen look empty.
-                else -> historyAccountId(payout.sourceKey)?.let { it == selectedAccountId } ?: true
+                else -> {
+                    val payoutAccountId = historyAccountId(payout.sourceKey)
+                    if (payoutAccountId != null) {
+                        payoutAccountId == selectedAccountId
+                    } else {
+                        // Portfolio-level forecasts/manual events are shown only when their
+                        // ticker is actually held on the selected broker account.
+                        payout.ticker.uppercase() in selectedTickers
+                    }
+                }
             }
         }
     }
