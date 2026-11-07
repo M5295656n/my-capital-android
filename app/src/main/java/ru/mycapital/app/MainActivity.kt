@@ -1045,8 +1045,7 @@ private fun AssetDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    var logos by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var period by remember { mutableStateOf("1М") }
     var period by remember { mutableStateOf("1М") }
     var candles by remember { mutableStateOf<List<MoexDailyClose>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
