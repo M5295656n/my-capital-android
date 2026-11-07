@@ -1872,7 +1872,7 @@ private fun OperationsScreen(
         Text("Операции", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("История сделок и движения денег", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
-        AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
+        AccountHistoryFilter(accounts, selectedAccountId, onSelect = onAccountSelected)
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
