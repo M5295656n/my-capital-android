@@ -1046,11 +1046,11 @@ private fun AssetsScreen(
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedAccountId by remember { mutableStateOf("ALL") }
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
     var accountMenuExpanded by remember { mutableStateOf(false) }
     val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.uppercase() } }
     val displayedAssets = remember(assets, accountAssets, selectedAccountId) {
-        if (selectedAccountId == "ALL") {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
             assets
         } else {
             accountAssets.asSequence()
@@ -1070,37 +1070,8 @@ private fun AssetsScreen(
         Text("Портфель", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         if (accounts.isNotEmpty()) {
-            Box {
-                OutlinedButton(
-                    onClick = { accountMenuExpanded = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(selectedAccountName, modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Выбрать счёт")
-                }
-                DropdownMenu(
-                    expanded = accountMenuExpanded,
-                    onDismissRequest = { accountMenuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Все счета") },
-                        onClick = {
-                            selectedAccountId = "ALL"
-                            accountMenuExpanded = false
-                        }
-                    )
-                    accounts.forEach { account ->
-                        DropdownMenuItem(
-                            text = { Text(account.displayName) },
-                            onClick = {
-                                selectedAccountId = account.accountId
-                                accountMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            if (selectedAccountId != "ALL") {
+            AccountHistoryFilter(accounts, selectedAccountId) { selectedAccountId = it }
+            if (selectedAccountId != ALL_HISTORY_ACCOUNTS) {
                 Text(
                     "Показаны только позиции из последнего импортированного снимка выбранного договора.",
                     style = MaterialTheme.typography.bodySmall,
@@ -1111,7 +1082,7 @@ private fun AssetsScreen(
         if (displayedAssets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    if (selectedAccountId == "ALL") "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
+                    if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
                     else "В последнем импортированном отчёте этого счёта нет открытых позиций.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1121,7 +1092,7 @@ private fun AssetsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
             ) {
-                items(displayedAssets, key = { if (selectedAccountId == "ALL") "all:${it.id}" else "${selectedAccountId}:${it.ticker}" }) { asset ->
+                items(displayedAssets, key = { if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "all:${it.id}" else "${selectedAccountId}:${it.ticker}" }) { asset ->
                     Card(
                         Modifier.fillMaxWidth().clickable { onOpenAsset(asset) },
                         shape = RoundedCornerShape(16.dp)
