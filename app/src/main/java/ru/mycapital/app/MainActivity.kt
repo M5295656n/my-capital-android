@@ -1943,7 +1943,7 @@ private fun PayoutsScreen(
     // of the selected year, so the chart always starts with December.
     val chartMonths = remember(selectedPeriod, today) {
         val year = selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear
-        val first = java.time.YearMonth.of(year, 12).minusMonths(1)
+        val first = java.time.YearMonth.of(year, 12)
         (0 until 12).map { first.plusMonths(it.toLong()) }
     }
     val chartPayouts = visiblePayouts.filter { payout ->
@@ -2092,6 +2092,10 @@ private fun PayoutsScreen(
                                                 }
                                                 Column(horizontalAlignment = Alignment.End) {
                                                     Text("+${money(payoutAmount(payout))} ₽", color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
+                                                    val yield = if (asset != null && asset.currentPrice > 0.0 && payout.amountPerUnit > 0.0)
+                                                        payout.amountPerUnit / asset.currentPrice * 100.0 else null
+                                                    if (yield != null) Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", yield),
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                                                     Text(
                                                         when (payout.status) {
                                                             "RECEIVED" -> "Получено"
@@ -2102,10 +2106,6 @@ private fun PayoutsScreen(
                                                         color = Color(0xFF69AFFF),
                                                         style = MaterialTheme.typography.bodySmall
                                                     )
-                                                    val yield = if (asset != null && asset.currentPrice > 0.0 && payout.amountPerUnit > 0.0)
-                                                        payout.amountPerUnit / asset.currentPrice * 100.0 else null
-                                                    if (yield != null) Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", yield),
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                                                 }
                                             }
                                             Text(
