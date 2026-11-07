@@ -17,10 +17,14 @@ class AssetLogoCatalogTest {
         assertEquals("logos/gazprom.svg", AssetLogoCatalog.assetPathFor("GAZP"))
         assertEquals("logos/lukoil.svg", AssetLogoCatalog.assetPathFor("LKOH"))
         assertEquals("logos/rosneft.svg", AssetLogoCatalog.assetPathFor("ROSN"))
+        assertEquals("logos/interrao.svg", AssetLogoCatalog.assetPathFor("IRAO"))
+        assertEquals("logos/mdmg.svg", AssetLogoCatalog.assetPathFor("MDMG"))
+        assertEquals("logos/ozph.svg", AssetLogoCatalog.assetPathFor("OZPH"))
+        assertEquals("logos/rostelecom.svg", AssetLogoCatalog.assetPathFor("RTKM"))
     }
 
     @Test fun onlyVerifiedIssuerLogosAreMapped() {
-        listOf("SBER", "SBERP", "T", "TCSG", "YDEX", "X5", "GMKN", "NVTK", "TATN", "TATNP", "GAZP", "LKOH", "ROSN")
+        listOf("SBER", "SBERP", "T", "TCSG", "YDEX", "X5", "GMKN", "NVTK", "TATN", "TATNP", "GAZP", "LKOH", "ROSN", "IRAO", "MDMG", "OZPH", "RTKM")
             .forEach { assertNotNull("$it should have a verified local logo", AssetLogoCatalog.assetPathFor(it)) }
     }
 
@@ -30,6 +34,6 @@ class AssetLogoCatalogTest {
     }
 
     @Test fun ofzUsesTheFullRussianStateCoatOfArmsAsset() {
-        assertEquals("logos/russian_coat_of_arms.svg", AssetLogoCatalog.coatOfArmsAssetPath())
+        assertEquals("logos/ofz_user_icon.svg", AssetLogoCatalog.coatOfArmsAssetPath())
     }
 }
