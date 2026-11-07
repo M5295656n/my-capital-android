@@ -50,7 +50,10 @@ class MoexSecurityHistoryClient {
         require(fromDate <= tillDate) { "Начальная дата позже конечной" }
         val type = assetType.lowercase()
         return when {
-            type.contains("акци") || type.contains("фонд") || type.contains("пай") ->
+            type.contains("акци") || type.contains("фонд") || type.contains("пай") ||
+                type.contains("золот") || type.contains("драгмет") ->
+                // MOEX-listed gold instruments (including GOLD) publish daily candles
+                // in the stock market ISS endpoint, like exchange-traded funds.
                 loadCandles(ticker, "shares", fromDate, tillDate)
             type.contains("облиг") || type.contains("офз") ->
                 loadBondCloses(ticker, fromDate, tillDate)
