@@ -37,20 +37,56 @@ import ru.mycapital.app.data.PortfolioSnapshotEntity
 import java.util.Locale
 import java.time.LocalDate
 
+private data class IndexBenchmarkCacheEntry(
+    val imoex: List<MoexIndexPoint>,
+    val mcftr: List<MoexIndexPoint>,
+    val error: String?
+)
+
+private object IndexBenchmarkMemoryCache {
+    private val entries = mutableMapOf<String, IndexBenchmarkCacheEntry>()
+
+    @Synchronized
+    fun get(key: String): IndexBenchmarkCacheEntry? = entries[key]
+
+    @Synchronized
+    fun put(key: String, entry: IndexBenchmarkCacheEntry) {
+        entries[key] = entry
+    }
+}
+
 @Composable
 fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: PortfolioDao) {
     val ordered = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
-    var imoex by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
-    var mcftr by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
+    val cacheKey = if (from != null && till != null) "$from|$till" else null
+    var imoex by remember(cacheKey) {
+        mutableStateOf(cacheKey?.let { IndexBenchmarkMemoryCache.get(it)?.imoex }.orEmpty())
+    }
+    var mcftr by remember(cacheKey) {
+        mutableStateOf(cacheKey?.let { IndexBenchmarkMemoryCache.get(it)?.mcftr }.orEmpty())
+    }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember(cacheKey) {
+        mutableStateOf(cacheKey?.let { IndexBenchmarkMemoryCache.get(it)?.error })
+    }
     var reloadKey by remember { mutableStateOf(0) }
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(from, till, reloadKey) {
-        if (from != null && till != null && ordered.size >= 2) {
+        val key = cacheKey
+        if (key != null && from != null && till != null && ordered.size >= 2) {
+            if (reloadKey == 0) {
+                val memoryCached = IndexBenchmarkMemoryCache.get(key)
+                if (memoryCached != null) {
+                    imoex = memoryCached.imoex
+                    mcftr = memoryCached.mcftr
+                    error = memoryCached.error
+                    loading = false
+                    return@LaunchedEffect
+                }
+            }
             loading = true
             error = null
             val forceReload = reloadKey > 0
@@ -60,6 +96,10 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
                 }
                 imoex = cached.first.map { MoexIndexPoint(it.dateKey, it.close) }
                 mcftr = cached.second.map { MoexIndexPoint(it.dateKey, it.close) }
+                if (imoex.isNotEmpty() && mcftr.isNotEmpty()) {
+                    IndexBenchmarkMemoryCache.put(key, IndexBenchmarkCacheEntry(imoex, mcftr, null))
+                    loading = false
+                }
                 try {
                     val fresh = withContext(Dispatchers.IO) {
                         val client = MoexIndexHistoryClient()
@@ -102,6 +142,9 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
             } catch (exception: Exception) {
                 error = exception.message ?: "Не удалось загрузить историю индексов."
             } finally {
+                if (imoex.isNotEmpty() && mcftr.isNotEmpty()) {
+                    IndexBenchmarkMemoryCache.put(key, IndexBenchmarkCacheEntry(imoex, mcftr, error))
+                }
                 loading = false
             }
         }
@@ -233,7 +276,7 @@ private fun BenchmarkChart(
             Text(dates.last(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            "Доходность портфеля — дневное приближение TWR: внешние денежные потоки учитываются на конец дня. Для сравнения используется только общая история всех трёх рядов.",
+            "Доходность портфеля — дневное приближение TWR: внешние денежные потоки учитываются на конец дня. Сравнение начинается с первой сохранённой даты портфеля; более ранних дневных снимков нет. Используется только общая история всех трёх рядов.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
