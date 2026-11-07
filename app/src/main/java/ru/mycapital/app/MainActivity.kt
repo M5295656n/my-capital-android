@@ -372,7 +372,7 @@ private fun MyCapitalApp() {
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, { selectedHistoryRange = it }, historyResult, historyLoading, historyLoadError, { historyRefresh++ }, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
@@ -1040,25 +1040,88 @@ private fun AssetsScreen(
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
     onOpenAsset: (AssetEntity) -> Unit,
     onEditAsset: (AssetEntity) -> Unit,
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectedAccountId by remember { mutableStateOf("ALL") }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.uppercase() } }
+    val displayedAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == "ALL") {
+            assets
+        } else {
+            accountAssets.asSequence()
+                .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+                .mapNotNull { position ->
+                    assetsByTicker[position.ticker.uppercase()]?.copy(quantity = position.quantity)
+                }
+                .sortedBy { it.assetType + it.ticker }
+                .toList()
+        }
+    }
+    val selectedAccountName = accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName
+        ?: "Все счета"
+
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
         Text("Портфель", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        if (assets.isEmpty()) {
+        if (accounts.isNotEmpty()) {
+            Box {
+                OutlinedButton(
+                    onClick = { accountMenuExpanded = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(selectedAccountName, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Выбрать счёт")
+                }
+                DropdownMenu(
+                    expanded = accountMenuExpanded,
+                    onDismissRequest = { accountMenuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Все счета") },
+                        onClick = {
+                            selectedAccountId = "ALL"
+                            accountMenuExpanded = false
+                        }
+                    )
+                    accounts.forEach { account ->
+                        DropdownMenuItem(
+                            text = { Text(account.displayName) },
+                            onClick = {
+                                selectedAccountId = account.accountId
+                                accountMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            if (selectedAccountId != "ALL") {
+                Text(
+                    "Показаны только позиции из последнего импортированного снимка выбранного договора.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (displayedAssets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Пока нет активов. Добавьте первый актив во вкладке «Ещё».", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (selectedAccountId == "ALL") "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
+                    else "В последнем импортированном отчёте этого счёта нет открытых позиций.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
             ) {
-                items(assets, key = { it.id }) { asset ->
+                items(displayedAssets, key = { if (selectedAccountId == "ALL") "all:${it.id}" else "${selectedAccountId}:${it.ticker}" }) { asset ->
                     Card(
                         Modifier.fillMaxWidth().clickable { onOpenAsset(asset) },
                         shape = RoundedCornerShape(16.dp)
@@ -1097,7 +1160,6 @@ private fun AssetsScreen(
             }
         }
     }
-
 }
 
 @Composable
