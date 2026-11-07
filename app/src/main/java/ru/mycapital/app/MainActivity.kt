@@ -1953,7 +1953,10 @@ private fun PayoutsScreen(
             when (selectedAccountId) {
                 ALL_HISTORY_ACCOUNTS -> true
                 UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(payout.sourceKey) == null
-                else -> historyAccountId(payout.sourceKey) == selectedAccountId
+                // Market/provider forecasts and manually entered payouts are portfolio-level
+                // events without a broker account. Keep them visible alongside the selected
+                // account's imported cash receipts instead of making the screen look empty.
+                else -> historyAccountId(payout.sourceKey)?.let { it == selectedAccountId } ?: true
             }
         }
     }
