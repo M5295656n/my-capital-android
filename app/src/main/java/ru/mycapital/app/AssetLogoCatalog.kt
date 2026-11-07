@@ -10,19 +10,22 @@ import coil.decode.SvgDecoder
  * Unverified issuers deliberately use the ticker-text fallback.
  */
 internal object AssetLogoCatalog {
-    private val aliases = mapOf(
-        "SBER" to "sber",
-        "SBERP" to "sber",
-        "T" to "tbank",
-        "TCSG" to "tbank",
-        "YDEX" to "yandex",
-        "X5" to "x5"
+    private val assets = mapOf(
+        "SBER" to "logos/sber.svg",
+        "SBERP" to "logos/sber.svg",
+        "T" to "logos/tbank.svg",
+        "TCSG" to "logos/tbank.svg",
+        "YDEX" to "logos/yandex.svg",
+        "X5" to "logos/x5.svg",
+        "GMKN" to "logos/nornickel.svg",
+        "NVTK" to "logos/novatek.png",
+        "TATN" to "logos/tatneft.svg",
+        "TATNP" to "logos/tatneft.svg"
     )
 
     @Volatile private var cachedImageLoader: ImageLoader? = null
 
-    fun assetPathFor(ticker: String): String? =
-        aliases[ticker.trim().uppercase()]?.let { "logos/$it.svg" }
+    fun assetPathFor(ticker: String): String? = assets[ticker.trim().uppercase()]
 
     fun coatOfArmsAssetPath(): String = "logos/russian_coat_of_arms.svg"
 
@@ -34,5 +37,5 @@ internal object AssetLogoCatalog {
                 .also { cachedImageLoader = it }
         }
 
-    fun supportedTickers(): Set<String> = aliases.keys
+    fun supportedTickers(): Set<String> = assets.keys
 }

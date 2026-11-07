@@ -10,15 +10,19 @@ class AssetLogoCatalogTest {
         assertEquals("logos/tbank.svg", AssetLogoCatalog.assetPathFor("tcsg"))
         assertEquals("logos/yandex.svg", AssetLogoCatalog.assetPathFor("YDEX"))
         assertEquals("logos/x5.svg", AssetLogoCatalog.assetPathFor(" x5 "))
+        assertEquals("logos/nornickel.svg", AssetLogoCatalog.assetPathFor("gmkn"))
+        assertEquals("logos/novatek.png", AssetLogoCatalog.assetPathFor(" NVTK "))
+        assertEquals("logos/tatneft.svg", AssetLogoCatalog.assetPathFor("TATN"))
+        assertEquals("logos/tatneft.svg", AssetLogoCatalog.assetPathFor("TATNP"))
     }
 
     @Test fun onlyVerifiedIssuerLogosAreMapped() {
-        listOf("SBER", "SBERP", "T", "TCSG", "YDEX", "X5")
+        listOf("SBER", "SBERP", "T", "TCSG", "YDEX", "X5", "GMKN", "NVTK", "TATN", "TATNP")
             .forEach { assertNotNull("$it should have a verified local logo", AssetLogoCatalog.assetPathFor(it)) }
     }
 
     @Test fun unverifiedTickersDoNotReceiveInventedLogos() {
-        listOf("GAZP", "LKOH", "ROSN", "NVTK", "UNKNOWN")
+        listOf("GAZP", "LKOH", "ROSN", "UNKNOWN")
             .forEach { assertNull("$it must not use an unverified logo", AssetLogoCatalog.assetPathFor(it)) }
     }
 
