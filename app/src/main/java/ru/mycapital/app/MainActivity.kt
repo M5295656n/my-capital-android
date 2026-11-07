@@ -592,23 +592,35 @@ private fun OverviewScreen(
         mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList()))
     }
     var historyLoading by remember { mutableStateOf(false) }
+    var historyRefresh by remember { mutableIntStateOf(0) }
     val historyAssetsKey = remember(assets) {
         assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
     }
-    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedRange) {
+    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedRange, historyRefresh) {
         historyLoading = true
-        historyResult = runCatching {
-            withContext(Dispatchers.IO) {
-                buildPortfolioMarketHistory(
-                    assets = assets,
-                    operations = operations,
-                    currentCash = cashBalance,
-                    range = selectedRange
-                )
+        var loaded = PortfolioMarketHistoryResult(emptyList(), null, emptyList())
+        // The first load can coincide with screen restoration and database/network
+        // startup. Retry once automatically; pull-to-refresh also reloads chart history.
+        for (attempt in 0..1) {
+            val result = runCatching {
+                kotlinx.coroutines.withTimeout(90_000L) {
+                    withContext(Dispatchers.IO) {
+                        buildPortfolioMarketHistory(
+                            assets = assets,
+                            operations = operations,
+                            currentCash = cashBalance,
+                            range = selectedRange
+                        )
+                    }
+                }
             }
-        }.getOrElse {
-            PortfolioMarketHistoryResult(emptyList(), null, emptyList())
+            if (result.isSuccess) {
+                loaded = result.getOrThrow()
+                if (loaded.points.isNotEmpty() && loaded.unavailableTickers.isEmpty()) break
+            }
+            if (attempt == 0) kotlinx.coroutines.delay(1_200L)
         }
+        historyResult = loaded
         historyLoading = false
     }
     val history = historyResult.points
@@ -639,7 +651,11 @@ private fun OverviewScreen(
                 return androidx.compose.ui.geometry.Offset.Zero
             }
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); onRefreshMarketData() }
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) {
+                    onRefresh()
+                    onRefreshMarketData()
+                    historyRefresh++
+                }
                 pullDistance = 0f
                 return Velocity.Zero
             }
