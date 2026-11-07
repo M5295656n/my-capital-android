@@ -1936,14 +1936,10 @@ private fun PayoutsScreen(
     } else 0.0
     val portfolioValue = assets.sumOf { it.quantity.coerceAtLeast(0.0) * it.currentPrice.coerceAtLeast(0.0) }
     val payoutYield = if (portfolioValue > 0.0) totalAmount / portfolioValue * 100.0 else 0.0
-    // The calendar chart always represents the full 12-month period, not only months
-    // that happen to contain payouts. Status filters affect the feed; the chart keeps
-    // its announced-vs-forecast comparison visible.
-    // Rolling 12-month calendar: December of the previous year through November
-    // of the selected year, so the chart always starts with December.
-    val chartMonths = remember(selectedPeriod, today) {
+    // Calendar chart follows the selected calendar year: January through December.
+    val chartMonths = remember(selectedPeriod) {
         val year = selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear
-        val first = java.time.YearMonth.of(year, 12)
+        val first = java.time.YearMonth.of(year, 1)
         (0 until 12).map { first.plusMonths(it.toLong()) }
     }
     val chartPayouts = visiblePayouts.filter { payout ->
@@ -1963,8 +1959,14 @@ private fun PayoutsScreen(
     val announcedByMonth = chartMonths.associateWith { month ->
         chartMonthly[month].orEmpty().filter { it.status == "ANNOUNCED" }.sumOf(::payoutAmount)
     }
+    // Forecasts are meaningful only from the current month onward. Do not
+    // project stale recommendations/estimates into months that have already passed.
+    val currentMonth = java.time.YearMonth.from(today)
     val forecastByMonth = chartMonths.associateWith { month ->
-        chartMonthly[month].orEmpty().filter { it.status == "RECOMMENDED" || it.status == "FORECAST" || it.status == "EXPECTED" }.sumOf(::payoutAmount)
+        if (month.isBefore(currentMonth)) 0.0
+        else chartMonthly[month].orEmpty()
+            .filter { it.status == "RECOMMENDED" || it.status == "FORECAST" || it.status == "EXPECTED" }
+            .sumOf(::payoutAmount)
     }
 
     Column(modifier.fillMaxSize()) {
