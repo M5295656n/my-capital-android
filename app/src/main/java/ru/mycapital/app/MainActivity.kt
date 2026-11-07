@@ -980,11 +980,6 @@ private fun AssetsScreen(
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    var logoCatalog by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    LaunchedEffect(Unit) {
-        logoCatalog = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
-    }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
         Text("Портфель", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -1007,7 +1002,7 @@ private fun AssetsScreen(
                             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AssetTypeIcon(asset.assetType, asset.ticker, logoCatalog)
+                            AssetTypeIcon(asset.assetType, asset.ticker)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
@@ -1050,7 +1045,6 @@ private fun AssetDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var logos by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var period by remember { mutableStateOf("1М") }
     var candles by remember { mutableStateOf<List<MoexDailyClose>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -1065,8 +1059,7 @@ private fun AssetDetailScreen(
     val assetPayouts = remember(asset.id, asset.ticker, payouts) {
         payouts.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
     }
-    LaunchedEffect(Unit) { logos = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) } }
-    val firstTradeDate = trades.firstOrNull()?.operationDate?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+     val firstTradeDate = trades.firstOrNull()?.operationDate?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
     LaunchedEffect(asset.ticker, asset.assetType, period, firstTradeDate) {
         loading = true
         error = null
@@ -1175,7 +1168,7 @@ private fun AssetDetailScreen(
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AssetTypeIcon(asset.assetType, asset.ticker, logos)
+                    AssetTypeIcon(asset.assetType, asset.ticker)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(asset.ticker, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
@@ -1498,41 +1491,33 @@ private fun DoubleHeadedEagleIcon(tint: androidx.compose.ui.graphics.Color) {
 @Composable
 private fun AssetTypeIcon(
     assetType: String,
-    ticker: String,
-    logoCatalog: Map<String, String>
+    ticker: String
 ) {
     val type = assetType.lowercase()
     val normalizedTicker = ticker.trim().uppercase()
     val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
-    val isFund = type.contains("фонд") || type.contains("бпиф") || type.contains("etf")
-    val domain = if (isBond) null else AssetLogoCatalog.domainFor(normalizedTicker, logoCatalog)
-    val blue = androidx.compose.ui.graphics.Color(0xFF173F78)
-    val fallbackTint = if (isFund) androidx.compose.ui.graphics.Color(0xFF67469A)
-        else androidx.compose.ui.graphics.Color(0xFF176B55)
+    val logoPath = if (isBond) null else AssetLogoCatalog.assetPathFor(normalizedTicker)
 
     Surface(
-        shape = CircleShape,
-        color = if (isBond) blue else androidx.compose.ui.graphics.Color(0xFFF0F2F5),
+        shape = RoundedCornerShape(12.dp),
+        color = androidx.compose.ui.graphics.Color(0xFFF7F8FA),
         modifier = Modifier.size(46.dp)
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            if (isBond) {
-                DoubleHeadedEagleIcon(androidx.compose.ui.graphics.Color.White)
-            } else {
-                // The monogram remains visible if the network image is unavailable.
-                Text(
-                    normalizedTicker.take(2).ifBlank { "?" },
-                    color = fallbackTint,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(5.dp)) {
+            when {
+                isBond -> DoubleHeadedEagleIcon(androidx.compose.ui.graphics.Color(0xFF173F78))
+                logoPath != null -> AsyncImage(
+                    model = "file:///android_asset/$logoPath",
+                    contentDescription = "Логотип $ticker",
+                    modifier = Modifier.fillMaxSize()
                 )
-                if (domain != null) {
-                    AsyncImage(
-                        model = AssetLogoCatalog.faviconUrl(domain),
-                        contentDescription = "Логотип $ticker",
-                        modifier = Modifier.fillMaxSize().padding(5.dp).clip(CircleShape)
-                    )
-                }
+                else -> Text(
+                    normalizedTicker.take(4).ifBlank { "?" },
+                    color = androidx.compose.ui.graphics.Color(0xFF334155),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
             }
         }
     }
