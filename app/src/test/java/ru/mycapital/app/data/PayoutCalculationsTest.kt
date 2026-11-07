@@ -35,4 +35,19 @@ class PayoutCalculationsTest {
             calculatePayoutNetAmount(0.0, 0.0)
         }
     }
+    @Test
+    fun excludesBondMaturityFromInvestmentIncome() {
+        assertEquals(false, isIncomePayoutType("Погашение"))
+    }
+
+    @Test
+    fun excludesBondAmortizationFromInvestmentIncome() {
+        assertEquals(false, isIncomePayoutType("Амортизация"))
+    }
+
+    @Test
+    fun includesCouponsAndDividendsAsInvestmentIncome() {
+        assertEquals(true, isIncomePayoutType("Купон"))
+        assertEquals(true, isIncomePayoutType("Дивиденд"))
+    }
 }
