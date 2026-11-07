@@ -1497,6 +1497,7 @@ private fun AssetTypeIcon(
     val normalizedTicker = ticker.trim().uppercase()
     val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
     val logoPath = if (isBond) null else AssetLogoCatalog.assetPathFor(normalizedTicker)
+    val context = LocalContext.current
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -1509,7 +1510,8 @@ private fun AssetTypeIcon(
                 logoPath != null -> AsyncImage(
                     model = "file:///android_asset/$logoPath",
                     contentDescription = "Логотип $ticker",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    imageLoader = AssetLogoCatalog.imageLoader(context)
                 )
                 else -> Text(
                     normalizedTicker.take(4).ifBlank { "?" },
