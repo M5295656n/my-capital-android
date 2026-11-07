@@ -56,7 +56,7 @@ class AnalyticsCalculationsTest {
     @Test
     fun sectorAggregationAndConcentrationAreSortedByValue() {
         val assets = listOf(
-            asset("SBER", quantity = 2.0, price = 100.0),
+            asset("SBER", quantity = 1.0, price = 100.0),
             asset("SBERP", quantity = 1.0, price = 50.0),
             asset("LKOH", quantity = 1.0, price = 200.0)
         )
