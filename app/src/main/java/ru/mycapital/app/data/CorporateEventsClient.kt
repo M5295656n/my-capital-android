@@ -49,6 +49,43 @@ data class ImportedPayoutEvent(
     val sourceKey: String
 )
 
+internal fun parseBondMaturityEvent(
+    ticker: String,
+    body: String,
+    today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))
+): ImportedPayoutEvent? {
+    val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
+    val table = root.optJSONObject("description") ?: return null
+    val columns = table.optJSONArray("columns") ?: return null
+    val rows = table.optJSONArray("data") ?: return null
+    val indexes = (0 until columns.length()).associate {
+        columns.getString(it).lowercase(Locale.ROOT) to it
+    }
+    val nameIndex = indexes["name"] ?: return null
+    val valueIndex = indexes["value"] ?: return null
+    val values = buildMap {
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONArray(i) ?: continue
+            if (nameIndex < row.length() && valueIndex < row.length()) {
+                put(row.optString(nameIndex).uppercase(Locale.ROOT), row.optString(valueIndex))
+            }
+        }
+    }
+    val maturityDate = parseMoexEventDate(values["MATDATE"].orEmpty()) ?: return null
+    if (!isEventDateUpcoming(maturityDate, today)) return null
+    val faceValue = values["FACEVALUE"]?.replace(',', '.')?.toDoubleOrNull()
+        ?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+    val dateText = maturityDate.toString()
+    val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
+    return ImportedPayoutEvent(
+        ticker = normalizedTicker,
+        type = "Погашение",
+        amountPerUnit = faceValue,
+        eventDate = maturityDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+        sourceKey = "$normalizedTicker|Погашение|$dateText"
+    )
+}
+
 class CorporateEventsClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -61,7 +98,8 @@ class CorporateEventsClient {
         val encoded = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val url = if (isBond) {
             "https://iss.moex.com/iss/securities/$encoded/bondization.json" +
-                "?iss.meta=off&iss.only=coupons&coupons.columns=coupondate,value&start=0&limit=100"
+                "?iss.meta=off&iss.only=coupons,amortizations&coupons.columns=coupondate,value" +
+                "&amortizations.columns=amortdate,value&start=0&limit=100"
         } else {
             "https://iss.moex.com/iss/securities/$encoded/dividends.json?iss.meta=off"
         }
@@ -81,30 +119,52 @@ class CorporateEventsClient {
             val blockName = if (isBond) "coupons" else "dividends"
             val table = root.optJSONObject(blockName)
                 ?: throw IOException("В ответе MOEX ISS отсутствует таблица $blockName")
-            val columns = table.optJSONArray("columns")
-                ?: throw IOException("В таблице MOEX ISS отсутствуют столбцы")
-            val rows = table.optJSONArray("data")
-                ?: throw IOException("В таблице MOEX ISS отсутствуют данные")
-            val indexes = (0 until columns.length()).associate {
-                columns.getString(it).lowercase(Locale.ROOT) to it
-            }
-            val dateIndex = paymentDateColumn(isBond, indexes) ?: return emptyList()
-            val amountIndex = listOf("value", "issuevalue", "couponvalue")
-                .firstNotNullOfOrNull { indexes[it] } ?: return emptyList()
-
             val events = mutableListOf<ImportedPayoutEvent>()
-            for (i in 0 until rows.length()) {
-                val row = rows.optJSONArray(i) ?: continue
-                if (dateIndex >= row.length() || amountIndex >= row.length()) continue
-                val dateText = row.optString(dateIndex)
-                val localDate = parseMoexEventDate(dateText) ?: continue
-                val date = localDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
-                val amount = if (row.isNull(amountIndex)) Double.NaN else row.optDouble(amountIndex, Double.NaN)
-                if (!amount.isFinite() || amount <= 0.0 || !isEventDateUpcoming(localDate)) continue
-                val type = if (isBond) "Купон" else "Дивиденд"
-                val normalizedTicker = ticker.trim().uppercase()
-                val key = "$normalizedTicker|$type|$dateText"
-                events += ImportedPayoutEvent(normalizedTicker, type, amount, date, key)
+            fun appendRows(block: JSONObject, dateColumn: String, type: String) {
+                val columns = block.optJSONArray("columns") ?: return
+                val rows = block.optJSONArray("data") ?: return
+                val indexes = (0 until columns.length()).associate {
+                    columns.getString(it).lowercase(Locale.ROOT) to it
+                }
+                val dateIndex = indexes[dateColumn] ?: return
+                val amountIndex = listOf("value", "issuevalue", "couponvalue")
+                    .firstNotNullOfOrNull { indexes[it] } ?: return
+                for (i in 0 until rows.length()) {
+                    val row = rows.optJSONArray(i) ?: continue
+                    if (dateIndex >= row.length() || amountIndex >= row.length()) continue
+                    val dateText = row.optString(dateIndex)
+                    val localDate = parseMoexEventDate(dateText) ?: continue
+                    val amount = if (row.isNull(amountIndex)) Double.NaN else row.optDouble(amountIndex, Double.NaN)
+                    if (!amount.isFinite() || amount <= 0.0 || !isEventDateUpcoming(localDate)) continue
+                    val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
+                    val date = localDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                    events += ImportedPayoutEvent(
+                        normalizedTicker, type, amount, date, "$normalizedTicker|$type|$dateText"
+                    )
+                }
+            }
+            if (isBond) {
+                appendRows(table, "coupondate", "Купон")
+                root.optJSONObject("amortizations")?.let { appendRows(it, "amortdate", "Амортизация") }
+                // The ISS bondization schedule may omit final principal repayment. Add the
+                // maturity from the security description, unless an amortization already
+                // represents principal repayment on that exact date.
+                val maturity = runCatching {
+                    val maturityUrl = "https://iss.moex.com/iss/securities/$encoded.json" +
+                        "?iss.meta=off&iss.only=description&description.columns=name,value"
+                    val maturityRequest = Request.Builder().url(maturityUrl)
+                        .header("Accept", "application/json")
+                        .header("User-Agent", "MyCapital-Android/0.1").build()
+                    client.newCall(maturityRequest).execute().use { maturityResponse ->
+                        if (!maturityResponse.isSuccessful) null
+                        else maturityResponse.body?.string()?.let { parseBondMaturityEvent(ticker, it) }
+                    }
+                }.getOrNull()
+                if (maturity != null && events.none {
+                    it.type == "Амортизация" && it.eventDate == maturity.eventDate
+                }) events += maturity
+            } else {
+                appendRows(table, "paymentdate", "Дивиденд")
             }
             return events.distinctBy { it.sourceKey }
         }
