@@ -123,7 +123,7 @@ class CorporateEventsWorker(
                 }
                 val events = bondClient.getEvents(asset.ticker, "Облигация")
                 if (events.isEmpty()) {
-                    throw java.io.IOException("MOEX ISS не вернул будущие купоны для ${asset.ticker}; проверьте тикер и календарь MOEX.")
+                    throw java.io.IOException("MOEX ISS не вернул будущие купоны, амортизации или погашение для ${asset.ticker}; проверьте тикер и календарь MOEX.")
                 }
                 bondEventsReceived += events.size
                 database.withTransaction {
@@ -171,7 +171,7 @@ class CorporateEventsWorker(
 
         val summary = buildString {
             append("Акции: получено событий $feedEvents, совпадений $matchedDividends, записей $importedDividends. ")
-            append("Облигации: найдено ${bondAssets.size}, получено будущих купонов $bondEventsReceived, записей добавлено/обновлено $bondPayoutsSaved, неподдерживаемых $unsupportedBonds.")
+            append("Облигации: найдено ${bondAssets.size}, получено будущих событий выплат (купоны, амортизации, погашения) $bondEventsReceived, записей добавлено/обновлено $bondPayoutsSaved, неподдерживаемых $unsupportedBonds.")
             if (errors.isNotEmpty()) append(" Ошибки: ").append(errors.joinToString("; "))
         }
         val output = Data.Builder()
