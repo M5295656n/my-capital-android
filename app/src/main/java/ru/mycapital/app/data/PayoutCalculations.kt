@@ -7,3 +7,13 @@ internal fun calculatePayoutNetAmount(grossAmount: Double, taxAmount: Double): D
     }
     return grossAmount - taxAmount
 }
+
+/**
+ * Bond principal returned through amortization or maturity is capital repayment,
+ * not investment income. Keep these events in the calendar, but exclude them
+ * from income totals and income charts.
+ */
+internal fun isIncomePayoutType(payoutType: String): Boolean {
+    val normalized = payoutType.trim().lowercase(java.util.Locale.ROOT)
+    return !normalized.contains("погаш") && !normalized.contains("амортизац")
+}
