@@ -642,7 +642,37 @@ private fun OverviewScreen(
         }
         historyLoading = false
     }
-    val history = historyResult.points
+    // Keep the dashboard chart visible even when MOEX candles are temporarily unavailable.
+    // Daily local portfolio snapshots are an independent, already persisted source of history.
+    val snapshotHistory = remember(snapshots, operations, selectedRange) {
+        val ordered = snapshots.sortedBy { it.dateKey }
+        val allPoints = ordered.map { snapshot ->
+            val date = runCatching { java.time.LocalDate.parse(snapshot.dateKey) }.getOrNull()
+            val invested = if (date == null) 0.0 else operations.asSequence()
+                .filter { it.operationDate < date.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli() }
+                .sumOf {
+                    when (it.operationType) {
+                        "Пополнение" -> it.price
+                        "Вывод" -> -it.price
+                        else -> 0.0
+                    }
+                }.coerceAtLeast(0.0)
+            PortfolioMarketHistoryPoint(
+                dateKey = snapshot.dateKey,
+                totalValue = snapshot.totalValue,
+                investedCapital = invested,
+                nav = 100.0
+            )
+        }
+        val latestDate = allPoints.lastOrNull()?.let { runCatching { java.time.LocalDate.parse(it.dateKey) }.getOrNull() }
+        if (selectedRange.months == null || latestDate == null) allPoints else {
+            val from = latestDate.minusMonths(selectedRange.months)
+            allPoints.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(from) }
+        }
+    }
+    val history = historyResult.points.ifEmpty {
+        snapshotHistory.takeIf { it.size >= 2 } ?: emptyList()
+    }
     val annualizedReturn = remember(history) {
         if (history.size < 2) null else {
             val firstDate = java.time.LocalDate.parse(history.first().dateKey)
@@ -783,8 +813,12 @@ private fun OverviewScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                if (historyLoading) "Загружаю историю от первой покупки…"
-                                else "История появится после импорта операций покупки и продажи и загрузки котировок MOEX.",
+                                if (historyLoading) "Загружаю историю портфеля…"
+                                else historyLoadError ?: if (operations.none { it.operationType == "Покупка" && it.quantity > 0.0 }) {
+                                    "Нет операций покупки. Добавь или импортируй сделки — тогда построю историю портфеля."
+                                } else {
+                                    "История пока недоступна: нет дневных снимков и котировок MOEX. Проверь подключение и повтори обновление."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = androidx.compose.ui.graphics.Color(0xFFB8C9E8)
                             )
