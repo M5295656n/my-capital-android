@@ -117,6 +117,51 @@ private fun MyCapitalApp() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    // Portfolio history lives above navigation destinations so tab switches
+    // cannot cancel its network requests or reset the chart state.
+    var selectedHistoryRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
+    var historyResult by remember { mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList())) }
+    var historyLoading by remember { mutableStateOf(false) }
+    var historyRefresh by remember { mutableIntStateOf(0) }
+    var historyLoadError by remember { mutableStateOf<String?>(null) }
+    val historyAssetsKey = remember(assets) {
+        assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
+    }
+    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedHistoryRange, historyRefresh) {
+        historyLoading = true
+        historyLoadError = null
+        var latestSuccessful: PortfolioMarketHistoryResult? = null
+        var lastError: Throwable? = null
+        for (attempt in 0..2) {
+            try {
+                val loaded = kotlinx.coroutines.withTimeout(90_000L) {
+                    withContext(Dispatchers.IO) {
+                        buildPortfolioMarketHistory(assets, operations, cashBalance ?: 0.0, selectedHistoryRange)
+                    }
+                }
+                latestSuccessful = loaded
+                if (loaded.points.isNotEmpty() && loaded.unavailableTickers.isEmpty()) break
+                if (attempt < 2) kotlinx.coroutines.delay(1_000L * (attempt + 1))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastError = error
+                if (attempt < 2) kotlinx.coroutines.delay(1_000L * (attempt + 1))
+            }
+        }
+        val loaded = latestSuccessful
+        if (loaded != null && loaded.points.isNotEmpty()) {
+            historyResult = loaded
+            historyLoadError = if (loaded.unavailableTickers.isNotEmpty()) {
+                "Нет истории для: ${loaded.unavailableTickers.joinToString()}"
+            } else null
+        } else if (historyResult.points.isEmpty()) {
+            historyLoadError = lastError?.message
+                ?: "Исторические котировки пока не получены. Повторите обновление."
+        }
+        historyLoading = false
+    }
+
     var selectedOperationAccount by remember { mutableStateOf("ALL") }
     var selectedPayoutAccount by remember { mutableStateOf("ALL") }
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
@@ -326,7 +371,7 @@ private fun MyCapitalApp() {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, { selectedHistoryRange = it }, historyResult, historyLoading, historyLoadError, { onRefreshHistory() }, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -547,6 +592,12 @@ private fun OverviewScreen(
     payouts: List<PayoutEntity>,
     operations: List<OperationEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
+    selectedRange: PortfolioHistoryRange,
+    onSelectedRangeChange: (PortfolioHistoryRange) -> Unit,
+    historyResult: PortfolioMarketHistoryResult,
+    historyLoading: Boolean,
+    historyLoadError: String?,
+    onRefreshHistory: () -> Unit,
     marketData: MarketOverviewData,
     onRefreshMarketData: () -> Unit,
     onRefresh: () -> Unit,
@@ -585,68 +636,6 @@ private fun OverviewScreen(
         openCost > 0.0 -> (unrealized + realized + receivedPayouts) / openCost * 100.0
         else -> null
     }
-    // Build the chart from actual trades and historical MOEX closes. Daily
-    // snapshots are no longer a prerequisite; ALL starts at the first recorded buy.
-    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
-    var historyResult by remember {
-        mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList()))
-    }
-    var historyLoading by remember { mutableStateOf(false) }
-    var historyRefresh by remember { mutableIntStateOf(0) }
-    var historyLoadError by remember { mutableStateOf<String?>(null) }
-    val historyAssetsKey = remember(assets) {
-        assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
-    }
-    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedRange, historyRefresh) {
-        historyLoading = true
-        historyLoadError = null
-        var latestSuccessful: PortfolioMarketHistoryResult? = null
-        var lastError: Throwable? = null
-
-        // Never swallow coroutine cancellation: Compose uses it to stop obsolete
-        // requests when inputs/screens change. Retry only genuine load failures.
-        for (attempt in 0..2) {
-            try {
-                val loaded = kotlinx.coroutines.withTimeout(90_000L) {
-                    withContext(Dispatchers.IO) {
-                        buildPortfolioMarketHistory(
-                            assets = assets,
-                            operations = operations,
-                            currentCash = cashBalance,
-                            range = selectedRange
-                        )
-                    }
-                }
-                latestSuccessful = loaded
-                if (loaded.points.isNotEmpty() && loaded.unavailableTickers.isEmpty()) break
-                if (attempt < 2) kotlinx.coroutines.delay(1_000L * (attempt + 1))
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                lastError = error
-                if (attempt < 2) kotlinx.coroutines.delay(1_000L * (attempt + 1))
-            }
-        }
-
-        val loaded = latestSuccessful
-        if (loaded != null && loaded.points.isNotEmpty()) {
-            // A transient partial response must not blank a chart that was already
-            // rendered successfully. Keep the newer result when it has valid points.
-            historyResult = loaded
-            historyLoadError = if (loaded.unavailableTickers.isNotEmpty()) {
-                "Нет истории для: ${loaded.unavailableTickers.joinToString()}"
-            } else null
-        } else if (historyResult.points.isEmpty()) {
-            historyLoadError = lastError?.message
-                ?: "Исторические котировки пока не получены. Повторите обновление."
-        }
-        historyLoading = false
-    }
-    // Keep the dashboard chart visible even when MOEX candles are temporarily unavailable.
-    // Daily local portfolio snapshots are an independent, already persisted source of history.
-        // Only render the reconstructed daily MOEX history here. Sparse local snapshots
-    // (often just two points after reinstall) made the chart look like two straight lines
-    // and were misleadingly presented as a full portfolio performance history.
     val history = historyResult.points
 val annualizedReturn = remember(history) {
         if (history.size < 2) null else {
@@ -758,7 +747,7 @@ val annualizedReturn = remember(history) {
                                     range.label,
                                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                                         .background(if (active) androidx.compose.ui.graphics.Color(0xFF1688F8) else androidx.compose.ui.graphics.Color.Transparent)
-                                        .clickable { selectedRange = range }
+                                        .clickable { onSelectedRangeChange(range) }
                                         .padding(horizontal = 5.dp, vertical = 6.dp),
                                     color = if (active) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFFB8C9E8),
                                     fontSize = 10.sp,
