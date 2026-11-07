@@ -41,6 +41,15 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle assembleRelease
+      - name: Verify release APK signing certificate
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print toupper($2)}' | tr -d ':[:space:]')"
+          EXPECTED="77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66"
+          echo "APK signer SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED" || (echo "ERROR: APK signing certificate does not match the project baseline" && exit 1)
       - name: Upload unit test results
         if: always()
         uses: actions/upload-artifact@v4
