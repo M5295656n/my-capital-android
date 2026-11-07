@@ -1422,7 +1422,7 @@ private fun DoubleHeadedEagleIcon() {
     AsyncImage(
         model = "file:///android_asset/logos/russian_coat_of_arms_white.svg",
         contentDescription = "Белый герб для ОФЗ",
-        modifier = Modifier.size(32.dp),
+        modifier = Modifier.size(40.dp),
         imageLoader = AssetLogoCatalog.imageLoader(context),
         contentScale = ContentScale.Fit
     )
@@ -1440,16 +1440,14 @@ private fun AssetTypeIcon(
     val context = LocalContext.current
 
     if (isBond) {
-        // OFZ emblem follows the supplied reference: white double-headed eagle
-        // on a dark blue circular medallion with a subtle outer ring.
+        // Match the supplied reference: plain dark medallion with a large
+        // white double-headed eagle. No light outline or frame.
         Surface(
             shape = CircleShape,
             color = Color(0xFF29354F),
-            modifier = Modifier
-                .size(46.dp)
-                .border(1.dp, Color(0xFF53617D), CircleShape)
+            modifier = Modifier.size(46.dp)
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(4.dp)) {
+            Box(contentAlignment = Alignment.Center) {
                 DoubleHeadedEagleIcon()
             }
         }
