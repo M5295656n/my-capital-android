@@ -2096,11 +2096,11 @@ private fun PayoutsScreen(
                                                     Text("${payout.ticker}  ${asset?.name ?: payout.payoutType}",
                                                         fontWeight = FontWeight.SemiBold, maxLines = 1)
                                                     Text(
-                                                        when {
-                                                            payout.status == "RECEIVED" -> "Фактически получено"
-                                                            payout.status == "ANNOUNCED" -> "Объявлены"
-                                                            payout.status == "RECOMMENDED" -> "Рекомендованы"
-                                                            else -> payout.payoutType + " · " + dividendStatusLabel(payout.status)
+                                                        when (payout.status) {
+                                                            "RECEIVED" -> "Получено"
+                                                            "ANNOUNCED" -> "Объявлено"
+                                                            "RECOMMENDED", "FORECAST", "EXPECTED" -> "Прогноз"
+                                                            else -> "Прогноз"
                                                         },
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         style = MaterialTheme.typography.bodySmall
@@ -2125,7 +2125,6 @@ private fun PayoutsScreen(
                                                 payout.recordDate?.let { Text("Дата отсечки: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
                                                 payout.expectedDate?.let { Text("Ожидаемая дата выплаты: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
                                                 payout.actualDate?.let { Text("Получено: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
-                                                if (!payout.sourceName.isNullOrBlank()) Text("Источник: ${payout.sourceName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 if (payout.status != "RECEIVED" && (isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED")) {
                                                     TextButton(onClick = { onConfirmReceipt(payout) }) { Text("Подтвердить получение") }
                                                 }
@@ -2152,7 +2151,7 @@ private fun PayoutCalendarChart(
     val maxValue = months.maxOfOrNull { (announced[it] ?: 0.0) + (forecast[it] ?: 0.0) }
         ?.coerceAtLeast(1.0) ?: 1.0
     val announcedColor = Color(0xFF48A9E8)
-    val forecastColor = Color(0xFF087BAA).copy(alpha = 0.32f)
+    val forecastColor = Color(0xFF087BAA).copy(alpha = 0.14f)
     val locale = java.util.Locale("ru", "RU")
     fun compactAmount(value: Double): String = when {
         value >= 1_000_000.0 -> String.format(locale, "%.1fм", value / 1_000_000.0)
