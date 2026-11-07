@@ -1433,59 +1433,14 @@ internal fun annualizedReturnPercent(flows: List<Pair<Long, Double>>): Double? {
 }
 
 @Composable
-private fun DoubleHeadedEagleIcon(tint: androidx.compose.ui.graphics.Color) {
-    Canvas(Modifier.size(31.dp)) {
-        val sx = size.width / 100f
-        val sy = size.height / 100f
-        val eagle = Path().apply {
-            // Two outward-facing heads and their necks.
-            moveTo(47f, 39f)
-            cubicTo(39f, 29f, 34f, 20f, 25f, 18f)
-            cubicTo(20f, 17f, 15f, 19f, 11f, 24f)
-            lineTo(3f, 20f)
-            lineTo(8f, 31f)
-            lineTo(2f, 35f)
-            lineTo(15f, 37f)
-            cubicTo(20f, 34f, 24f, 30f, 29f, 30f)
-            cubicTo(35f, 31f, 39f, 41f, 44f, 49f)
-            lineTo(44f, 60f)
-            cubicTo(34f, 56f, 24f, 50f, 13f, 45f)
-            lineTo(7f, 51f)
-            cubicTo(20f, 67f, 32f, 72f, 45f, 69f)
-            lineTo(50f, 83f)
-            lineTo(55f, 69f)
-            cubicTo(68f, 72f, 80f, 67f, 93f, 51f)
-            lineTo(87f, 45f)
-            cubicTo(76f, 50f, 66f, 56f, 56f, 60f)
-            lineTo(56f, 49f)
-            cubicTo(61f, 41f, 65f, 31f, 71f, 30f)
-            cubicTo(76f, 30f, 80f, 34f, 85f, 37f)
-            lineTo(98f, 35f)
-            lineTo(92f, 31f)
-            lineTo(97f, 20f)
-            lineTo(89f, 24f)
-            cubicTo(85f, 19f, 80f, 17f, 75f, 18f)
-            cubicTo(66f, 20f, 61f, 29f, 53f, 39f)
-            lineTo(50f, 43f)
-            close()
-        }
-        val crown = Path().apply {
-            moveTo(17f, 13f); lineTo(13f, 5f); lineTo(21f, 9f); lineTo(25f, 2f)
-            lineTo(29f, 10f); lineTo(34f, 6f); lineTo(31f, 16f); close()
-            moveTo(83f, 13f); lineTo(87f, 5f); lineTo(79f, 9f); lineTo(75f, 2f)
-            lineTo(71f, 10f); lineTo(66f, 6f); lineTo(69f, 16f); close()
-        }
-        val legs = Path().apply {
-            moveTo(43f, 72f); lineTo(39f, 88f); lineTo(31f, 92f); lineTo(33f, 96f)
-            lineTo(46f, 93f); lineTo(50f, 79f); lineTo(54f, 79f); lineTo(58f, 93f)
-            lineTo(71f, 96f); lineTo(73f, 92f); lineTo(65f, 88f); lineTo(57f, 72f); close()
-        }
-        drawContext.transform.scale(sx, sy, pivot = androidx.compose.ui.geometry.Offset.Zero)
-        drawPath(eagle, tint)
-        drawPath(crown, tint)
-        drawPath(legs, tint)
-        drawLine(tint, androidx.compose.ui.geometry.Offset(46f, 48f), androidx.compose.ui.geometry.Offset(54f, 48f), strokeWidth = 5f)
-    }
+private fun DoubleHeadedEagleIcon() {
+    val context = LocalContext.current
+    AsyncImage(
+        model = "file:///android_asset/${AssetLogoCatalog.coatOfArmsAssetPath()}",
+        contentDescription = "Государственный герб Российской Федерации",
+        modifier = Modifier.size(31.dp),
+        imageLoader = AssetLogoCatalog.imageLoader(context)
+    )
 }
 
 @Composable
@@ -1506,7 +1461,7 @@ private fun AssetTypeIcon(
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(5.dp)) {
             when {
-                isBond -> DoubleHeadedEagleIcon(androidx.compose.ui.graphics.Color(0xFF173F78))
+                isBond -> DoubleHeadedEagleIcon()
                 logoPath != null -> AsyncImage(
                     model = "file:///android_asset/$logoPath",
                     contentDescription = "Логотип $ticker",
