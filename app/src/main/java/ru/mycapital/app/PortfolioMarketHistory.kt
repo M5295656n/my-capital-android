@@ -84,29 +84,24 @@ internal suspend fun buildPortfolioMarketHistory(
         return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailableConcurrent.toList().sorted())
     }
 
-    // MOEX ISS is sensitive to bursts of parallel requests. Each bond needs
-    // several endpoints (terms, coupon schedule and candles), so downloading every
-    // holding at once caused intermittent empty responses/HTTP errors across otherwise
-    // valid tickers. Limit concurrency and retry transient/empty responses before marking
-    // an instrument unavailable.
-    val downloadSemaphore = Semaphore(2)
+    // Keep all holdings loading concurrently. The dashboard has a 90-second
+    // overall deadline; throttling to two requests while retrying every empty result
+    // made a portfolio with several instruments exceed that deadline and lose the
+    // entire chart, even when individual MOEX endpoints were healthy.
     val pricesByTicker = coroutineScope {
         supported.map { (ticker, asset) ->
             async(Dispatchers.IO) {
-                val closes = downloadSemaphore.withPermit {
-                    var loaded: List<ru.mycapital.app.data.MoexDailyClose> = emptyList()
-                    repeat(3) { attempt ->
-                        try {
-                            loaded = priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
-                            if (loaded.isNotEmpty()) return@withPermit loaded
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            // Keep the last successful/empty result and retry below.
-                        }
-                        if (attempt < 2) delay(500L * (attempt + 1))
+                var closes: List<ru.mycapital.app.data.MoexDailyClose> = emptyList()
+                repeat(2) { attempt ->
+                    try {
+                        closes = priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
+                        if (closes.isNotEmpty()) return@repeat
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Retry once; a failed instrument must not cancel other histories.
                     }
-                    loaded
+                    if (attempt == 0 && closes.isEmpty()) delay(350L)
                 }
                 if (closes.isEmpty()) unavailableConcurrent.add(ticker)
                 ticker to closes.associate { it.date to it.close }.toSortedMap()
