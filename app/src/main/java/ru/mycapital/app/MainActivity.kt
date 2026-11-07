@@ -593,17 +593,21 @@ private fun OverviewScreen(
     }
     var historyLoading by remember { mutableStateOf(false) }
     var historyRefresh by remember { mutableIntStateOf(0) }
+    var historyLoadError by remember { mutableStateOf<String?>(null) }
     val historyAssetsKey = remember(assets) {
         assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
     }
     LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedRange, historyRefresh) {
         historyLoading = true
-        var loaded = PortfolioMarketHistoryResult(emptyList(), null, emptyList())
-        // The first load can coincide with screen restoration and database/network
-        // startup. Retry once automatically; pull-to-refresh also reloads chart history.
-        for (attempt in 0..1) {
-            val result = runCatching {
-                kotlinx.coroutines.withTimeout(90_000L) {
+        historyLoadError = null
+        var latestSuccessful: PortfolioMarketHistoryResult? = null
+        var lastError: Throwable? = null
+
+        // Never swallow coroutine cancellation: Compose uses it to stop obsolete
+        // requests when inputs/screens change. Retry only genuine load failures.
+        for (attempt in 0..2) {
+            try {
+                val loaded = kotlinx.coroutines.withTimeout(90_000L) {
                     withContext(Dispatchers.IO) {
                         buildPortfolioMarketHistory(
                             assets = assets,
@@ -613,14 +617,29 @@ private fun OverviewScreen(
                         )
                     }
                 }
-            }
-            if (result.isSuccess) {
-                loaded = result.getOrThrow()
+                latestSuccessful = loaded
                 if (loaded.points.isNotEmpty() && loaded.unavailableTickers.isEmpty()) break
+                if (attempt < 2) kotlinx.coroutines.delay(1_000L * (attempt + 1))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastError = error
+                if (attempt < 2) kotlinx.coroutines.delay(1_000L * (attempt + 1))
             }
-            if (attempt == 0) kotlinx.coroutines.delay(1_200L)
         }
-        historyResult = loaded
+
+        val loaded = latestSuccessful
+        if (loaded != null && loaded.points.isNotEmpty()) {
+            // A transient partial response must not blank a chart that was already
+            // rendered successfully. Keep the newer result when it has valid points.
+            historyResult = loaded
+            historyLoadError = if (loaded.unavailableTickers.isNotEmpty()) {
+                "Нет истории для: ${loaded.unavailableTickers.joinToString()}"
+            } else null
+        } else if (historyResult.points.isEmpty()) {
+            historyLoadError = lastError?.message
+                ?: "Исторические котировки пока не получены. Повторите обновление."
+        }
         historyLoading = false
     }
     val history = historyResult.points
