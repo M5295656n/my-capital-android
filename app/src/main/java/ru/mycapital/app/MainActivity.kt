@@ -1070,7 +1070,7 @@ private fun AssetsScreen(
         Text("Портфель", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         if (accounts.isNotEmpty()) {
-            AccountHistoryFilter(accounts, selectedAccountId) { selectedAccountId = it }
+            AccountHistoryFilter(accounts, selectedAccountId, includeUnassigned = false) { selectedAccountId = it }
             if (selectedAccountId != ALL_HISTORY_ACCOUNTS) {
                 Text(
                     "Показаны только позиции из последнего импортированного снимка выбранного договора.",
@@ -1799,6 +1799,7 @@ private fun historyAccountId(sourceKey: String?): String? {
 private fun AccountHistoryFilter(
     accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
     selectedAccountId: String,
+    includeUnassigned: Boolean = true,
     onSelect: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1821,10 +1822,12 @@ private fun AccountHistoryFilter(
                 text = { Text("Все счета") },
                 onClick = { onSelect(ALL_HISTORY_ACCOUNTS); expanded = false }
             )
-            DropdownMenuItem(
-                text = { Text("Без привязки к счёту") },
-                onClick = { onSelect(UNASSIGNED_HISTORY_ACCOUNT); expanded = false }
-            )
+            if (includeUnassigned) {
+                DropdownMenuItem(
+                    text = { Text("Без привязки к счёту") },
+                    onClick = { onSelect(UNASSIGNED_HISTORY_ACCOUNT); expanded = false }
+                )
+            }
             accounts.forEach { account ->
                 DropdownMenuItem(
                     text = { Text(account.displayName) },
