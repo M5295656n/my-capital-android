@@ -2094,7 +2094,7 @@ private fun PayoutsScreen(
         ) {
             item {
                 Text("Выплаты", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                AccountHistoryFilter(accounts, selectedAccountId, onAccountSelected)
+                AccountHistoryFilter(accounts, selectedAccountId, onSelect = onAccountSelected)
             }
             item {
                 androidx.compose.foundation.lazy.LazyRow(
