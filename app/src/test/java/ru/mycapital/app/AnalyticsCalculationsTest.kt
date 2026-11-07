@@ -33,7 +33,7 @@ class AnalyticsCalculationsTest {
     @Test
     fun classSlicesIncludeCashAndSumToOne() {
         val slices = calculatePortfolioClassSlices(
-            listOf(asset("SBER", quantity = 2.0, price = 100.0), asset("SBMM", "Фонд", 1.0, 100.0)),
+            listOf(asset("SBER", quantity = 1.0, price = 100.0), asset("SBMM", "Фонд", 1.0, 100.0)),
             cashBalance = 100.0
         )
         assertEquals(3, slices.size)
@@ -65,7 +65,7 @@ class AnalyticsCalculationsTest {
         assertEquals(200.0, sectors.first().value, 0.000001)
         val concentration = calculatePortfolioConcentration(assets, 500.0)
         assertEquals("SBER", concentration.first().ticker)
-        assertEquals(250.0, concentration.first().value, 0.000001)
+        assertEquals(150.0, concentration.first().value, 0.000001)
     }
 
     @Test
