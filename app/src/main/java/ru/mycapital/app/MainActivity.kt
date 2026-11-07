@@ -109,6 +109,7 @@ private fun MyCapitalApp() {
     BackHandler(enabled = selectedAssetDetail != null) { selectedAssetDetail = null }
     var moreDestination by remember { mutableStateOf(Screen.More) }
     var showAddAsset by remember { mutableStateOf(false) }
+    var showAddPayout by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
     var assetToDelete by remember { mutableStateOf<AssetEntity?>(null) }
     var showAddOperation by remember { mutableStateOf(false) }
@@ -271,8 +272,8 @@ private fun MyCapitalApp() {
     )) {
         Scaffold(
             floatingActionButton = {
-                if (selectedAssetDetail == null && (selected == Screen.Assets || selected == Screen.Operations)) {
-                    FloatingActionButton(onClick = { when (selected) { Screen.Assets -> showAddAsset = true; Screen.Operations -> showAddOperation = true; else -> Unit } }) {
+                if (selectedAssetDetail == null && selected == Screen.Operations) {
+                    FloatingActionButton(onClick = { showAddOperation = true }) {
                         Icon(Icons.Default.Add, contentDescription = "Добавить")
                     }
                 }
@@ -312,6 +313,9 @@ private fun MyCapitalApp() {
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
+                    onAddAsset = { showAddAsset = true },
+                    onAddPayout = { showAddPayout = true },
+                    hasAssets = assets.isNotEmpty(),
                     isParsingReport = isParsingReport,
                     isExportingData = isExportingData,
                     onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
@@ -399,6 +403,22 @@ private fun MyCapitalApp() {
                         payoutToConfirm = null
                     } catch (error: Exception) {
                         errorMessage = error.message ?: "Не удалось подтвердить выплату"
+                    }
+                }
+            }
+        )
+    }
+    if (showAddPayout) {
+        AddPayoutDialog(
+            assets = assets,
+            onDismiss = { showAddPayout = false },
+            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received, expectedDate ->
+                scope.launch {
+                    try {
+                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received, expectedDate)
+                        showAddPayout = false
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "Не удалось сохранить выплату"
                     }
                 }
             }
@@ -903,6 +923,9 @@ private fun OverviewMetricCard(
 
 @Composable
 private fun MoreScreen(
+    onAddAsset: () -> Unit,
+    onAddPayout: () -> Unit,
+    hasAssets: Boolean,
     isParsingReport: Boolean,
     isExportingData: Boolean,
     onImportReport: () -> Unit,
@@ -939,6 +962,32 @@ private fun MoreScreen(
                 Icon(Icons.Default.ChevronRight, contentDescription = null)
             }
         }
+        Text("Ручное добавление", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Card(Modifier.fillMaxWidth().clickable(onClick = onAddAsset)) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AddCircleOutline, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Добавить актив", fontWeight = FontWeight.SemiBold)
+                    Text("Вручную внести бумагу и её текущую позицию", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        Card(
+            Modifier.fillMaxWidth().then(if (hasAssets) Modifier.clickable(onClick = onAddPayout) else Modifier),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Payments, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Добавить выплату", fontWeight = FontWeight.SemiBold)
+                    Text(if (hasAssets) "Вручную внести дивиденд или купон" else "Сначала добавьте актив в портфель", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = if (hasAssets) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         Text("Файлы и резервные копии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         OutlinedButton(onClick = onImportReport, enabled = !isParsingReport, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.FileOpen, contentDescription = null)
@@ -970,7 +1019,7 @@ private fun AssetsScreen(
         Spacer(Modifier.height(8.dp))
         if (assets.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Пока нет активов. Нажмите +, чтобы добавить первый.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Пока нет активов. Добавьте первый актив во вкладке «Ещё».", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -2219,6 +2268,68 @@ private fun ReceivePayoutDialog(
         },
         confirmButton = {
             TextButton(enabled = valid, onClick = { onConfirm(tax) }) { Text("Подтвердить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AddPayoutDialog(
+    assets: List<AssetEntity>,
+    onDismiss: () -> Unit,
+    onSave: (AssetEntity?, String, Double, Double, Double, Boolean, Long?) -> Unit
+) {
+    var assetId by remember { mutableStateOf(assets.firstOrNull()?.id ?: 0L) }
+    var payoutType by remember { mutableStateOf("Дивиденд") }
+    var amountText by remember { mutableStateOf("") }
+    var quantityText by remember { mutableStateOf("1") }
+    var taxText by remember { mutableStateOf("0") }
+    var expectedDateText by remember { mutableStateOf("") }
+    var received by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    val asset = assets.firstOrNull { it.id == assetId }
+    val amount = parseDecimalInput(amountText) ?: 0.0
+    val quantity = parseDecimalInput(quantityText) ?: 0.0
+    val tax = parseDecimalInput(taxText) ?: -1.0
+    val gross = amount * quantity
+    val parsedExpectedDate = runCatching { java.time.LocalDate.parse(expectedDateText, java.time.format.DateTimeFormatter.ofPattern("dd.MM.uuuu")) }.getOrNull()
+    val expectedDate = parsedExpectedDate?.atStartOfDay(java.time.ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+    val valid = asset != null && amount > 0.0 && quantity > 0.0 && tax >= 0.0 && tax <= gross && (received || expectedDate != null)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Добавить выплату") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                    OutlinedTextField(value = asset?.ticker ?: "Нет активов", onValueChange = {}, readOnly = true,
+                        label = { Text("Бумага") }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        assets.forEach { item ->
+                            DropdownMenuItem(text = { Text(item.ticker) }, onClick = { assetId = item.id; expanded = false })
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = payoutType == "Дивиденд", onClick = { payoutType = "Дивиденд" }, label = { Text("Дивиденд") })
+                    FilterChip(selected = payoutType == "Купон", onClick = { payoutType = "Купон" }, label = { Text("Купон") })
+                }
+                OutlinedTextField(amountText, { amountText = it }, label = { Text("Сумма на акцию / облигацию, ₽") }, singleLine = true)
+                OutlinedTextField(quantityText, { quantityText = it }, label = { Text("Количество бумаг") }, singleLine = true)
+                OutlinedTextField(taxText, { taxText = it }, label = { Text("Налог, ₽") }, singleLine = true)
+                if (!received) {
+                    OutlinedTextField(expectedDateText, { expectedDateText = it }, label = { Text("Дата выплаты, ДД.ММ.ГГГГ") }, placeholder = { Text("20.01.2027") }, singleLine = true)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = received, onCheckedChange = { received = it })
+                    Text("Уже фактически получено")
+                }
+                Text("Начислено: ${money(gross)} ₽ · К получению: ${money((gross - tax).coerceAtLeast(0.0))} ₽",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onSave(asset, payoutType, amount, quantity, tax, received, expectedDate) }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
