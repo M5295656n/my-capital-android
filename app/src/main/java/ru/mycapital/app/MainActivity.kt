@@ -1939,22 +1939,23 @@ private fun PayoutsScreen(
     // The calendar chart always represents the full 12-month period, not only months
     // that happen to contain payouts. Status filters affect the feed; the chart keeps
     // its announced-vs-forecast comparison visible.
+    // Rolling 12-month calendar: December of the previous year through November
+    // of the selected year, so the chart always starts with December.
     val chartMonths = remember(selectedPeriod, today) {
-        val first = java.time.YearMonth.of(
-            selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear,
-            1
-        )
+        val year = selectedPeriod.substringAfter("year:").toIntOrNull() ?: currentYear
+        val first = java.time.YearMonth.of(year, 12).minusMonths(1)
         (0 until 12).map { first.plusMonths(it.toLong()) }
     }
     val chartPayouts = visiblePayouts.filter { payout ->
         val dateMillis = payout.actualDate ?: payout.expectedDate ?: return@filter false
         val date = java.time.Instant.ofEpochMilli(dateMillis).atZone(zone).toLocalDate()
-        val inPeriod = !date.isBefore(periodDates.first) && !date.isAfter(periodDates.second)
+        val month = java.time.YearMonth.from(date)
+        val inChartPeriod = !month.isBefore(chartMonths.first()) && !month.isAfter(chartMonths.last())
         val typeOk = typeFilter == "Все" ||
             (typeFilter == "Дивиденды" && payout.payoutType.contains("Дивиденд", true)) ||
             (typeFilter == "Купоны" && payout.payoutType.contains("Купон", true)) ||
             (typeFilter == "Погашения" && (payout.payoutType.contains("Погаш", true) || payout.payoutType.contains("Амортизац", true)))
-        inPeriod && typeOk && payout.status != "RECEIVED"
+        inChartPeriod && typeOk && payout.status != "RECEIVED"
     }
     val chartMonthly = chartPayouts.groupBy { payout ->
         java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
@@ -2088,6 +2089,9 @@ private fun PayoutsScreen(
                                                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                                     Text("${payout.ticker}  ${asset?.name ?: payout.payoutType}",
                                                         fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                                }
+                                                Column(horizontalAlignment = Alignment.End) {
+                                                    Text("+${money(payoutAmount(payout))} ₽", color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
                                                     Text(
                                                         when (payout.status) {
                                                             "RECEIVED" -> "Получено"
@@ -2095,12 +2099,9 @@ private fun PayoutsScreen(
                                                             "RECOMMENDED", "FORECAST", "EXPECTED" -> "Прогноз"
                                                             else -> "Прогноз"
                                                         },
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        color = Color(0xFF69AFFF),
                                                         style = MaterialTheme.typography.bodySmall
                                                     )
-                                                }
-                                                Column(horizontalAlignment = Alignment.End) {
-                                                    Text("+${money(payoutAmount(payout))} ₽", color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
                                                     val yield = if (asset != null && asset.currentPrice > 0.0 && payout.amountPerUnit > 0.0)
                                                         payout.amountPerUnit / asset.currentPrice * 100.0 else null
                                                     if (yield != null) Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", yield),
