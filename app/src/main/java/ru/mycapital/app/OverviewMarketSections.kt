@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -305,8 +306,25 @@ private fun DividendChartCard(title: String, subtitle: String, values: List<Doub
 private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) {
     val key = ticker.trim().uppercase()
     val context = LocalContext.current
-    val logoPath = AssetLogoCatalog.assetPathFor(key)
-    if (logoPath != null) {
+    val isOfz = key.startsWith("SU")
+    val logoPath = if (isOfz) null else AssetLogoCatalog.assetPathFor(key)
+    if (isOfz) {
+        Box(
+            modifier.clip(CircleShape).background(Color(0xFF29354F)),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data("file:///android_asset/logos/russian_coat_of_arms_white.svg")
+                    .crossfade(false)
+                    .build(),
+                imageLoader = AssetLogoCatalog.imageLoader(context),
+                contentDescription = "Герб ОФЗ",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth(.88f).fillMaxHeight(.88f)
+            )
+        }
+    } else if (logoPath != null) {
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data("file:///android_asset/$logoPath")
