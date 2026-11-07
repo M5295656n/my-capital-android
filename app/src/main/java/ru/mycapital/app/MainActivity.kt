@@ -1509,6 +1509,34 @@ private fun DoubleHeadedEagleIcon() {
     )
 }
 
+
+@Composable
+internal fun GoldBullionLogo(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        fun ingot(left: Float, top: Float, width: Float, height: Float, shade: Color) {
+            val path = Path().apply {
+                moveTo(left + width * .18f, top)
+                lineTo(left + width * .82f, top)
+                lineTo(left + width, top + height)
+                lineTo(left, top + height)
+                close()
+            }
+            drawPath(path, shade)
+            drawLine(
+                Color(0xFFFFE9A6),
+                Offset(left + width * .2f, top + height * .28f),
+                Offset(left + width * .8f, top + height * .28f),
+                strokeWidth = size.minDimension * .035f
+            )
+        }
+        ingot(w * .03f, h * .12f, w * .43f, h * .35f, Color(0xFFD99B24))
+        ingot(w * .54f, h * .12f, w * .43f, h * .35f, Color(0xFFF0C65A))
+        ingot(w * .27f, h * .52f, w * .46f, h * .38f, Color(0xFFFFD76A))
+    }
+}
+
 @Composable
 private fun AssetTypeIcon(
     assetType: String,
@@ -1517,10 +1545,13 @@ private fun AssetTypeIcon(
     val type = assetType.lowercase()
     val normalizedTicker = ticker.trim().uppercase()
     val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
-    val logoPath = if (isBond) null else AssetLogoCatalog.assetPathFor(normalizedTicker)
+    val isGoldFund = normalizedTicker == "GOLD"
+    val logoPath = if (isBond || isGoldFund) null else AssetLogoCatalog.assetPathFor(normalizedTicker)
     val context = LocalContext.current
 
-    if (isBond) {
+    if (isGoldFund) {
+        GoldBullionLogo(Modifier.size(42.dp))
+    } else if (isBond) {
         // Match the supplied reference: plain dark medallion with a large
         // white double-headed eagle. No light outline or frame.
         Surface(
