@@ -644,37 +644,11 @@ private fun OverviewScreen(
     }
     // Keep the dashboard chart visible even when MOEX candles are temporarily unavailable.
     // Daily local portfolio snapshots are an independent, already persisted source of history.
-    val snapshotHistory = remember(snapshots, operations, selectedRange) {
-        val ordered = snapshots.sortedBy { it.dateKey }
-        val allPoints = ordered.map { snapshot ->
-            val date = runCatching { java.time.LocalDate.parse(snapshot.dateKey) }.getOrNull()
-            val invested = if (date == null) 0.0 else operations.asSequence()
-                .filter { it.operationDate < date.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli() }
-                .sumOf {
-                    when (it.operationType) {
-                        "Пополнение" -> it.price
-                        "Вывод" -> -it.price
-                        else -> 0.0
-                    }
-                }.coerceAtLeast(0.0)
-            PortfolioMarketHistoryPoint(
-                dateKey = snapshot.dateKey,
-                totalValue = snapshot.totalValue,
-                investedCapital = invested,
-                nav = 100.0
-            )
-        }
-        val latestDate = allPoints.lastOrNull()?.let { runCatching { java.time.LocalDate.parse(it.dateKey) }.getOrNull() }
-        val rangeMonths = selectedRange.months
-        if (rangeMonths == null || latestDate == null) allPoints else {
-            val from = latestDate.minusMonths(rangeMonths)
-            allPoints.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(from) }
-        }
-    }
-    val history = historyResult.points.ifEmpty {
-        snapshotHistory.takeIf { it.size >= 2 } ?: emptyList()
-    }
-    val annualizedReturn = remember(history) {
+        // Only render the reconstructed daily MOEX history here. Sparse local snapshots
+    // (often just two points after reinstall) made the chart look like two straight lines
+    // and were misleadingly presented as a full portfolio performance history.
+    val history = historyResult.points
+val annualizedReturn = remember(history) {
         if (history.size < 2) null else {
             val firstDate = java.time.LocalDate.parse(history.first().dateKey)
             val lastDate = java.time.LocalDate.parse(history.last().dateKey)
