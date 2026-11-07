@@ -1,6 +1,7 @@
 package ru.mycapital.app
 
 import ru.mycapital.app.data.AssetEntity
+import ru.mycapital.app.data.PortfolioCompositionSnapshotEntity
 
 internal enum class PortfolioAssetClass(val label: String, val targetShare: Double?) {
     EQUITIES("Акции и фонды роста", 0.65),
@@ -125,4 +126,34 @@ internal fun calculatePortfolioConcentration(
         }
         .sortedByDescending { it.value }
         .take(limit)
+}
+
+internal fun buildPortfolioCompositionSnapshots(
+    dateKey: String,
+    accountId: String,
+    assets: List<AssetEntity>,
+    cashBalance: Double
+): List<PortfolioCompositionSnapshotEntity> {
+    val totalValue = assets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } +
+        cashBalance.coerceAtLeast(0.0)
+    if (totalValue <= 0.0) return emptyList()
+    val classes = calculatePortfolioClassSlices(assets, cashBalance).map { slice ->
+        PortfolioCompositionSnapshotEntity(
+            dateKey = dateKey,
+            accountId = accountId,
+            dimension = "CLASS",
+            category = slice.assetClass.name,
+            value = slice.value
+        )
+    }
+    val sectors = calculatePortfolioSectorSlices(assets, totalValue).map { slice ->
+        PortfolioCompositionSnapshotEntity(
+            dateKey = dateKey,
+            accountId = accountId,
+            dimension = "SECTOR",
+            category = slice.sector,
+            value = slice.value
+        )
+    }
+    return classes + sectors
 }
