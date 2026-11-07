@@ -20,7 +20,10 @@ internal object AssetLogoCatalog {
         "GMKN" to "logos/nornickel.svg",
         "NVTK" to "logos/novatek.png",
         "TATN" to "logos/tatneft.svg",
-        "TATNP" to "logos/tatneft.svg"
+        "TATNP" to "logos/tatneft.svg",
+        "GAZP" to "logos/gazprom.svg",
+        "LKOH" to "logos/lukoil.svg",
+        "ROSN" to "logos/rosneft.svg"
     )
 
     @Volatile private var cachedImageLoader: ImageLoader? = null
