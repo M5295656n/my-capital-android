@@ -70,6 +70,19 @@ data class PortfolioSnapshotEntity(
 )
 
 
+
+@Entity(
+    tableName = "portfolio_composition_snapshots",
+    primaryKeys = ["dateKey", "accountId", "dimension", "category"]
+)
+data class PortfolioCompositionSnapshotEntity(
+    val dateKey: String,
+    val accountId: String,
+    val dimension: String,
+    val category: String,
+    val value: Double
+)
+
 @Entity(tableName = "broker_account_cash")
 data class BrokerAccountCashEntity(
     @PrimaryKey val accountId: String,
