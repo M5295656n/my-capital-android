@@ -667,7 +667,7 @@ val annualizedReturn = remember(history) {
                 if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) {
                     onRefresh()
                     onRefreshMarketData()
-                    historyRefresh++
+                    onRefreshHistory()
                 }
                 pullDistance = 0f
                 return Velocity.Zero
