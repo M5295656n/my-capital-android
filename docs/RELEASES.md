@@ -4,6 +4,20 @@
 
 ## Последний подтверждённый релиз
 
+### v0.3.50 — versionCode 62 — 2026-11-07
+- Статус: **готовый Release APK; CI, unit tests, подпись, artifact и ресурсы логотипов проверены**.
+- Ветка: `main`; commit сборки: `f9854e5e1b2ffd95ba5b2c6ede0c235e73880ab2`.
+- GitHub Actions: run #579, ID `42364280277`; https://github.com/M5295656n/my-capital-android/actions/runs/42364280277
+- CI: `completed / success`; job `build` — success; unit tests — **129 passed, 0 failed, 0 errors, 0 skipped** (27 XML suites); signed release APK build and uploads — success; Room instrumentation — skipped by agreed rule.
+- Artifact: `my-capital-release-apk`, ID `13571665017`, ZIP size 13,375,750 bytes, ZIP SHA-256 `42360da647f1817add32b5680f1c59066bd47644bc3e102ec34a407825960c56`.
+- Test artifact: `unit-test-results`, ID `13570887993`, ZIP size 20,743 bytes, ZIP SHA-256 `af11e0b98e6518922c2a361c5e1a2ce016b727ce3828dde50efe2e01541c1961`.
+- APK: `MyCapital-0.3.50.apk`; local path `/mnt/data/MyCapital-0.3.50.apk`; size 13,911,928 bytes; APK SHA-256 `f94c56879ac13d19e8c021e8bc10468d049e02979515bd2124e4693c22f98f36`.
+- Package: `ru.mycapital.app`; versionName `0.3.50`; versionCode `62` — confirmed in release Gradle configuration.
+- APK v2 signing certificate SHA-256 fingerprint: `77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66`, matching the established signing key.
+- Logo catalog: added Nornickel (GMKN), Novatek (NVTK), and Tatneft (TATN/TATNP). Catalog now maps 10 share tickers to bundled SVG/PNG assets; other tickers retain the plain-ticker fallback until verified. OFZ uses the full Russian state coat of arms.
+- Offline validation: all three new files are present in the APK; the Nornickel, Tatneft and state-coat SVG files were parsed and rendered successfully; Novatek PNG dimensions are 256×256.
+- Итог: versionCode increased from 61 to 62; existing signing key retained; APK is signed for update installation over the previous version.
+
 ### v0.3.49 — versionCode 61 — 2026-11-07
 - Статус: **готовый Release APK; CI, unit tests, сборка, подпись, artifact и локальная проверка SVG подтверждены**.
 - Ветка: `main`; commit сборки: `2b05a08389550e2db20da1c093d29db130161b85`.
