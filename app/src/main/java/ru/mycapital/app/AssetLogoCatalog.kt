@@ -23,14 +23,18 @@ internal object AssetLogoCatalog {
         "TATNP" to "logos/tatneft.svg",
         "GAZP" to "logos/gazprom.svg",
         "LKOH" to "logos/lukoil.svg",
-        "ROSN" to "logos/rosneft.svg"
+        "ROSN" to "logos/rosneft.svg",
+        "IRAO" to "logos/interrao.svg",
+        "MDMG" to "logos/mdmg.svg",
+        "OZPH" to "logos/ozph.svg",
+        "RTKM" to "logos/rostelecom.svg"
     )
 
     @Volatile private var cachedImageLoader: ImageLoader? = null
 
     fun assetPathFor(ticker: String): String? = assets[ticker.trim().uppercase()]
 
-    fun coatOfArmsAssetPath(): String = "logos/russian_coat_of_arms.svg"
+    fun coatOfArmsAssetPath(): String = "logos/ofz_user_icon.svg"
 
     fun imageLoader(context: Context): ImageLoader =
         cachedImageLoader ?: synchronized(this) {
