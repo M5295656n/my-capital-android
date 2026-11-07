@@ -3,15 +3,15 @@ viewBox="0 0 12331.1 14589.7">
  <defs>
   <style type="text/css">
    <![CDATA[
-    .str0 {stroke:aqua;stroke-width:20;stroke-miterlimit:22.9256}
+    .str0 {stroke:black;stroke-width:20;stroke-miterlimit:22.9256}
     .fil7 {fill:none}
     .fil1 {fill:black}
-    .fil3 {fill:#0066CC}
-    .fil6 {fill:aqua}
-    .fil0 {fill:#CC0000}
-    .fil5 {fill:#D52C27}
-    .fil2 {fill:gold}
-    .fil4 {fill:white}
+    .fil3 {fill:black}
+    .fil6 {fill:black}
+    .fil0 {fill:black}
+    .fil5 {fill:black}
+    .fil2 {fill:black}
+    .fil4 {fill:black}
    ]]>
   </style>
  </defs>
