@@ -21,6 +21,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -301,6 +302,7 @@ private fun PortfolioCompositionHistoryChart(
         val plotted = if (points.size > 60) points.filterIndexed { index, _ -> index % ((points.size / 30).coerceAtLeast(1)) == 0 }.takeLast(60) else points
         val tracked = listOf(PortfolioAssetClass.EQUITIES, PortfolioAssetClass.FIXED_INCOME, PortfolioAssetClass.GOLD, PortfolioAssetClass.CASH)
         val colors = tracked.map { classColor(it) }
+        val gridColor = MaterialTheme.colorScheme.outlineVariant
         Canvas(Modifier.fillMaxWidth().height(160.dp)) {
             val left = 5f
             val right = size.width - 5f
@@ -308,7 +310,7 @@ private fun PortfolioCompositionHistoryChart(
             val bottom = size.height - 8f
             for (i in 0..4) {
                 val y = top + (bottom - top) * i / 4f
-                drawLine(MaterialTheme.colorScheme.outlineVariant, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+                drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
             }
             tracked.forEachIndexed { seriesIndex, assetClass ->
                 val path = androidx.compose.ui.graphics.Path()
