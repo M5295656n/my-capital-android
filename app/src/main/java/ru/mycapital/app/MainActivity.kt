@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -980,11 +981,6 @@ private fun AssetsScreen(
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    var logoCatalog by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    LaunchedEffect(Unit) {
-        logoCatalog = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) }
-    }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
         Text("Портфель", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -1007,7 +1003,7 @@ private fun AssetsScreen(
                             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AssetTypeIcon(asset.assetType, asset.ticker, logoCatalog)
+                            AssetTypeIcon(asset.assetType, asset.ticker)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(asset.ticker, fontWeight = FontWeight.Bold, fontSize = 17.sp)
@@ -1065,7 +1061,6 @@ private fun AssetDetailScreen(
     val assetPayouts = remember(asset.id, asset.ticker, payouts) {
         payouts.filter { it.assetId == asset.id || it.ticker.equals(asset.ticker, true) }
     }
-    LaunchedEffect(Unit) { logos = withContext(Dispatchers.IO) { AssetLogoCatalog.load(context) } }
     val firstTradeDate = trades.firstOrNull()?.operationDate?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
     LaunchedEffect(asset.ticker, asset.assetType, period, firstTradeDate) {
         loading = true
@@ -1175,7 +1170,7 @@ private fun AssetDetailScreen(
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AssetTypeIcon(asset.assetType, asset.ticker, logos)
+                    AssetTypeIcon(asset.assetType, asset.ticker)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(asset.ticker, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
@@ -1496,43 +1491,32 @@ private fun DoubleHeadedEagleIcon(tint: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun AssetTypeIcon(
-    assetType: String,
-    ticker: String,
-    logoCatalog: Map<String, String>
-) {
-    val type = assetType.lowercase()
+private fun AssetTypeIcon(assetType: String, ticker: String) {
     val normalizedTicker = ticker.trim().uppercase()
+    val type = assetType.lowercase()
     val isBond = type.contains("облигац") || type.contains("офз") || normalizedTicker.startsWith("SU")
-    val isFund = type.contains("фонд") || type.contains("бпиф") || type.contains("etf")
-    val domain = if (isBond) null else AssetLogoCatalog.domainFor(normalizedTicker, logoCatalog)
-    val blue = androidx.compose.ui.graphics.Color(0xFF173F78)
-    val fallbackTint = if (isFund) androidx.compose.ui.graphics.Color(0xFF67469A)
-        else androidx.compose.ui.graphics.Color(0xFF176B55)
+    val logoAsset = if (isBond) null else AssetLogoCatalog.assetFor(normalizedTicker)
 
     Surface(
         shape = CircleShape,
-        color = if (isBond) blue else androidx.compose.ui.graphics.Color(0xFFF0F2F5),
+        color = if (isBond) Color(0xFF173F78) else Color(0xFF202B3D),
         modifier = Modifier.size(46.dp)
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            if (isBond) {
-                DoubleHeadedEagleIcon(androidx.compose.ui.graphics.Color.White)
-            } else {
-                // The monogram remains visible if the network image is unavailable.
-                Text(
-                    normalizedTicker.take(2).ifBlank { "?" },
-                    color = fallbackTint,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(5.dp)) {
+            when {
+                isBond -> DoubleHeadedEagleIcon(Color.White)
+                logoAsset != null -> AsyncImage(
+                    model = "file:///android_asset/logos/$logoAsset",
+                    contentDescription = "Логотип $ticker",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
                 )
-                if (domain != null) {
-                    AsyncImage(
-                        model = AssetLogoCatalog.faviconUrl(domain),
-                        contentDescription = "Логотип $ticker",
-                        modifier = Modifier.fillMaxSize().padding(5.dp).clip(CircleShape)
-                    )
-                }
+                else -> Text(
+                    normalizedTicker.take(2).ifBlank { "?" },
+                    color = Color(0xFFB8C9E8),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
             }
         }
     }
