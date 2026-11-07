@@ -4,6 +4,31 @@
 
 ## Последний подтверждённый релиз
 
+### v0.3.49 — versionCode 61 — 2026-11-07
+- Статус: **готовый Release APK; CI, unit tests, сборка, подпись, artifact и локальная проверка SVG подтверждены**.
+- Ветка: `main`; commit сборки: `2b05a08389550e2db20da1c093d29db130161b85`.
+- GitHub Actions: run #578, ID `42363875044`; https://github.com/M5295656n/my-capital-android/actions/runs/42363875044
+- CI: `completed / success`; job `build` — success; unit tests — **129 passed, 0 failed, 0 errors, 0 skipped** (27 XML suites); signed release APK build — success; uploads — success; Room instrumentation — skipped by agreed rule.
+- Artifact: `my-capital-release-apk`, ID `13570852166`, ZIP size 13,284,277 bytes, ZIP SHA-256 `39bc8053c18dc9d3b3ba8f9c766e6ddc5abff0d47cb392bf805faf30c6d1ac17`.
+- Test artifact: `unit-test-results`, ID `13571445352`, ZIP size 20,813 bytes, ZIP SHA-256 `8860062047349c1b44773a34facd9c35552d3e113919821f239fbb2a8ba49500`.
+- APK: `MyCapital-0.3.49.apk`; local path `/mnt/data/MyCapital-0.3.49.apk`; size 13,822,276 bytes; APK SHA-256 `3dc3617ba1b37fbd1058e51cf2cc654f8436735ab71f732db245433cb92718d1`.
+- Package: `ru.mycapital.app`; versionName `0.3.49`; versionCode `61` — confirmed in the release Gradle configuration.
+- APK v2 signing certificate SHA-256 fingerprint: `77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66`, matching the established signing key.
+- Logo fix: removed a non-rendering Inkscape `sodipodi:nodetypes` attribute from the official multi-colour Russian coat-of-arms SVG; validated successful SVG rendering from the APK asset.
+- Итог: versionCode increased from 60 to 61; existing signing key retained; APK is signed for update installation over the previous version.
+
+### v0.3.48 — versionCode 60 — 2026-11-07
+- Статус: **готовый Release APK; CI, tests, signature and artifact verified**.
+- Commit: `3737075484593ef94c3cca7876db49c9072200de`; GitHub Actions run #577, ID `42363532663`; https://github.com/M5295656n/my-capital-android/actions/runs/42363532663
+- CI: success; **129 unit tests passed, 0 failed, 0 errors, 0 skipped**; signed release APK and artifacts uploaded; Room instrumentation skipped.
+- Artifact: `my-capital-release-apk`, ID `13570133036`; downloaded ZIP size 13,284,335 bytes; ZIP SHA-256 `d7dce4af46a29ec1706db02e6b72e1a492d8dff1111a67125e148db56209e2c0`.
+- Test artifact: `unit-test-results`, ID `13570616592`; downloaded ZIP size 20,707 bytes; ZIP SHA-256 `1cf96561f1eca147cc1ce7c95f99ecde354b98cf6b48c448e6892704d31cbbb8`.
+- APK: `MyCapital-0.3.48.apk`; size 13,822,304 bytes; APK SHA-256 `bf600875daf23cbde0367523c6d6ec93fb55dbd35dea88a7a63595362df583aa`.
+- Version: package `ru.mycapital.app`, versionName `0.3.48`, versionCode `60`; signing certificate fingerprint matches the established key.
+- Logo refresh: added verified offline SVG marks for Sber, T-Bank, Yandex and X5, plus the full Russian state coat of arms for OFZ. Other tickers remain unmapped until their artwork is verified.
+
+## Архивные записи
+
 ### v0.3.9 — versionCode 21 — 2026-11-06
 - Статус: **готовый Release APK; CI, unit tests, сборка, подпись и artifact проверены**.
 - Ветка: `main`; commit сборки: `43a9e662c8f952f8a4827b2ebc58f719cc1c16f5`.
