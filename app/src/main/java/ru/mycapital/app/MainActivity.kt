@@ -181,7 +181,8 @@ private fun MyCapitalApp() {
         assets.filter { it.quantity > 0.0 }.map { it.ticker.trim().uppercase() }.filter { it.isNotBlank() }.toSet()
     }
     var dashboardMarketData by remember { mutableStateOf(MarketOverviewData()) }
-    LaunchedEffect(dashboardHeldTickers) {
+    var dashboardMarketRefresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(dashboardHeldTickers, dashboardMarketRefresh) {
         val result = runCatching {
             kotlinx.coroutines.withTimeout(35_000L) {
                 withContext(Dispatchers.IO) { MarketOverviewClient().load(dashboardHeldTickers) }
@@ -325,7 +326,7 @@ private fun MyCapitalApp() {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, dashboardMarketData, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -547,6 +548,7 @@ private fun OverviewScreen(
     operations: List<OperationEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
     marketData: MarketOverviewData,
+    onRefreshMarketData: () -> Unit,
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
     onOpenSettings: () -> Unit,
@@ -637,7 +639,7 @@ private fun OverviewScreen(
                 return androidx.compose.ui.geometry.Offset.Zero
             }
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); loadMarketData() }
+                if (pullDistance >= with(density) { 72.dp.toPx() } && !isRefreshing) { onRefresh(); onRefreshMarketData() }
                 pullDistance = 0f
                 return Velocity.Zero
             }
@@ -663,9 +665,9 @@ private fun OverviewScreen(
                     Icon(Icons.Default.Settings, contentDescription = "Настройки")
                 }
             }
-            if (isRefreshing || marketLoading || pullDistance > 0f) {
+            if (isRefreshing || pullDistance > 0f) {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    if (isRefreshing || marketLoading) {
+                    if (isRefreshing) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
                         CircularProgressIndicator(
