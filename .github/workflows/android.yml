@@ -46,9 +46,12 @@ jobs:
           set -euo pipefail
           APK="app/build/outputs/apk/release/app-release.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print toupper($2)}' | tr -d ':[:space:]')"
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
+          printf '%s\\n' "$VERIFY_OUTPUT"
+          ACTUAL="$(printf '%s\\n' "$VERIFY_OUTPUT" | grep -i 'SHA-256 digest' | head -n 1 | sed 's/.*digest:[[:space:]]*//' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
           EXPECTED="77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66"
           echo "APK signer SHA-256: $ACTUAL"
+          test -n "$ACTUAL" || (echo "ERROR: Could not read APK signing certificate digest" && exit 1)
           test "$ACTUAL" = "$EXPECTED" || (echo "ERROR: APK signing certificate does not match the project baseline" && exit 1)
       - name: Upload unit test results
         if: always()
@@ -58,6 +61,7 @@ jobs:
           path: app/build/test-results/testDebugUnitTest/
           if-no-files-found: warn
       - name: Upload signed release APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: my-capital-release-apk
