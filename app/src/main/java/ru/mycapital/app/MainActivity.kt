@@ -1877,15 +1877,20 @@ private fun PayoutsScreen(
     val zone = java.time.ZoneId.systemDefault()
     val today = java.time.LocalDate.now(zone)
     val currentYear = today.year
+    // Keep years in chronological order: older years are to the left of the current year,
+    // newer years are to the right. The initial viewport is anchored on the current year.
     val periods = remember(currentYear) {
         buildList {
-            add("year:$currentYear")
-            (1..6).forEach { add("year:${currentYear + it}") }
             (1..5).reversed().forEach { offset ->
                 if (currentYear - offset >= 2000) add("year:${currentYear - offset}")
             }
+            add("year:$currentYear")
+            (1..6).forEach { add("year:${currentYear + it}") }
         }
     }
+    val periodListState = androidx.compose.foundation.lazy.rememberLazyListState(
+        initialFirstVisibleItemIndex = periods.indexOf("year:$currentYear").coerceAtLeast(0)
+    )
     var selectedPeriod by remember(currentYear) { mutableStateOf("year:$currentYear") }
     var statusFilter by remember { mutableStateOf("Все") }
     var typeFilter by remember { mutableStateOf("Все") }
@@ -1951,10 +1956,13 @@ private fun PayoutsScreen(
             (typeFilter == "Дивиденды" && payout.payoutType.contains("Дивиденд", true)) ||
             (typeFilter == "Купоны" && payout.payoutType.contains("Купон", true)) ||
             (typeFilter == "Погашения" && (payout.payoutType.contains("Погаш", true) || payout.payoutType.contains("Амортизац", true)))
-        inChartPeriod && typeOk && payout.status != "RECEIVED"
+        inChartPeriod && typeOk
     }
     val chartMonthly = chartPayouts.groupBy { payout ->
         java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
+    }
+    val receivedByMonth = chartMonths.associateWith { month ->
+        chartMonthly[month].orEmpty().filter { it.status == "RECEIVED" }.sumOf(::payoutAmount)
     }
     val announcedByMonth = chartMonths.associateWith { month ->
         chartMonthly[month].orEmpty().filter { it.status == "ANNOUNCED" }.sumOf(::payoutAmount)
@@ -1981,6 +1989,7 @@ private fun PayoutsScreen(
             }
             item {
                 androidx.compose.foundation.lazy.LazyRow(
+                    state = periodListState,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
@@ -2020,6 +2029,7 @@ private fun PayoutsScreen(
             item {
                 PayoutCalendarChart(
                     months = chartMonths,
+                    received = receivedByMonth,
                     announced = announcedByMonth,
                     forecast = forecastByMonth
                 )
@@ -2140,12 +2150,15 @@ private fun PayoutsScreen(
 @Composable
 private fun PayoutCalendarChart(
     months: List<java.time.YearMonth>,
+    received: Map<java.time.YearMonth, Double>,
     announced: Map<java.time.YearMonth, Double>,
     forecast: Map<java.time.YearMonth, Double>
 ) {
     if (months.isEmpty()) return
-    val maxValue = months.maxOfOrNull { (announced[it] ?: 0.0) + (forecast[it] ?: 0.0) }
-        ?.coerceAtLeast(1.0) ?: 1.0
+    val maxValue = months.maxOfOrNull {
+        (received[it] ?: 0.0) + (announced[it] ?: 0.0) + (forecast[it] ?: 0.0)
+    }?.coerceAtLeast(1.0) ?: 1.0
+    val receivedColor = Color(0xFF55C99A)
     val announcedColor = Color(0xFF48A9E8)
     val forecastColor = Color(0xFF087BAA).copy(alpha = 0.28f)
     val locale = java.util.Locale("ru", "RU")
@@ -2158,9 +2171,10 @@ private fun PayoutCalendarChart(
     Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             months.forEach { month ->
+                val receivedValue = received[month] ?: 0.0
                 val announcedValue = announced[month] ?: 0.0
                 val forecastValue = forecast[month] ?: 0.0
-                val total = announcedValue + forecastValue
+                val total = receivedValue + announcedValue + forecastValue
                 val barHeightDp = (total / maxValue * 112.0).coerceAtLeast(0.0)
                 Column(
                     Modifier.weight(1f),
@@ -2170,15 +2184,24 @@ private fun PayoutCalendarChart(
                     Box(Modifier.fillMaxWidth().height(132.dp)) {
                         Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(112.dp).padding(horizontal = 1.dp)) {
                             val plotHeight = size.height - 2.dp.toPx()
+                            val receivedHeight = (receivedValue / maxValue * plotHeight).toFloat()
                             val announcedHeight = (announcedValue / maxValue * plotHeight).toFloat()
                             val forecastHeight = (forecastValue / maxValue * plotHeight).toFloat()
                             val barWidth = size.width * 0.88f
                             val left = (size.width - barWidth) / 2f
                             val bottom = size.height
+                            if (receivedHeight > 0.5f) {
+                                drawRoundRect(
+                                    receivedColor,
+                                    Offset(left, bottom - receivedHeight),
+                                    androidx.compose.ui.geometry.Size(barWidth, receivedHeight),
+                                    androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                                )
+                            }
                             if (announcedHeight > 0.5f) {
                                 drawRoundRect(
                                     announcedColor,
-                                    Offset(left, bottom - announcedHeight),
+                                    Offset(left, bottom - receivedHeight - announcedHeight),
                                     androidx.compose.ui.geometry.Size(barWidth, announcedHeight),
                                     androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
                                 )
@@ -2186,7 +2209,7 @@ private fun PayoutCalendarChart(
                             if (forecastHeight > 0.5f) {
                                 drawRoundRect(
                                     forecastColor,
-                                    Offset(left, bottom - announcedHeight - forecastHeight),
+                                    Offset(left, bottom - receivedHeight - announcedHeight - forecastHeight),
                                     androidx.compose.ui.geometry.Size(barWidth, forecastHeight),
                                     androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
                                 )
@@ -2217,9 +2240,12 @@ private fun PayoutCalendarChart(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(receivedColor))
+                Text("Получено", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
                 Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(announcedColor))
                 Text("Объявлены", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(8.dp))
                 Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(forecastColor))
                 Text("Прогноз", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
