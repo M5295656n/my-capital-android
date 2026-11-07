@@ -45,6 +45,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import ru.mycapital.app.data.PayoutEntity
+import java.io.IOException
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -98,10 +99,7 @@ internal class MarketOverviewClient {
             .header("Accept", "application/json")
             .header("User-Agent", "MyCapital-Android/0.3.9")
             .build()
-        val body = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException("Курсы валют: HTTP ${response.code}")
-            response.body?.string() ?: throw IllegalStateException("Пустой ответ с курсами валют")
-        }
+        val body = getText(request.url.toString(), "Курсы валют")
         listOfNotNull(
             parseCbrCurrencyRateJson(body, "USD", "USD_RUB_CBR", "USD/RUB"),
             parseCbrCurrencyRateJson(body, "EUR", "EUR_RUB_CBR", "EUR/RUB"),
@@ -166,13 +164,35 @@ internal class MarketOverviewClient {
         }.filter { it.changePercent.isFinite() && it.changePercent != 0.0 }
     }.getOrDefault(emptyList())
 
-    private fun getJson(url: String): JSONObject {
-        val request = Request.Builder().url(url).header("Accept", "application/json")
-            .header("User-Agent", "MyCapital-Android/0.3").build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException("MOEX ISS: HTTP ${response.code}")
-            return JSONObject(response.body?.string() ?: throw IllegalStateException("Пустой ответ MOEX ISS"))
+    private fun getJson(url: String): JSONObject =
+        try {
+            JSONObject(getText(url, "MOEX ISS"))
+        } catch (error: Exception) {
+            throw IOException("Не удалось прочитать рыночные данные MOEX ISS", error)
         }
+
+    // Temporary network failures and rate limits are common on mobile connections.
+    // Retry a request briefly instead of turning one timeout/HTTP 5xx into an empty
+    // dashboard section. Permanent 4xx responses are not retried.
+    private fun getText(url: String, source: String): String {
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                val request = Request.Builder().url(url).header("Accept", "application/json")
+                    .header("User-Agent", "MyCapital-Android/0.3.60").build()
+                client.newCall(request).execute().use { response ->
+                    if (response.code == 429 || response.code >= 500) {
+                        throw IOException("$source: временная ошибка HTTP ${response.code}")
+                    }
+                    if (!response.isSuccessful) throw IOException("$source: HTTP ${response.code}")
+                    return response.body?.string() ?: throw IOException("$source: пустой ответ")
+                }
+            } catch (error: Exception) {
+                lastError = error
+                if (attempt < 2) Thread.sleep(350L * (attempt + 1))
+            }
+        }
+        throw lastError ?: IOException("$source: запрос не выполнен")
     }
 }
 
