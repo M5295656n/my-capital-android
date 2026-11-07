@@ -88,7 +88,11 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
                     if (fresh.first.isNotEmpty()) imoex = fresh.first
                     if (fresh.second.isNotEmpty()) mcftr = fresh.second
                     if (imoex.isEmpty() || mcftr.isEmpty()) {
-                        error = "MOEX ISS не вернул исторические значения одного или обоих индексов за период."
+                        val missing = buildList {
+                            if (imoex.isEmpty()) add("IMOEX")
+                            if (mcftr.isEmpty()) add("MCFTR")
+                        }
+                        error = "MOEX ISS не вернул исторические значения: ${missing.joinToString()}."
                     }
                 } catch (networkError: Exception) {
                     if (imoex.isEmpty() || mcftr.isEmpty()) throw networkError
@@ -147,8 +151,8 @@ private fun BenchmarkChart(
     imoex: List<MoexIndexPoint>,
     mcftr: List<MoexIndexPoint>
 ) {
-    val priceByDate = imoex.associate { it.date to it.value }
-    val totalByDate = mcftr.associate { it.date to it.value }
+    val priceByDate = java.util.TreeMap(imoex.associate { it.date to it.value })
+    val totalByDate = java.util.TreeMap(mcftr.associate { it.date to it.value })
     val navByDate = mutableMapOf<String, Double>()
     var nav = 100.0
     snapshots.forEachIndexed { index, snapshot ->
@@ -161,18 +165,20 @@ private fun BenchmarkChart(
         }
         navByDate[snapshot.dateKey] = nav
     }
-    val dates = snapshots.map { it.dateKey }.filter { priceByDate.containsKey(it) && totalByDate.containsKey(it) }
+    val dates = snapshots.map { it.dateKey }.filter {
+        priceByDate.floorEntry(it) != null && totalByDate.floorEntry(it) != null
+    }
     if (dates.size < 2) {
-        Text("Недостаточно общих торговых дат для корректного сравнения.", style = MaterialTheme.typography.bodySmall)
+        Text("Недостаточно данных индексов для выбранного периода.", style = MaterialTheme.typography.bodySmall)
         return
     }
     val first = dates.first()
     val p0 = navByDate[first] ?: return
-    val i0 = priceByDate[first] ?: return
-    val t0 = totalByDate[first] ?: return
+    val i0 = priceByDate.floorEntry(first)?.value ?: return
+    val t0 = totalByDate.floorEntry(first)?.value ?: return
     val portfolio = dates.map { (navByDate.getValue(it) / p0 * 100.0).toFloat() }
-    val price = dates.map { (priceByDate.getValue(it) / i0 * 100.0).toFloat() }
-    val total = dates.map { (totalByDate.getValue(it) / t0 * 100.0).toFloat() }
+    val price = dates.map { (priceByDate.floorEntry(it)!!.value / i0 * 100.0).toFloat() }
+    val total = dates.map { (totalByDate.floorEntry(it)!!.value / t0 * 100.0).toFloat() }
     val values = portfolio + price + total
     val min = values.minOrNull() ?: 100f
     val max = values.maxOrNull() ?: 100f

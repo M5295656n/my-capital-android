@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,7 +92,7 @@ internal fun PortfolioAnalyticsSection(
             }
         }
 
-        Card(shape = RoundedCornerShape(18.dp)) {
+        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("Рыночная стоимость активов и свободные деньги", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -142,7 +143,7 @@ internal fun PortfolioAnalyticsSection(
             }
         }
 
-        Card(shape = RoundedCornerShape(18.dp)) {
+        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Структура по секторам", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("Доля от всего портфеля. Фонды без раскрытого состава не распределяются по отраслям.",
@@ -150,11 +151,14 @@ internal fun PortfolioAnalyticsSection(
                 if (sectorSlices.isEmpty()) {
                     Text("Пока нет акций с определённой отраслью.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    sectorSlices.forEach { sector ->
+                    PortfolioSectorDonut(sectorSlices, Modifier.size(132.dp).align(Alignment.CenterHorizontally))
+                    sectorSlices.forEachIndexed { sectorIndex, sector ->
                         var expanded by remember(sector.sector) { mutableStateOf(false) }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { expanded = !expanded }.padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(9.dp).clip(CircleShape).background(sectorColor(sectorIndex)))
+                                Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(sector.sector, fontWeight = FontWeight.Medium)
                                     Text("${moneyAnalytics(sector.value)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -164,7 +168,7 @@ internal fun PortfolioAnalyticsSection(
                                 Text(if (expanded) "−" else "+", color = MaterialTheme.colorScheme.primary)
                             }
                             Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                                Box(Modifier.fillMaxWidth(sector.shareOfPortfolio.toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                                Box(Modifier.fillMaxWidth(sector.shareOfPortfolio.toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(sectorColor(sectorIndex)))
                             }
                             if (expanded) {
                                 sector.positions.forEach { asset ->
@@ -183,7 +187,7 @@ internal fun PortfolioAnalyticsSection(
             }
         }
 
-        Card(shape = RoundedCornerShape(18.dp)) {
+        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Концентрация портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("Крупнейшие эмитенты по доле от всего портфеля", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -218,7 +222,7 @@ internal fun PortfolioAnalyticsSection(
             }
         }
 
-        Card(shape = RoundedCornerShape(18.dp)) {
+        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Историческая структура", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 PortfolioCompositionHistoryChart(compositionSnapshots, selectedAccountId)
@@ -244,6 +248,44 @@ private fun PortfolioAllocationDonut(slices: List<PortfolioClassSlice>, modifier
             startAngle += sweep
         }
     }
+}
+
+@Composable
+private fun PortfolioSectorDonut(
+    sectors: List<PortfolioSectorSlice>,
+    modifier: Modifier = Modifier
+) {
+    val colors = sectors.indices.map { sectorColor(it) }
+    Canvas(modifier) {
+        val stroke = size.minDimension * 0.18f
+        var startAngle = -90f
+        sectors.forEachIndexed { index, sector ->
+            val sweep = (sector.shareOfPortfolio * 360.0).toFloat()
+            if (sweep > 0f) {
+                drawArc(
+                    color = colors[index],
+                    startAngle = startAngle,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = Offset(stroke / 2f, stroke / 2f),
+                    size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke, cap = StrokeCap.Butt)
+                )
+            }
+            startAngle += sweep
+        }
+    }
+}
+
+private fun sectorColor(index: Int): Color = when (index % 8) {
+    0 -> Color(0xFF3989DB)
+    1 -> Color(0xFF26A69A)
+    2 -> Color(0xFFD5A344)
+    3 -> Color(0xFF9B7BEA)
+    4 -> Color(0xFFE27A64)
+    5 -> Color(0xFF67A56B)
+    6 -> Color(0xFF4FABC5)
+    else -> Color(0xFF8E98A8)
 }
 
 @Composable
@@ -294,7 +336,7 @@ private fun PortfolioCompositionHistoryChart(
     if (points.size < 2) {
         Text(
             if (points.isEmpty()) "История распределения начнёт накапливаться после обновления приложения. Для выбранного периода пока нет двух дневных снимков."
-            else "Есть один дневной снимок. График появится после следующего ежедневного обновления.",
+            else "Сохранён один дневной снимок от ${points.first().first}. Второй снимок появится после следующего ежедневного обновления.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

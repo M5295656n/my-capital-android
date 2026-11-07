@@ -266,9 +266,10 @@ private fun MyCapitalApp() {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "portfolio_daily_snapshots", ExistingPeriodicWorkPolicy.UPDATE, snapshotPeriodic
         )
-        val firstSnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
+        val todayKey = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")).toString()
+        val todaySnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "portfolio_initial_composition_snapshot", ExistingWorkPolicy.KEEP, firstSnapshot
+            "portfolio_snapshot_$todayKey", ExistingWorkPolicy.KEEP, todaySnapshot
         )
     }
 
@@ -2674,11 +2675,6 @@ private fun AnalyticsScreen(
     val totalInvestmentResult = unrealized + realizedResult.profit + payoutIncome
     val totalValue = analyticsMarketValue + analyticsCash
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
-    val groups = analyticsAssets.groupBy { it.assetType.ifBlank { "Прочее" } }
-        .mapValues { (_, items) -> items.sumOf { it.quantity * it.currentPrice } }
-        .toList()
-        .sortedByDescending { it.second }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -2695,44 +2691,22 @@ private fun AnalyticsScreen(
             )
         }
         item {
-            val todayMillis = System.currentTimeMillis()
-            val horizonMillis = todayMillis + TimeUnit.DAYS.toMillis(90)
-            val upcoming = analyticsPayouts.filter {
-                it.status == "EXPECTED" && it.expectedDate != null &&
-                    it.expectedDate >= todayMillis && it.expectedDate <= horizonMillis
-            }.sortedBy { it.expectedDate }
-            Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (upcoming.isEmpty()) {
-                Text("В ближайшие 90 дней ожидаемых выплат с известной датой нет.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                upcoming.take(8).forEach { payout ->
-                    Card(shape = RoundedCornerShape(16.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val date = java.time.Instant.ofEpochMilli(payout.expectedDate!!)
-                                .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                            Column(Modifier.weight(1f)) {
-                                Text(analyticsAssets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
-                                    fontWeight = FontWeight.SemiBold)
-                                Text("${date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("ru", "RU")))} · ${payout.payoutType}",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text("≈ ${money(payout.totalAmount)} ₽", fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Стоимость капитала", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${money(totalValue)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     HorizontalDivider()
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Рыночная стоимость активов")
-                        Text("${money(analyticsMarketValue)} ₽", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Рыночная стоимость активов", modifier = Modifier.weight(1.05f), maxLines = 2)
+                        Text(
+                            "${money(analyticsMarketValue)} ₽",
+                            modifier = Modifier.weight(0.95f),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            fontSize = 14.sp
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Свободные деньги")
@@ -2743,7 +2717,7 @@ private fun AnalyticsScreen(
         }
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Нереализованный результат", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -2758,7 +2732,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Реализованный результат сделок", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -2776,7 +2750,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Полученные дивиденды и купоны", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2828,43 +2802,6 @@ private fun AnalyticsScreen(
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
             item { IndexBenchmarkSection(snapshots, dao) }
         }
-        item {
-            Text("Распределение активов по исходным типам", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        }
-        if (totalValue <= 0.0) {
-            item { Text("Добавьте активы или внесите свободные деньги, чтобы увидеть структуру портфеля.") }
-        } else {
-            items(groups) { (type, value) ->
-                val share = (value / totalValue).coerceIn(0.0, 1.0)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(type, fontWeight = FontWeight.Medium)
-                        Text("${money(value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
-                    }
-                    LinearProgressIndicator(
-                        progress = { share.toFloat() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-            item {
-                val share = (analyticsCash / totalValue).coerceIn(0.0, 1.0)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Денежные средства", fontWeight = FontWeight.Medium)
-                        Text("${money(analyticsCash)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
-                    }
-                    LinearProgressIndicator(progress = { share.toFloat() }, modifier = Modifier.fillMaxWidth())
-                }
-            }
-        }
-        item {
-            Text(
-                "Доходность рассчитана методом условной стоимости единицы с поправкой на внешние денежные потоки. Это дневное приближение; сравнение с IMOEX и MCFTR будет добавлено отдельно.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 
@@ -2892,6 +2829,13 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
                     label = { Text(period.label) }
                 )
             }
+        }
+        if (points.isNotEmpty()) {
+            Text(
+                "Доступная история: ${points.first().dateKey} — ${points.last().dateKey}. Если данных пока меньше выбранного периода, график закономерно будет одинаковым.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
