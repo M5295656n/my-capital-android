@@ -92,16 +92,16 @@ internal suspend fun buildPortfolioMarketHistory(
         supported.map { (ticker, asset) ->
             async(Dispatchers.IO) {
                 var closes: List<ru.mycapital.app.data.MoexDailyClose> = emptyList()
-                repeat(2) { attempt ->
+                for (attempt in 0..1) {
                     try {
                         closes = priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
-                        if (closes.isNotEmpty()) return@repeat
+                        if (closes.isNotEmpty()) break
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
                         // Retry once; a failed instrument must not cancel other histories.
                     }
-                    if (attempt == 0 && closes.isEmpty()) delay(350L)
+                    if (attempt == 0) delay(350L)
                 }
                 if (closes.isEmpty()) unavailableConcurrent.add(ticker)
                 ticker to closes.associate { it.date to it.close }.toSortedMap()
