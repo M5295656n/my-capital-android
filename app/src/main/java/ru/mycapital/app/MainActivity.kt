@@ -2086,13 +2086,10 @@ private fun PayoutsScreen(
                                     ) {
                                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Box(
-                                                    Modifier.size(48.dp).clip(RoundedCornerShape(9.dp))
-                                                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(payout.ticker.take(5), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                                                }
+                                                AssetTypeIcon(
+                                                    asset?.assetType ?: if (payout.payoutType.contains("купон", true)) "Облигация" else "Акция",
+                                                    payout.ticker
+                                                )
                                                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                                     Text("${payout.ticker}  ${asset?.name ?: payout.payoutType}",
                                                         fontWeight = FontWeight.SemiBold, maxLines = 1)
