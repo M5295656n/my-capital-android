@@ -115,16 +115,18 @@ internal fun PortfolioAnalyticsSection(
                     }
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text("Фактическая доля / целевая доля", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    classSlices.filter { it.assetClass.targetShare != null }.forEach { slice ->
-                        val target = slice.assetClass.targetShare!!
-                        val delta = (slice.share - target) * 100.0
+                    PortfolioAssetClass.entries.filter { it.targetShare != null }.forEach { assetClass ->
+                        val actual = classSlices.firstOrNull { it.assetClass == assetClass }
+                        val actualShare = actual?.share ?: 0.0
+                        val target = assetClass.targetShare!!
+                        val delta = (actualShare - target) * 100.0
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(slice.assetClass.label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                Text("${percentAnalytics(slice.share)} / ${percentAnalytics(target)}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                Text(assetClass.label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                Text("${percentAnalytics(actualShare)} / ${percentAnalytics(target)}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                             }
                             Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                                Box(Modifier.fillMaxWidth(slice.share.toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(classColor(slice.assetClass)))
+                                Box(Modifier.fillMaxWidth(actualShare.toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(classColor(assetClass)))
                             }
                             Text((if (delta > 0.05) "+" else "") + String.format(Locale("ru", "RU"), "%.1f п.п.", delta),
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -228,13 +230,14 @@ internal fun PortfolioAnalyticsSection(
 
 @Composable
 private fun PortfolioAllocationDonut(slices: List<PortfolioClassSlice>, modifier: Modifier = Modifier) {
+    val colors = slices.map { classColor(it.assetClass) }
     Canvas(modifier) {
         val stroke = size.minDimension * 0.16f
         var startAngle = -90f
-        slices.forEach { slice ->
+        slices.forEachIndexed { index, slice ->
             val sweep = (slice.share * 360.0).toFloat()
             drawArc(
-                color = classColor(slice.assetClass), startAngle = startAngle, sweepAngle = sweep,
+                color = colors[index], startAngle = startAngle, sweepAngle = sweep,
                 useCenter = false, topLeft = Offset(stroke / 2f, stroke / 2f),
                 size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
                 style = Stroke(width = stroke, cap = StrokeCap.Butt)
