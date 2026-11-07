@@ -69,6 +69,20 @@ class AnalyticsCalculationsTest {
         assertEquals(150.0, concentration.first { it.ticker == "SBER" }.value, 0.000001)
     }
 
+
+    @Test
+    fun compositionSnapshotsContainClassAndSectorDimensions() {
+        val rows = buildPortfolioCompositionSnapshots(
+            dateKey = "2026-11-08",
+            accountId = "ALL",
+            assets = listOf(asset("SBER", quantity = 2.0, price = 100.0), asset("SBMM", "Фонд", 1.0, 100.0)),
+            cashBalance = 100.0
+        )
+        assertEquals(true, rows.any { it.dimension == "CLASS" && it.category == "EQUITIES" && it.value == 200.0 })
+        assertEquals(true, rows.any { it.dimension == "CLASS" && it.category == "CASH" && it.value == 100.0 })
+        assertEquals(true, rows.any { it.dimension == "SECTOR" && it.category == "Финансы" && it.value == 200.0 })
+    }
+
     @Test
     fun emptyOrZeroValuePortfolioHasNoSlices() {
         assertEquals(0, calculatePortfolioClassSlices(emptyList(), 0.0).size)
