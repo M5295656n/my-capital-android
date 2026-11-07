@@ -268,7 +268,7 @@ private fun MyCapitalApp() {
         )
         val firstSnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "portfolio_initial_snapshot", ExistingWorkPolicy.KEEP, firstSnapshot
+            "portfolio_initial_composition_snapshot", ExistingWorkPolicy.KEEP, firstSnapshot
         )
     }
 
@@ -2741,6 +2741,7 @@ private fun AnalyticsScreen(
                 }
             }
         }
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
         item {
             Card(shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2796,6 +2797,16 @@ private fun AnalyticsScreen(
                     )
                     Text("Сумма нереализованного результата по текущим остаткам, реализованного результата по FIFO и полученных выплат после налога. Если история покупок неполная, итог по сделкам также неполный. Не включает налоги и расходы, не отражённые в операциях.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+
+        } else {
+            item {
+                Text(
+                    "Доходность по отдельному счёту пока не рассчитывается: себестоимость позиций хранится на уровне совокупного портфеля, а не каждого брокерского договора.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
         item {
