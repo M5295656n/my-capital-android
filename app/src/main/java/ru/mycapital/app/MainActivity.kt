@@ -165,6 +165,7 @@ private fun MyCapitalApp() {
     var selectedOperationAccount by remember { mutableStateOf("ALL") }
     var selectedPayoutAccount by remember { mutableStateOf("ALL") }
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
+    val portfolioCompositionSnapshots by dao.observePortfolioCompositionSnapshots().collectAsState(initial = emptyList())
     var payoutToConfirm by remember { mutableStateOf<PayoutEntity?>(null) }
     var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
@@ -376,7 +377,7 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -2628,6 +2629,7 @@ private fun AnalyticsScreen(
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
+    compositionSnapshots: List<ru.mycapital.app.data.PortfolioCompositionSnapshotEntity>,
     accounts: List<BrokerAccountEntity>,
     accountAssets: List<BrokerAccountAssetEntity>,
     accountCash: List<BrokerAccountCashEntity>,
@@ -2688,7 +2690,8 @@ private fun AnalyticsScreen(
                 cashBalance = analyticsCash,
                 accounts = accounts,
                 selectedAccountId = selectedAccountId,
-                onAccountSelected = { selectedAccountId = it }
+                onAccountSelected = { selectedAccountId = it },
+                compositionSnapshots = compositionSnapshots
             )
         }
         item {
