@@ -51,29 +51,17 @@ private const val ANALYTICS_ALL_ACCOUNTS = "ALL"
 @Composable
 internal fun PortfolioAnalyticsSection(
     assets: List<AssetEntity>,
-    totalCash: Double,
+    cashBalance: Double,
     accounts: List<BrokerAccountEntity>,
-    accountAssets: List<BrokerAccountAssetEntity>,
-    accountCash: List<BrokerAccountCashEntity>,
+    selectedAccountId: String,
+    onAccountSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedAccountId by remember { mutableStateOf(ANALYTICS_ALL_ACCOUNTS) }
     var accountMenuExpanded by remember { mutableStateOf(false) }
-    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
-    val visibleAssets = remember(assets, accountAssets, selectedAccountId) {
-        if (selectedAccountId == ANALYTICS_ALL_ACCOUNTS) assets
-        else accountAssets.asSequence()
-            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
-            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
-            .sortedBy { it.assetType + it.ticker }
-            .toList()
-    }
-    val visibleCash = if (selectedAccountId == ANALYTICS_ALL_ACCOUNTS) totalCash
-        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
-    val portfolioValue = visibleAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } + visibleCash.coerceAtLeast(0.0)
-    val classSlices = remember(visibleAssets, visibleCash) { calculatePortfolioClassSlices(visibleAssets, visibleCash) }
-    val sectorSlices = remember(visibleAssets, portfolioValue) { calculatePortfolioSectorSlices(visibleAssets, portfolioValue) }
-    val concentration = remember(visibleAssets, portfolioValue) { calculatePortfolioConcentration(visibleAssets, portfolioValue) }
+    val portfolioValue = assets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } + cashBalance.coerceAtLeast(0.0)
+    val classSlices = remember(assets, cashBalance) { calculatePortfolioClassSlices(assets, cashBalance) }
+    val sectorSlices = remember(assets, portfolioValue) { calculatePortfolioSectorSlices(assets, portfolioValue) }
+    val concentration = remember(assets, portfolioValue) { calculatePortfolioConcentration(assets, portfolioValue) }
     val selectedAccountLabel = if (selectedAccountId == ANALYTICS_ALL_ACCOUNTS) "Все счета"
         else accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName ?: "Счёт"
 
@@ -89,12 +77,12 @@ internal fun PortfolioAnalyticsSection(
                 )
                 ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
                     DropdownMenuItem(text = { Text("Все счета") }, onClick = {
-                        selectedAccountId = ANALYTICS_ALL_ACCOUNTS
+                        onAccountSelected(ANALYTICS_ALL_ACCOUNTS)
                         accountMenuExpanded = false
                     })
                     accounts.forEach { account ->
                         DropdownMenuItem(text = { Text(account.displayName) }, onClick = {
-                            selectedAccountId = account.accountId
+                            onAccountSelected(account.accountId)
                             accountMenuExpanded = false
                         })
                     }
