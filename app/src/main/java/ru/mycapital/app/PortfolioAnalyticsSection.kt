@@ -40,9 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import ru.mycapital.app.data.AssetEntity
-import ru.mycapital.app.data.BrokerAccountAssetEntity
-import ru.mycapital.app.data.BrokerAccountCashEntity
 import ru.mycapital.app.data.BrokerAccountEntity
+import ru.mycapital.app.data.PortfolioCompositionSnapshotEntity
 import java.util.Locale
 
 private const val ANALYTICS_ALL_ACCOUNTS = "ALL"
@@ -55,6 +54,7 @@ internal fun PortfolioAnalyticsSection(
     accounts: List<BrokerAccountEntity>,
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
+    compositionSnapshots: List<PortfolioCompositionSnapshotEntity>,
     modifier: Modifier = Modifier
 ) {
     var accountMenuExpanded by remember { mutableStateOf(false) }
@@ -218,11 +218,9 @@ internal fun PortfolioAnalyticsSection(
         }
 
         Card(shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Историческая структура", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Периоды: 1, 3, 6 и 12 месяцев", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Сейчас дневная история сохраняет общую стоимость активов и кэша, но не состав портфеля по классам и отраслям. Чтобы не показывать вымышленные данные, историческое распределение появится после добавления снимков состава портфеля.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PortfolioCompositionHistoryChart(compositionSnapshots, selectedAccountId)
             }
         }
     }
@@ -261,3 +259,88 @@ private fun moneyAnalytics(value: Double): String =
 
 private fun percentAnalytics(value: Double): String =
     String.format(Locale("ru", "RU"), "%.1f%%", value * 100.0)
+
+@Composable
+private fun PortfolioCompositionHistoryChart(
+    snapshots: List<PortfolioCompositionSnapshotEntity>,
+    accountId: String
+) {
+    var selectedMonths by remember { mutableStateOf(1) }
+    val points = remember(snapshots, accountId, selectedMonths) {
+        val cutoff = java.time.LocalDate.now().minusMonths(selectedMonths.toLong())
+        snapshots.asSequence()
+            .filter { it.accountId == accountId && it.dimension == "CLASS" }
+            .filter { row -> runCatching { !java.time.LocalDate.parse(row.dateKey).isBefore(cutoff) }.getOrDefault(false) }
+            .groupBy { it.dateKey }
+            .toSortedMap()
+            .mapNotNull { (dateKey, rows) ->
+                val total = rows.sumOf { it.value }.takeIf { it > 0.0 } ?: return@mapNotNull null
+                val shares = PortfolioAssetClass.entries.associateWith { assetClass ->
+                    rows.firstOrNull { it.category == assetClass.name }?.value?.div(total) ?: 0.0
+                }
+                dateKey to shares
+            }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(1, 3, 6, 12).forEach { months ->
+            FilterChip(
+                selected = selectedMonths == months,
+                onClick = { selectedMonths = months },
+                label = { Text(if (months == 12) "1Г" else "${months}М") }
+            )
+        }
+    }
+    if (points.size < 2) {
+        Text(
+            if (points.isEmpty()) "История распределения начнёт накапливаться после обновления приложения. Для выбранного периода пока нет двух дневных снимков."
+            else "Есть один дневной снимок. График появится после следующего ежедневного обновления.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        val plotted = if (points.size > 60) points.filterIndexed { index, _ -> index % ((points.size / 30).coerceAtLeast(1)) == 0 }.takeLast(60) else points
+        val tracked = listOf(PortfolioAssetClass.EQUITIES, PortfolioAssetClass.FIXED_INCOME, PortfolioAssetClass.GOLD, PortfolioAssetClass.CASH)
+        val colors = tracked.map { classColor(it) }
+        Canvas(Modifier.fillMaxWidth().height(160.dp)) {
+            val left = 5f
+            val right = size.width - 5f
+            val top = 8f
+            val bottom = size.height - 8f
+            for (i in 0..4) {
+                val y = top + (bottom - top) * i / 4f
+                drawLine(MaterialTheme.colorScheme.outlineVariant, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+            }
+            tracked.forEachIndexed { seriesIndex, assetClass ->
+                val path = androidx.compose.ui.graphics.Path()
+                plotted.forEachIndexed { index, point ->
+                    val x = left + (right - left) * index / (plotted.size - 1).toFloat()
+                    val share = point.second[assetClass] ?: 0.0
+                    val y = bottom - share.toFloat().coerceIn(0f, 1f) * (bottom - top)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, colors[seriesIndex], style = Stroke(width = 3f, cap = StrokeCap.Round))
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(points.first().first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(points.last().first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            tracked.forEach { assetClass ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(classColor(assetClass)))
+                    Text(
+                        when (assetClass) {
+                            PortfolioAssetClass.EQUITIES -> "Акции"
+                            PortfolioAssetClass.FIXED_INCOME -> "Облигации"
+                            PortfolioAssetClass.GOLD -> "Золото"
+                            PortfolioAssetClass.CASH -> "Кэш"
+                            PortfolioAssetClass.OTHER -> "Прочее"
+                        },
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+    }
+}
