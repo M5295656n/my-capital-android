@@ -64,8 +64,9 @@ class AnalyticsCalculationsTest {
         assertEquals("Нефть и газ", sectors.first().sector)
         assertEquals(200.0, sectors.first().value, 0.000001)
         val concentration = calculatePortfolioConcentration(assets, 500.0)
-        assertEquals("SBER", concentration.first().ticker)
-        assertEquals(150.0, concentration.first().value, 0.000001)
+        assertEquals("LKOH", concentration.first().ticker)
+        assertEquals(200.0, concentration.first().value, 0.000001)
+        assertEquals(150.0, concentration.first { it.ticker == "SBER" }.value, 0.000001)
     }
 
     @Test
