@@ -2834,11 +2834,11 @@ private fun AnalyticsScreen(
                 }
             }
             item {
-                val share = (cashBalance / totalValue).coerceIn(0.0, 1.0)
+                val share = (analyticsCash / totalValue).coerceIn(0.0, 1.0)
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Денежные средства", fontWeight = FontWeight.Medium)
-                        Text("${money(cashBalance)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
+                        Text("${money(analyticsCash)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
                     }
                     LinearProgressIndicator(progress = { share.toFloat() }, modifier = Modifier.fillMaxWidth())
                 }
