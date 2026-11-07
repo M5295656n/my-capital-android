@@ -9,6 +9,10 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -79,14 +83,29 @@ internal suspend fun buildPortfolioMarketHistory(
         return PortfolioMarketHistoryResult(emptyList(), firstPurchase, unavailableConcurrent.toList().sorted())
     }
 
+    // MOEX ISS is sensitive to bursts of parallel requests. Each bond needs
+    // several endpoints (terms, coupon schedule and candles), so downloading every
+    // holding at once caused intermittent empty responses/HTTP errors across otherwise
+    // valid tickers. Limit concurrency and retry transient/empty responses before marking
+    // an instrument unavailable.
+    val downloadSemaphore = Semaphore(2)
     val pricesByTicker = coroutineScope {
         supported.map { (ticker, asset) ->
             async(Dispatchers.IO) {
-                val closes = runCatching {
-                    priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
-                }.getOrElse {
-                    unavailableConcurrent.add(ticker)
-                    emptyList()
+                val closes = downloadSemaphore.withPermit {
+                    var loaded: List<ru.mycapital.app.data.MoexDailyClose> = emptyList()
+                    repeat(3) { attempt ->
+                        try {
+                            loaded = priceLoader(ticker, asset.assetType, firstPurchase, throughDate)
+                            if (loaded.isNotEmpty()) return@withPermit loaded
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // Keep the last successful/empty result and retry below.
+                        }
+                        if (attempt < 2) delay(500L * (attempt + 1))
+                    }
+                    loaded
                 }
                 if (closes.isEmpty()) unavailableConcurrent.add(ticker)
                 ticker to closes.associate { it.date to it.close }.toSortedMap()
