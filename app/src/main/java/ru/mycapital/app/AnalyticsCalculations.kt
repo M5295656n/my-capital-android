@@ -89,6 +89,7 @@ internal fun calculatePortfolioSectorSlices(
     if (totalPortfolioValue <= 0.0) return emptyList()
     return assets.asSequence()
         .filter { classifyPortfolioAsset(it) == PortfolioAssetClass.EQUITIES }
+        .filterNot { it.assetType.contains("фонд", ignoreCase = true) }
         .mapNotNull { asset ->
             val sector = sectorForAnalyticsTicker(asset.ticker) ?: "Не распределено"
             val value = (asset.quantity * asset.currentPrice).coerceAtLeast(0.0)
