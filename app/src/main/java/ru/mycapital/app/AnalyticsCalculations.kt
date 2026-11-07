@@ -109,6 +109,14 @@ internal fun calculatePortfolioSectorSlices(
         .sortedByDescending { it.value }
 }
 
+internal fun analyticsIssuerName(asset: AssetEntity): String = when (asset.ticker.trim().uppercase()) {
+    "SBER", "SBERP" -> "Сбербанк"
+    "SNGS", "SNGSP" -> "Сургутнефтегаз"
+    "TATN", "TATNP" -> "Татнефть"
+    "BANE", "BANEP" -> "Башнефть"
+    else -> asset.name.ifBlank { asset.ticker.uppercase() }
+}
+
 internal fun calculatePortfolioConcentration(
     assets: List<AssetEntity>,
     totalPortfolioValue: Double,
@@ -118,11 +126,11 @@ internal fun calculatePortfolioConcentration(
     return assets.asSequence()
         .map { asset -> asset to (asset.quantity * asset.currentPrice).coerceAtLeast(0.0) }
         .filter { it.second > 0.0 }
-        .groupBy { it.first.ticker.trim().uppercase() }
-        .map { (ticker, rows) ->
-            val asset = rows.first().first
+        .groupBy { analyticsIssuerName(it.first) }
+        .map { (issuer, rows) ->
+            val tickers = rows.map { it.first.ticker.trim().uppercase() }.distinct().sorted().joinToString(" / ")
             val value = rows.sumOf { it.second }
-            PortfolioConcentration(ticker, asset.name, value, value / totalPortfolioValue)
+            PortfolioConcentration(tickers, issuer, value, value / totalPortfolioValue)
         }
         .sortedByDescending { it.value }
         .take(limit)
