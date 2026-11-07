@@ -430,11 +430,24 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
         textSize = with(density) { 8.sp.toPx() }
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
+    val amountPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color(0xFFE4EDFC).toArgb()
+        textAlign = android.graphics.Paint.Align.CENTER
+        textSize = with(density) { 7.sp.toPx() }
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+    }
+    fun compactBarAmount(value: Double): String = when {
+        value >= 1_000_000.0 -> String.format(Locale("ru", "RU"), "%.1fм", value / 1_000_000.0)
+        value >= 10_000.0 -> String.format(Locale("ru", "RU"), "%.0fк", value / 1_000.0)
+        value >= 1_000.0 -> String.format(Locale("ru", "RU"), "%.1fк", value / 1_000.0)
+        else -> String.format(Locale("ru", "RU"), "%.0f", value)
+    }
     Canvas(modifier.fillMaxWidth().height(142.dp)) {
         val axisWidth = 29.dp.toPx()
         val left = axisWidth + 3.dp.toPx()
         val right = size.width - 2.dp.toPx()
-        val top = 5.dp.toPx()
+        // Reserve a small band above the plot for readable value labels.
+        val top = 16.dp.toPx()
         val bottom = size.height - 25.dp.toPx()
         val chartHeight = (bottom - top).coerceAtLeast(1f)
         val chartWidth = (right - left).coerceAtLeast(1f)
@@ -468,6 +481,15 @@ private fun DividendBarChart(values: List<Double>, labels: List<String>, barColo
                         androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
                     )
                 }
+                // Show the actual monthly/yearly amount above each column, including zero months.
+                val amountY = (bottom - barHeight - 3.dp.toPx())
+                    .coerceAtLeast(top - amountPaint.textSize * .15f)
+                drawContext.canvas.nativeCanvas.drawText(
+                    compactBarAmount(value),
+                    left + slot * (index + .5f),
+                    amountY,
+                    amountPaint
+                )
                 val label = labels.getOrNull(index).orEmpty()
                 if (label.isNotBlank()) {
                     drawContext.canvas.nativeCanvas.drawText(label, left + slot * (index + .5f), size.height - 3.dp.toPx(), xLabelPaint)
