@@ -665,8 +665,9 @@ private fun OverviewScreen(
             )
         }
         val latestDate = allPoints.lastOrNull()?.let { runCatching { java.time.LocalDate.parse(it.dateKey) }.getOrNull() }
-        if (selectedRange.months == null || latestDate == null) allPoints else {
-            val from = latestDate.minusMonths(selectedRange.months)
+        val rangeMonths = selectedRange.months
+        if (rangeMonths == null || latestDate == null) allPoints else {
+            val from = latestDate.minusMonths(rangeMonths)
             allPoints.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(from) }
         }
     }
