@@ -174,6 +174,25 @@ private fun MyCapitalApp() {
         }
     }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
+    // Keep dashboard data at the app level: OverviewScreen is removed from composition
+    // when another tab is opened. A screen-scoped coroutine used to be cancelled on tab
+    // changes, leaving quotes and movers intermittently blank until the next recomposition.
+    val dashboardHeldTickers = remember(assets) {
+        assets.filter { it.quantity > 0.0 }.map { it.ticker.trim().uppercase() }.filter { it.isNotBlank() }.toSet()
+    }
+    var dashboardMarketData by remember { mutableStateOf(MarketOverviewData()) }
+    LaunchedEffect(dashboardHeldTickers) {
+        val result = runCatching {
+            kotlinx.coroutines.withTimeout(35_000L) {
+                withContext(Dispatchers.IO) { MarketOverviewClient().load(dashboardHeldTickers) }
+            }
+        }
+        dashboardMarketData = result.getOrElse { error ->
+            dashboardMarketData.copy(
+                error = error.message ?: "Не удалось обновить рыночные данные"
+            )
+        }
+    }
     val quoteWorkInfos by WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("moex_quote_refresh_manual")
         .collectAsState(initial = emptyList())
@@ -306,7 +325,7 @@ private fun MyCapitalApp() {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, dashboardMarketData, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
@@ -527,35 +546,13 @@ private fun OverviewScreen(
     payouts: List<PayoutEntity>,
     operations: List<OperationEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
+    marketData: MarketOverviewData,
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val portfolioTotal = total + cashBalance
-    var marketData by remember { mutableStateOf(MarketOverviewData()) }
-    var marketLoading by remember { mutableStateOf(false) }
-    val marketScope = rememberCoroutineScope()
-    val loadMarketData: () -> Unit = {
-        marketScope.launch {
-            marketLoading = true
-            marketData = runCatching {
-                kotlinx.coroutines.withTimeout(20_000L) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        MarketOverviewClient().load(assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet())
-                    }
-                }
-            }.getOrElse { marketData.copy(error = if (it is kotlinx.coroutines.TimeoutCancellationException) "Загрузка рыночных данных заняла слишком много времени" else (it.message ?: "Не удалось загрузить рыночные данные")) }
-            marketLoading = false
-        }
-    }
-    // Reload market movers when the actual holdings arrive or change.
-    // On first composition assets can still be empty while Room emits its initial value;
-    // a Unit-keyed effect would then never refresh the list until the screen is recreated.
-    val heldTickers = remember(assets) {
-        assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
-    }
-    LaunchedEffect(heldTickers) { loadMarketData() }
     val orderedSnapshots = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
     val latest = orderedSnapshots.lastOrNull()
     val previous = orderedSnapshots.dropLast(1).lastOrNull()
