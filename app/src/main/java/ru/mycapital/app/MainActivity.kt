@@ -376,7 +376,7 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -2628,20 +2628,51 @@ private fun AnalyticsScreen(
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
+    accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
+    accountCash: List<BrokerAccountCashEntity>,
     dao: ru.mycapital.app.data.PortfolioDao,
     modifier: Modifier = Modifier
 ) {
-    val invested = assets.sumOf { it.quantity * it.averagePrice }
-    val unrealized = marketValue - invested
-    val realizedResult = calculateRealizedTradingResult(operations)
-    val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
+    val analyticsAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets
+        else accountAssets.asSequence()
+            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
+            .sortedBy { it.assetType + it.ticker }
+            .toList()
+    }
+    val analyticsCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val analyticsMarketValue = analyticsAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }
+    val selectedTickers = remember(accountAssets, selectedAccountId) {
+        accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    val analyticsOperations = remember(operations, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
+        else operations.filter { historyAccountId(it.sourceKey) == selectedAccountId }
+    }
+    val analyticsPayouts = remember(payouts, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
+        else payouts.filter { payout ->
+            val payoutAccountId = historyAccountId(payout.sourceKey)
+            if (payoutAccountId != null) payoutAccountId == selectedAccountId
+            else payout.ticker.uppercase() in selectedTickers
+        }
+    }
+    val invested = analyticsAssets.sumOf { it.quantity * it.averagePrice }
+    val unrealized = analyticsMarketValue - invested
+    val realizedResult = calculateRealizedTradingResult(analyticsOperations)
+    val receivedPayouts = analyticsPayouts.filter { it.status == "RECEIVED" }
     val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val payoutIncome = receivedDividends + receivedCoupons
     val totalInvestmentResult = unrealized + realizedResult.profit + payoutIncome
-    val totalValue = marketValue + cashBalance
+    val totalValue = analyticsMarketValue + analyticsCash
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
-    val groups = assets.groupBy { it.assetType.ifBlank { "Прочее" } }
+    val groups = analyticsAssets.groupBy { it.assetType.ifBlank { "Прочее" } }
         .mapValues { (_, items) -> items.sumOf { it.quantity * it.currentPrice } }
         .toList()
         .sortedByDescending { it.second }
@@ -2652,13 +2683,18 @@ private fun AnalyticsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("Аналитика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Структура и текущий результат портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PortfolioAnalyticsSection(
+                assets = analyticsAssets,
+                cashBalance = analyticsCash,
+                accounts = accounts,
+                selectedAccountId = selectedAccountId,
+                onAccountSelected = { selectedAccountId = it }
+            )
         }
         item {
             val todayMillis = System.currentTimeMillis()
             val horizonMillis = todayMillis + TimeUnit.DAYS.toMillis(90)
-            val upcoming = payouts.filter {
+            val upcoming = analyticsPayouts.filter {
                 it.status == "EXPECTED" && it.expectedDate != null &&
                     it.expectedDate >= todayMillis && it.expectedDate <= horizonMillis
             }.sortedBy { it.expectedDate }
@@ -2673,7 +2709,7 @@ private fun AnalyticsScreen(
                             val date = java.time.Instant.ofEpochMilli(payout.expectedDate!!)
                                 .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
                             Column(Modifier.weight(1f)) {
-                                Text(assets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
+                                Text(analyticsAssets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
                                     fontWeight = FontWeight.SemiBold)
                                 Text("${date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("ru", "RU")))} · ${payout.payoutType}",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2693,11 +2729,11 @@ private fun AnalyticsScreen(
                     HorizontalDivider()
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Рыночная стоимость активов")
-                        Text("${money(marketValue)} ₽", fontWeight = FontWeight.SemiBold)
+                        Text("${money(analyticsMarketValue)} ₽", fontWeight = FontWeight.SemiBold)
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Свободные деньги")
-                        Text("${money(cashBalance)} ₽", fontWeight = FontWeight.SemiBold)
+                        Text("${money(analyticsCash)} ₽", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -2760,21 +2796,26 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (snapshots.size >= 2) {
+            if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
+                Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                if (snapshots.size >= 2) {
                 PortfolioHistoryChart(snapshots)
                 Text("График показывает условную доходность (база 100) с исключением пополнений и выводов. Денежные потоки учитываются на конец дневного интервала; для точного TWR потребуется точное время каждого потока.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Text("История только начинается. Приложение сохраняет ежедневную стоимость капитала; график появится после второго дневного снимка.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                Text("Историческая динамика по отдельному счёту пока недоступна: дневные снимки сохраняются для портфеля целиком.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        item {
-            IndexBenchmarkSection(snapshots, dao)
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
+            item { IndexBenchmarkSection(snapshots, dao) }
         }
         item {
-            Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Распределение активов по исходным типам", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         if (totalValue <= 0.0) {
             item { Text("Добавьте активы или внесите свободные деньги, чтобы увидеть структуру портфеля.") }
