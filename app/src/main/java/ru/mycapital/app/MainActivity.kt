@@ -1436,10 +1436,11 @@ internal fun annualizedReturnPercent(flows: List<Pair<Long, Double>>): Double? {
 private fun DoubleHeadedEagleIcon() {
     val context = LocalContext.current
     AsyncImage(
-        model = "file:///android_asset/${AssetLogoCatalog.coatOfArmsAssetPath()}",
-        contentDescription = "Государственный герб Российской Федерации",
-        modifier = Modifier.size(31.dp),
-        imageLoader = AssetLogoCatalog.imageLoader(context)
+        model = "file:///android_asset/logos/russian_coat_of_arms_white.svg",
+        contentDescription = "Белый герб для ОФЗ",
+        modifier = Modifier.size(32.dp),
+        imageLoader = AssetLogoCatalog.imageLoader(context),
+        contentScale = ContentScale.Fit
     )
 }
 
@@ -1454,19 +1455,25 @@ private fun AssetTypeIcon(
     val logoPath = if (isBond) null else AssetLogoCatalog.assetPathFor(normalizedTicker)
     val context = LocalContext.current
 
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = androidx.compose.ui.graphics.Color(0xFFF7F8FA),
-        modifier = Modifier.size(46.dp)
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(5.dp)) {
+    if (isBond) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = androidx.compose.ui.graphics.Color.Black,
+            modifier = Modifier.size(46.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(6.dp)) {
+                DoubleHeadedEagleIcon()
+            }
+        }
+    } else {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(46.dp)) {
             when {
-                isBond -> DoubleHeadedEagleIcon()
                 logoPath != null -> AsyncImage(
                     model = "file:///android_asset/$logoPath",
                     contentDescription = "Логотип $ticker",
-                    modifier = Modifier.fillMaxSize(),
-                    imageLoader = AssetLogoCatalog.imageLoader(context)
+                    modifier = Modifier.size(40.dp),
+                    imageLoader = AssetLogoCatalog.imageLoader(context),
+                    contentScale = ContentScale.Fit
                 )
                 else -> Text(
                     normalizedTicker.take(4).ifBlank { "?" },
