@@ -55,7 +55,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
         }
 
         val database = Room.databaseBuilder(context, PortfolioDatabase::class.java, databaseName)
-            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12)
+            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12, PortfolioDatabase.MIGRATION_12_13, PortfolioDatabase.MIGRATION_13_14)
             .allowMainThreadQueries()
             .build()
 
