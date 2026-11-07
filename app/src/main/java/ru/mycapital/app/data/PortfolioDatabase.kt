@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class],
-    version = 13,
+    entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class, PortfolioCompositionSnapshotEntity::class],
+    version = 14,
     exportSchema = false
 )
 abstract class PortfolioDatabase : RoomDatabase() {
@@ -93,6 +93,17 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS portfolio_composition_snapshots (" +
+                        "dateKey TEXT NOT NULL, accountId TEXT NOT NULL, dimension TEXT NOT NULL, " +
+                        "category TEXT NOT NULL, value REAL NOT NULL, " +
+                        "PRIMARY KEY(dateKey, accountId, dimension, category))"
+                )
+            }
+        }
+
         @Volatile private var INSTANCE: PortfolioDatabase? = null
 
         fun getInstance(context: Context): PortfolioDatabase =
@@ -101,7 +112,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     context.applicationContext,
                     PortfolioDatabase::class.java,
                     "my_capital.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14).build().also { INSTANCE = it }
             }
     }
 }
