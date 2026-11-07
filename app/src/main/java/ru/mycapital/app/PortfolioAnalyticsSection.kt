@@ -186,7 +186,7 @@ internal fun PortfolioAnalyticsSection(
         Card(shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Концентрация портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Крупнейшие позиции по доле от всего портфеля", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Крупнейшие эмитенты по доле от всего портфеля", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (concentration.isEmpty()) {
                     Text("Нет данных для расчёта концентрации.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
@@ -206,7 +206,7 @@ internal fun PortfolioAnalyticsSection(
                     }
                     val largest = concentration.first()
                     if (largest.shareOfPortfolio >= 0.25) {
-                        Text("Внимание: крупнейшая позиция занимает не менее 25% портфеля. Проверьте риск концентрации.",
+                        Text("Внимание: крупнейший эмитент занимает не менее 25% портфеля. Проверьте риск концентрации.",
                             color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     val largestSector = sectorSlices.firstOrNull()
