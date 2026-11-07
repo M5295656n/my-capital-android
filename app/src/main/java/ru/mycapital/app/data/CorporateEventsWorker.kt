@@ -33,14 +33,16 @@ class CorporateEventsWorker(
         if (equities.isNotEmpty()) {
         try {
             setProgress(Data.Builder().putString("summary", "Синхронизация выплат: загружаю календарь Long/Short…").build())
-            val events = LongShortDividendClient().getUpcomingDividends()
+            val fetchedEvents = LongShortDividendClient().getUpcomingDividends()
             // An unexpectedly empty feed is treated as a source error: preserve the last
             // good cache instead of deleting all dividends because of a temporary outage.
-            if (events.isEmpty()) throw java.io.IOException("Источник вернул 0 предстоящих дивидендов")
+            if (fetchedEvents.isEmpty()) throw java.io.IOException("Источник вернул 0 предстоящих дивидендов")
+            val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+            // Add issuer-confirmed announcements that may not yet be present in the public feed.
+            val events = mergeOfficialDividendAnnouncements(fetchedEvents, today)
             feedEvents = events.size
             setProgress(Data.Builder().putString("summary", "Long/Short: получено событий $feedEvents; проверяю совпадения с тикерами портфеля…").build())
             val byTicker = equities.associateBy { normalizeDividendTicker(it.ticker) }
-            val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
             val forecastLimit = today.plusYears(1)
             // Dividend forecasts are limited to the next 12 months. If no payment date
             // is supplied, use the record date as the calendar event date.
@@ -139,19 +141,20 @@ class CorporateEventsWorker(
                                     taxAmount = 0.0,
                                     expectedDate = event.eventDate,
                                     actualDate = null,
-                                    status = "EXPECTED",
+                                    status = "ANNOUNCED",
                                     sourceKey = event.sourceKey,
                                     sourceName = "MOEX ISS"
                                 )
                             )
                             if (inserted != -1L) bondPayoutsSaved++
-                        } else if (existing.status == "EXPECTED") {
+                        } else if (existing.status == "EXPECTED" || existing.status == "ANNOUNCED") {
                             dao.updatePayout(existing.copy(
                                 assetId = asset.id,
                                 amountPerUnit = event.amountPerUnit,
                                 quantity = asset.quantity,
                                 totalAmount = event.amountPerUnit * asset.quantity,
                                 expectedDate = event.eventDate,
+                                status = "ANNOUNCED",
                                 sourceName = "MOEX ISS"
                             ))
                             bondPayoutsSaved++
