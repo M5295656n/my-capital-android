@@ -1,8 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<rect width="512" height="512" fill="#ffffff"/>
-<path fill="#00a76f" d="M251 27C226 78 199 125 169 175c-29 48-39 100-10 151 4-43 24-79 51-116 34-46 62-95 41-183Z"/>
-<path fill="#ed1b36" d="M278 100c-1 54-21 102-48 147-29 47-46 100-22 158 8-40 31-76 60-112 37-47 55-93 36-141-7-18-15-35-26-52Z"/>
-<g font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="65" letter-spacing="1">
-<text x="55" y="435" fill="#ed1b36">TAT</text><text x="222" y="435" fill="#00a76f">NEFT</text>
-</g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 86" role="img" aria-label="TATNEFT">
+  <g>
+    <path fill="#009B77" d="M29.2 0.8c2.8 8.2 2.4 16.4-1.5 24.4-3.1 6.4-7.9 12.4-12.1 18.6C8.1 53.8 4.8 65.5 8.8 85.2 10.2 70.4 17.4 59.1 25.3 47.8 34.1 35.2 39.4 22.7 29.2.8Z"/>
+    <path fill="#EF3E42" d="M28.7 15.2c7.1 7.5 12.3 15.5 13.1 24.2.8 8.4-3.1 15.9-8.7 23.8-5.9 8.2-10.4 15.1-10.6 22.1-5.3-12.8-2.1-24.1 4.7-34.8 6.4-10.1 11.2-19.9 1.5-35.3Z"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" letter-spacing="-1.8">
+    <text x="50" y="64" fill="#EF3E42">TAT</text><text x="157" y="64" fill="#009B77">NEFT</text>
+  </g>
 </svg>
