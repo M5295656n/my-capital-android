@@ -68,6 +68,7 @@ import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
+import ru.mycapital.app.data.isIncomePayoutType
 import ru.mycapital.app.data.PortfolioRepository
 import ru.mycapital.app.data.PortfolioSnapshotEntity
 import ru.mycapital.app.data.BrokerAccountEntity
@@ -259,6 +260,11 @@ private fun MyCapitalApp() {
         background = androidx.compose.ui.graphics.Color(0xFF080F1B),
         surface = androidx.compose.ui.graphics.Color(0xFF101C30),
         surfaceVariant = androidx.compose.ui.graphics.Color(0xFF14243B),
+        secondaryContainer = androidx.compose.ui.graphics.Color(0xFF1B3555),
+        onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFB8D8FF),
+        tertiary = androidx.compose.ui.graphics.Color(0xFF4B9BFF),
+        tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF1B3555),
+        onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFB8D8FF),
         onBackground = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
         onSurface = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
         onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFB3B7C4)
@@ -1930,7 +1936,9 @@ private fun PayoutsScreen(
     fun payoutAmount(p: PayoutEntity): Double =
         if (p.status == "RECEIVED") (p.reportedNetAmount ?: (p.totalAmount - p.taxAmount)).coerceAtLeast(0.0)
         else p.totalAmount.coerceAtLeast(0.0)
-    val totalAmount = filtered.sumOf(::payoutAmount)
+    // Principal returned at bond amortization/maturity is capital, not income.
+    // Keep redemption rows visible below, but exclude them from income metrics.
+    val totalAmount = filtered.filter { isIncomePayoutType(it.payoutType) }.sumOf(::payoutAmount)
     val monthly = filtered.groupBy { payout ->
         java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
     }.toSortedMap()
@@ -1956,7 +1964,7 @@ private fun PayoutsScreen(
             (typeFilter == "Дивиденды" && payout.payoutType.contains("Дивиденд", true)) ||
             (typeFilter == "Купоны" && payout.payoutType.contains("Купон", true)) ||
             (typeFilter == "Погашения" && (payout.payoutType.contains("Погаш", true) || payout.payoutType.contains("Амортизац", true)))
-        inChartPeriod && typeOk
+        inChartPeriod && typeOk && isIncomePayoutType(payout.payoutType)
     }
     val chartMonthly = chartPayouts.groupBy { payout ->
         java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
@@ -2007,7 +2015,7 @@ private fun PayoutsScreen(
             }
             item {
                 Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Всего за ${selectedPeriod.substringAfter("year:")}",
+                    Text("Доход за ${selectedPeriod.substringAfter("year:")}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${money(totalAmount)} ₽", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2062,7 +2070,7 @@ private fun PayoutsScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                                Text("+${money(itemsForMonth.sumOf(::payoutAmount))} ₽",
+                                Text("+${money(itemsForMonth.filter { isIncomePayoutType(it.payoutType) }.sumOf(::payoutAmount))} ₽",
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                                     color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
                             }
