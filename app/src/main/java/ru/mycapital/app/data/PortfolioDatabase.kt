@@ -93,7 +93,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+        internal val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL(
                     "CREATE TABLE IF NOT EXISTS portfolio_composition_snapshots (" +
