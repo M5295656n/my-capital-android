@@ -144,8 +144,13 @@ internal data class ParsedPlacementDetails(
 
 internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacementDetails {
     val text = "$title $summary".replace(Regex("\\s+"), " ")
-    fun capture(pattern: Regex): String? = pattern.find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
-    val issuer = capture(Regex("(?:эмитент|компания)\\s*[:—-]\\s*([^.;,]{2,100})", RegexOption.IGNORE_CASE))
+    fun capture(pattern: Regex): String? =
+        pattern.find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+
+    val issuer = capture(Regex(
+        "(?:полное\\s+наименование\\s+эмитента|наименование\\s+эмитента|эмитент|компания)\\s*[:—-]\\s*([^.;,]{2,120})",
+        RegexOption.IGNORE_CASE
+    ))
     val instrumentType = when {
         Regex("\\bIPO\\b|первичн\\w* размещени\\w* акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (IPO)"
         Regex("\\bSPO\\b|дополнительн\\w* эмисс", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (SPO / допэмиссия)"
@@ -153,16 +158,35 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         Regex("акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции"
         else -> null
     }
-    val volume = capture(Regex("объ[её]м(?: выпуска| размещения)?\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
-    val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?|%\\s*от\\s*номинала))", RegexOption.IGNORE_CASE))
-    val coupon = capture(Regex("(?:купонная ставка|ставка купона|доходность купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
-    val couponAmount = capture(Regex("(?:размер купона|купонный доход|сумма купона|купон)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
-    val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
-    val applicationDates = capture(Regex("((?:сбор заявок|приём заявок|прием заявок|книга заявок)[^.;]{0,120}(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?))", RegexOption.IGNORE_CASE))
-    val tradingDate = capture(Regex("(?:начало торгов|первые торги|торги начнутся)\\s*[:—-]?\\s*(\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)", RegexOption.IGNORE_CASE))
+    val amount = "[0-9][0-9\\\\s.,]*(?:млн|млрд|тыс)?\\\\s*(?:₽|руб(?:лей|ля)?|штук|шт\\\\.?|акций|облигаций)?"
+    val volume = capture(Regex(
+        "(?:об[ъь]?[её]м(?:\\\\s+(?:эмиссии|выпуска|размещения))?|общий\\\\s+об[ъь]?[её]м\\\\s+размещения|номинальный\\\\s+об[ъь]?[её]м|количество\\\\s+размещаемых\\\\s+(?:ценных\\\\s+бумаг|акций|облигаций)|количество\\\\s+(?:облигаций|акций))\\\\s*[:—-]?\\\\s*($amount)",
+        RegexOption.IGNORE_CASE
+    ))
+    val price = capture(Regex(
+        "(?:цена\\\\s+размещения(?:\\\\s+(?:одной\\\\s+)?(?:облигации|акции))?|цена\\\\s+предложения|ценовой\\\\s+диапазон|цена)\\\\s*[:—-]?\\\\s*([0-9][0-9\\\\s.,]*(?:[-–—][0-9][0-9\\\\s.,]*)?\\\\s*(?:₽|руб(?:лей|ля)?|%\\\\s*от\\\\s*номинала))",
+        RegexOption.IGNORE_CASE
+    ))
+    val coupon = capture(Regex(
+        "(?:купонная\\\\s+ставка|ставка\\\\s+купона|процентная\\\\s+ставка\\\\s+по\\\\s+купону|размер\\\\s+процентной\\\\s+ставки)\\\\s*[:—-]?\\\\s*([0-9]+(?:[.,][0-9]+)?\\\\s*%)",
+        RegexOption.IGNORE_CASE
+    ))
+    val couponAmount = capture(Regex(
+        "(?:размер\\\\s+купона|размер\\\\s+купонного\\\\s+дохода|купонный\\\\s+доход|сумма\\\\s+купона|сумма\\\\s+выплаты\\\\s+на\\\\s+одну\\\\s+облигацию|денежный\\\\s+размер\\\\s+купона|купон)\\\\s*[:—-]?\\\\s*([0-9][0-9\\\\s.,]*\\\\s*(?:₽|руб(?:лей|ля)?))",
+        RegexOption.IGNORE_CASE
+    ))
+    val isin = Regex("\\\\b[A-Z]{2}[A-Z0-9]{10}\\\\b").find(text)?.value
+    val explicitDate = "(?:\\\\d{1,2}[. ]\\\\d{1,2}(?:[. ]\\\\d{4})?|\\\\d{1,2}\\\\s+[а-яё]+(?:\\\\s+\\\\d{4})?)"
+    val applicationDates = capture(Regex(
+        "((?:дата\\\\s+сбора\\\\s+заявок|период\\\\s+букбилдинга|сбор\\\\s+заявок|при[её]м\\\\s+заявок|книга\\\\s+заявок)[^.;]{0,120}?$explicitDate)",
+        RegexOption.IGNORE_CASE
+    ))
+    val tradingDate = capture(Regex(
+        "(?:дата\\\\s+начала\\\\s+торгов|начало\\\\s+торгов|торги\\\\s+начнутся|допуск\\\\s+к\\\\s+торгам)\\\\s*[:—-]?\\\\s*($explicitDate)",
+        RegexOption.IGNORE_CASE
+    ))
     return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate, isin, couponAmount)
 }
-
 
 internal fun parseExplicitPlacementEventDate(
     details: ParsedPlacementDetails,
@@ -213,14 +237,14 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
     val document = Jsoup.parse(html)
     val labeledValues = mutableListOf<String>()
     val labelRules = listOf(
-        Regex("эмитент|наименование эмитента|полное наименование компании", RegexOption.IGNORE_CASE) to "Эмитент",
-        Regex("об[ъь]?[её]м выпуска|об[ъь]?[её]м размещения|количество облигаций|количество акций", RegexOption.IGNORE_CASE) to "Объём выпуска",
-        Regex("цена размещения|цена предложения|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
-        Regex("купонная ставка|ставка купона|процентная ставка|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
-        Regex("размер купона|сумма купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
-        Regex("\\bisin\\b", RegexOption.IGNORE_CASE) to "ISIN",
-        Regex("дата начала размещения|период размещения|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
-        Regex("дата начала торгов|начало торгов|дата допуска к торгам", RegexOption.IGNORE_CASE) to "Начало торгов"
+        Regex("эмитент|наименование эмитента|полное наименование компании|компания", RegexOption.IGNORE_CASE) to "Эмитент",
+        Regex("об[ъь]?[её]м выпуска|об[ъь]?[её]м размещения|об[ъь]?[её]м эмиссии|общий об[ъь]?[её]м размещения|номинальный об[ъь]?[её]м|количество размещаемых|количество облигаций|количество акций", RegexOption.IGNORE_CASE) to "Объём выпуска",
+        Regex("цена размещения|цена предложения|ценовой диапазон|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
+        Regex("купонная ставка|ставка купона|процентная ставка по купону|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
+        Regex("размер купона|размер купонного дохода|сумма купона|сумма выплаты на одну облигацию|денежный размер купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
+        Regex("\\\\bisin\\\\b", RegexOption.IGNORE_CASE) to "ISIN",
+        Regex("дата сбора заявок|период букбилдинга|дата начала размещения|размещение с|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
+        Regex("дата начала торгов|начало торгов|дата допуска к торгам|допуск к торгам", RegexOption.IGNORE_CASE) to "Начало торгов"
     )
     fun addPair(label: String, value: String) {
         val cleanLabel = label.replace(Regex("\\s+"), " ").trim().trimEnd(':', '：')
