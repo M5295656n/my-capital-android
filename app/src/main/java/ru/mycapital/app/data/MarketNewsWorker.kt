@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.WorkerParameters
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -12,6 +13,7 @@ class MarketNewsWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        PDFBoxResourceLoader.init(applicationContext)
         val dao = PortfolioDatabase.getInstance(applicationContext).portfolioDao()
         val tickers = dao.getAssets().filter { it.quantity > 0.0 }
             .map { it.ticker.trim().uppercase() }.filter { it.isNotBlank() }.toSet()
