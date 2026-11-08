@@ -461,7 +461,7 @@ private fun MyCapitalApp() {
             title = { Text("Защитить резервную копию") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Архив будет зашифрован AES-256. Придумайте пароль длиной не менее 12 символов и сохраните его отдельно. Без пароля восстановить данные будет невозможно. Приложение пароль не сохраняет.")
+                    Text("Архив будет зашифрован AES-256. Придумайте пароль длиной не менее 9 символов и сохраните его отдельно. Без пароля восстановить данные будет невозможно. Приложение пароль не сохраняет.")
                     OutlinedTextField(
                         value = backupCreatePassword,
                         onValueChange = { backupCreatePassword = it },
@@ -485,7 +485,7 @@ private fun MyCapitalApp() {
             },
             confirmButton = {
                 TextButton(
-                    enabled = !isCreatingBackup && backupCreatePassword.length >= 12 && backupCreatePassword == backupCreatePasswordConfirm,
+                    enabled = !isCreatingBackup && backupCreatePassword.length >= 9 && backupCreatePassword == backupCreatePasswordConfirm,
                     onClick = {
                         val uri = pendingBackupCreate ?: return@TextButton
                         val password = backupCreatePassword
