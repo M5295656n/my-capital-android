@@ -173,14 +173,17 @@ internal fun PortfolioAnalyticsSection(
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(sector.sector, fontWeight = FontWeight.Medium)
-                                    Text("${moneyAnalytics(sector.value)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)\n                                    if (sector.sector == "Вне отраслевого состава") {\n                                        Text("Фонды, облигации, золото, деньги и прочие активы", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)\n                                    }
+                                    Text("${moneyAnalytics(sector.value)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (sector.sector == "Вне отраслевого состава") {
+                                        Text("Фонды, облигации, золото, деньги и прочие активы", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                                 Text(percentAnalytics(sector.shareOfPortfolio), fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(6.dp))
                                 Text(if (expanded) "−" else "+", color = MaterialTheme.colorScheme.primary)
                             }
                             Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                                Box(Modifier.fillMaxWidth(sector.shareOfPortfolio.toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(sectorColor(sectorIndex)))
+                                Box(Modifier.fillMaxWidth(sector.shareOfPortfolio.toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(sectorColor(sectorIndex, sector.sector == "Вне отраслевого состава")))
                             }
                             if (expanded) {
                                 sector.positions.forEach { asset ->
