@@ -145,6 +145,7 @@ class MarketNewsClientTest {
         val details = parsePlacementDetailsFromHtml(html, "Новый выпуск облигаций")
         assertEquals("ООО ТестФинанс", details.issuer)
         assertEquals("5 млрд руб.", details.placementVolume)
+        assertEquals("100% от номинала", details.placementPrice)
         assertEquals("14,2%", details.couponRate)
         assertEquals("35,50 руб.", details.couponAmount)
         assertEquals("RU000A10ABC1", details.isin)
