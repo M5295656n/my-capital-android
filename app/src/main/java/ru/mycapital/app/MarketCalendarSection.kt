@@ -55,7 +55,8 @@ private data class CalendarDisplayItem(
     val source: String,
     val url: String?,
     val tickers: String,
-    val isPayout: Boolean
+    val isPayout: Boolean,
+    val placementDetails: List<String> = emptyList()
 )
 
 @Composable
@@ -83,7 +84,16 @@ internal fun MarketCalendarSection(
                 source = it.sourceName,
                 url = it.sourceUrl,
                 tickers = it.relatedTickers,
-                isPayout = false
+                isPayout = false,
+                placementDetails = listOfNotNull(
+                    it.issuer?.let { value -> "Эмитент: $value" },
+                    it.instrumentType?.let { value -> "Инструмент: $value" },
+                    it.placementVolume?.let { value -> "Объём: $value" },
+                    it.placementPrice?.let { value -> "Цена размещения: $value" },
+                    it.couponRate?.let { value -> "Купон: $value" },
+                    it.applicationDates?.let { value -> "Заявки: $value" },
+                    it.tradingStartDate?.let { value -> "Начало торгов: $value" }
+                )
             )
         }
     }
@@ -213,6 +223,9 @@ internal fun MarketCalendarSection(
                         Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall)
                         if (item.tickers.isNotBlank()) Text("Связанные бумаги: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
+                        item.placementDetails.forEach { detail ->
+                            Text(detail, style = MaterialTheme.typography.bodySmall)
+                        }
                         Text("Источник: ${item.source}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (!item.url.isNullOrBlank()) {
                             Row(Modifier.clickable { runCatching { uriHandler.openUri(item.url) } }, verticalAlignment = Alignment.CenterVertically) {
