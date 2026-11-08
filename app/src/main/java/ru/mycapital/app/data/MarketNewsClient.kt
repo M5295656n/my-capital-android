@@ -209,10 +209,10 @@ internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: P
 
 internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): String? {
     val document = Jsoup.parse(html, baseUrl)
-    val relevantLinkText = Regex("проспект|решение о выпуске|документарн\\\\w*|раскрыти\\\\w* информаци|услови\\\\w* размещени|эмиссионн\\\\w* документ", RegexOption.IGNORE_CASE)
+    val relevantLinkText = Regex("проспект|решение о выпуске|документарн\\w*|раскрыти\\w* информаци|услови\\w* размещени|эмиссионн\\w* документ", RegexOption.IGNORE_CASE)
     return document.select("a[href]").firstNotNullOfOrNull { anchor ->
         if (!relevantLinkText.containsMatchIn(anchor.text())) return@firstNotNullOfOrNull null
-        val url = runCatching { anchor.absUrl("href").takeIf { it.isNotBlank() }?.let(okhttp3.HttpUrl::get) }.getOrNull()
+        val url = runCatching { anchor.absUrl("href").takeIf { it.isNotBlank() }?.let { okhttp3.HttpUrl.get(it) } }.getOrNull()
             ?: return@firstNotNullOfOrNull null
         val allowedHost = url.host == "e-disclosure.ru" || url.host.endsWith(".e-disclosure.ru")
         if (url.scheme == "https" && allowedHost) url.toString() else null
