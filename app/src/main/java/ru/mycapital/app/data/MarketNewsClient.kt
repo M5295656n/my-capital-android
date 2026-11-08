@@ -70,13 +70,13 @@ internal fun assessMarketNews(
         category == "NEW_ISSUES" -> NewsImpactAssessment("HIGH",
             "Новое размещение может изменить предложение бумаг и привлечь ликвидность. Сам факт объявления не указывает направление цены. Перед оценкой спроса проверьте объём, цену, купон и сроки; неуказанные условия считаются неизвестными.",
             "До размещения и первые торги", "HIGH — факт объявления; LOW — влияние на цену")
-        Regex("ключев\\w* ставк|совет\\w* директор\\w* банк\\w* россии", RegexOption.IGNORE_CASE).containsMatchIn(text) -> NewsImpactAssessment("HIGH",
+        Regex("ключев[^\\s]* ставк|совет[^\\s]* директор[^\\s]* банк[^\\s]* россии", RegexOption.IGNORE_CASE).containsMatchIn(text) -> NewsImpactAssessment("HIGH",
             "Решение по ключевой ставке влияет на стоимость фондирования, доходности облигаций и ожидания по акциям. Направление реакции зависит от разницы между решением и ожиданиями рынка; без подтверждённого консенсуса прогноз направления не делается.",
             "В день решения и ближайшие недели", "HIGH — дата события; LOW — направление реакции")
         category == "ECONOMY" -> NewsImpactAssessment("NORMAL",
             "Макростатистика может повлиять на ожидания по ставке, инфляции и рублёвым активам. Для оценки реакции нужны фактическое значение, сопоставимый прогноз и предыдущее значение; если их нет, направление влияния не определено.",
             "В день публикации и последующие недели", "HIGH — факт публикации; LOW — рыночный эффект")
-        linked && Regex("дивиденд|отч[её]тност|финансов\\w* результат|выручк|прибыл|убыт|байбек|обратн\\w* выкуп|прогноз|гайденс|санкц|дефолт|оферт", RegexOption.IGNORE_CASE).containsMatchIn(text) -> NewsImpactAssessment("HIGH",
+        linked && Regex("дивиденд|отч[её]тност|финансов[^\\s]* результат|выручк|прибыл|убыт|байбек|обратн[^\\s]* выкуп|прогноз|гайденс|санкц|дефолт|оферт", RegexOption.IGNORE_CASE).containsMatchIn(text) -> NewsImpactAssessment("HIGH",
             "Новость относится к бумаге из портфеля (" + relatedTickers.joinToString(", ") + "). Проверьте первоисточник, влияние на денежные потоки/долг и отличие от ожиданий. Сам заголовок не подтверждает изменение справедливой стоимости.",
             "От нескольких дней до нескольких кварталов", "MEDIUM — связь с бумагой; LOW — финансовый эффект")
         linked -> NewsImpactAssessment("NORMAL",
@@ -192,8 +192,8 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val instrumentType = when {
-        Regex("\\bIPO\\b|первичн\\w* размещени\\w* акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (IPO)"
-        Regex("\\bSPO\\b|дополнительн\\w* эмисс", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (SPO / допэмиссия)"
+        Regex("\\bIPO\\b|первичн[^\\s]* размещени[^\\s]* акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (IPO)"
+        Regex("\\bSPO\\b|дополнительн[^\\s]* эмисс", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (SPO / допэмиссия)"
         Regex("облигац", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Облигации"
         Regex("акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции"
         else -> null
@@ -212,7 +212,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val couponAmount = capture(Regex(
-        "(?:размер\\s+купона|размер\\s+купонного\\s+дохода|купонный\\s+доход|сумма\\s+купона|сумма\\s+выплаты\\s+на\\s+одну\\s+облигацию|денежный\\s+размер\\s+купона|купон)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*\\s*(?:₽|руб(?:лей|ля)?))",
+        "(?:размер\\s+купона|размер\\s+купонного\\s+дохода|купонный\\s+доход|сумма\\s+купона|сумма\\s+выплаты\\s+на\\s+одну\\s+облигацию|денежный\\s+размер\\s+купона|купон)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*\\s*(?:₽|руб(?:лей|ля)?)\\.?)",
         RegexOption.IGNORE_CASE
     ))
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
@@ -375,7 +375,7 @@ internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): St
 internal fun findOfficialPlacementDocumentUrls(html: String, baseUrl: String): List<String> {
     val document = Jsoup.parse(html, baseUrl)
     val relevantLinkText = Regex(
-        "проспект|решение о выпуске|документарн\\w*|раскрыти\\w* информаци|услови\\w* размещени|эмиссионн\\w* документ|документы выпуска|параметры выпуска|дополнительные материалы|скачать документ",
+        "проспект|решение о выпуске|документарн[^\\s]*|раскрыти[^\\s]* информаци|услови[^\\s]* размещени|эмиссионн[^\\s]* документ|документы выпуска|параметры выпуска|дополнительные материалы|скачать документ",
         RegexOption.IGNORE_CASE
     )
     return document.select("a[href]").mapNotNull { anchor ->
@@ -394,17 +394,17 @@ internal fun classifyMarketNews(title: String, summary: String, fallbackCategory
     val issuancePatterns = listOf(
         Regex("\\bipo\\b", RegexOption.IGNORE_CASE),
         Regex("\\bspo\\b", RegexOption.IGNORE_CASE),
-        Regex("первичн\\w* размещен"),
-        Regex("нов\\w* выпуск\\w* облигац"),
-        Regex("размещени\\w* облигац"),
-        Regex("сбор\\w* заявок"),
-        Regex("книг\\w* заявок"),
-        Regex("дополнительн\\w* эмисс"),
-        Regex("начал\\w* торгов\\w* (акци\\w*|облигац)"),
+        Regex("первичн[^\\s]* размещен"),
+        Regex("нов[^\\s]* выпуск[^\\s]* облигац"),
+        Regex("размещени[^\\s]* облигац"),
+        Regex("сбор[^\\s]* заявок"),
+        Regex("книг[^\\s]* заявок"),
+        Regex("дополнительн[^\\s]* эмисс"),
+        Regex("начал[^\\s]* торгов[^\\s]* (акци[^\\s]*|облигац)"),
         Regex("дата размещени"),
         Regex("цена размещени"),
         Regex("объем размещени"),
-        Regex("биржев\\w* облигац")
+        Regex("биржев[^\\s]* облигац")
     )
     return if (issuancePatterns.any { it.containsMatchIn(text) }) "NEW_ISSUES" else fallbackCategory
 }
