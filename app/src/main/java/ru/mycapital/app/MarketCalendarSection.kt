@@ -60,7 +60,8 @@ private data class CalendarDisplayItem(
     val placementDetails: List<String> = emptyList(),
     val impactAssessment: String = "",
     val impactHorizon: String = "",
-    val confidence: String = ""
+    val confidence: String = "",
+    val importance: String = "NORMAL"
 )
 
 @Composable
@@ -93,6 +94,7 @@ internal fun MarketCalendarSection(
                 impactAssessment = it.impactAssessment,
                 impactHorizon = it.impactHorizon,
                 confidence = it.confidence,
+                importance = it.importance,
                 placementDetails = buildList {
                     it.issuer?.let { value -> add("Эмитент: $value") }
                     it.instrumentType?.let { value -> add("Инструмент: $value") }
@@ -238,6 +240,7 @@ internal fun MarketCalendarSection(
                         if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall)
                         if (item.tickers.isNotBlank()) Text("Связанные бумаги: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
                         if (item.impactAssessment.isNotBlank()) {
+                            Text("Важность: " + when (item.importance) { "HIGH" -> "Высокая"; "LOW" -> "Низкая"; else -> "Обычная" }, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                             Text("Почему важно", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                             Text(item.impactAssessment, style = MaterialTheme.typography.bodySmall)
                             if (item.impactHorizon.isNotBlank()) Text("Горизонт: ${item.impactHorizon}", style = MaterialTheme.typography.labelSmall)
