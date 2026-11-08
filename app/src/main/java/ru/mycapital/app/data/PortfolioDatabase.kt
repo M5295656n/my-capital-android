@@ -110,6 +110,21 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
+
+        internal val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS market_calendar_items (" +
+                        "sourceKey TEXT NOT NULL PRIMARY KEY, itemType TEXT NOT NULL, category TEXT NOT NULL, " +
+                        "eventDate INTEGER NOT NULL, publishedAt INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, " +
+                        "sourceName TEXT NOT NULL, sourceUrl TEXT NOT NULL, relatedTickers TEXT NOT NULL, " +
+                        "importance TEXT NOT NULL, impactAssessment TEXT NOT NULL, impactHorizon TEXT NOT NULL, " +
+                        "confidence TEXT NOT NULL, updatedAt INTEGER NOT NULL)"
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_market_calendar_items_eventDate ON market_calendar_items(eventDate)")
+            }
+        }
+
         @Volatile private var INSTANCE: PortfolioDatabase? = null
 
         @Synchronized
@@ -124,7 +139,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     context.applicationContext,
                     PortfolioDatabase::class.java,
                     "my_capital.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16).build().also { INSTANCE = it }
             }
     }
 }
