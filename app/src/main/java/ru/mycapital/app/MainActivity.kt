@@ -2823,7 +2823,8 @@ private fun AnalyticsScreen(
                     assets = analyticsHistoryAssets,
                     operations = analyticsOperations,
                     currentCash = analyticsCash,
-                    range = PortfolioHistoryRange.ALL
+                    range = PortfolioHistoryRange.ALL,
+                    includeInternalTransfers = selectedAccountId != ALL_HISTORY_ACCOUNTS
                 )
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {

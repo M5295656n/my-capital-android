@@ -236,14 +236,17 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
                 val kind = flow.kind
-                if (kind == BrokerCashFlowKind.IGNORE || kind == BrokerCashFlowKind.INTERNAL_TRANSFER) {
-                    // Trades and fees are imported from the trade table; transfers between
-                    // brokerage agreements are not external portfolio cash flows.
-                    return@forEach
-                }
+                if (kind == BrokerCashFlowKind.IGNORE) return@forEach
                 val amount = when (kind) {
                     BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON, BrokerCashFlowKind.REDEMPTION, BrokerCashFlowKind.AMORTIZATION -> flow.credit
                     BrokerCashFlowKind.WITHDRAWAL -> flow.debit
+                    BrokerCashFlowKind.INTERNAL_TRANSFER -> {
+                        val transfer = flow.internalTransfer ?: return@forEach
+                        if (report.accountId != transfer.fromAccountId && report.accountId != transfer.toAccountId) return@forEach
+                        if (flow.credit > 0.0 && flow.debit == 0.0 && report.accountId == transfer.toAccountId) flow.credit
+                        else if (flow.debit > 0.0 && flow.credit == 0.0 && report.accountId == transfer.fromAccountId) flow.debit
+                        else return@forEach
+                    }
                     else -> 0.0
                 }
                 if (amount <= 0.0) return@forEach
@@ -254,6 +257,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     BrokerCashFlowKind.COUPON -> "Купон"
                     BrokerCashFlowKind.REDEMPTION -> "Погашение"
                     BrokerCashFlowKind.AMORTIZATION -> "Амортизация"
+                    BrokerCashFlowKind.INTERNAL_TRANSFER ->
+                        if (flow.credit > 0.0) "Внутренний перевод входящий" else "Внутренний перевод исходящий"
                     else -> return@forEach
                 }
                 val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON || kind == BrokerCashFlowKind.REDEMPTION || kind == BrokerCashFlowKind.AMORTIZATION

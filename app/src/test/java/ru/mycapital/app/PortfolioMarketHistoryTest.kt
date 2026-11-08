@@ -183,6 +183,56 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
+    fun internalTransfersAffectIndividualAccountCashButNotCombinedPortfolio() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-05-03")
+        val transferDate = LocalDate.parse("2026-05-04")
+        val buy = operation(29, "Покупка", "2026-05-03", 1.0, 100.0)
+        val outgoing = operation(
+            id = 30,
+            type = "Внутренний перевод исходящий",
+            date = "2026-05-04",
+            quantity = 1.0,
+            price = 800.0,
+            ticker = "RUB"
+        )
+        val incoming = outgoing.copy(
+            id = 31,
+            operationType = "Внутренний перевод входящий",
+            sourceKey = "SBER:S25F9ZU:CASH:transfer-800",
+            accountId = "S25F9ZU"
+        )
+        val accountAsset = AssetEntity(
+            id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+            quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0
+        )
+
+        val individual = buildPortfolioMarketHistory(
+            assets = listOf(accountAsset),
+            operations = listOf(buy, outgoing),
+            currentCash = 200.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = transferDate,
+            includeInternalTransfers = true
+        ) { _, _, _, _ -> listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(transferDate, 100.0)) }
+
+        val combined = buildPortfolioMarketHistory(
+            assets = listOf(accountAsset),
+            operations = listOf(buy, outgoing, incoming),
+            currentCash = 1_000.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = transferDate,
+            includeInternalTransfers = false
+        ) { _, _, _, _ -> listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(transferDate, 100.0)) }
+
+        assertEquals(2, individual.points.size)
+        assertEquals(1_000.0, individual.points.first().cashValue, 0.000001)
+        assertEquals(200.0, individual.points.last().cashValue, 0.000001)
+        assertEquals(individual.points.first().nav, individual.points.last().nav, 0.000001)
+        assertEquals(1_000.0, combined.points.first().cashValue, 0.000001)
+        assertEquals(1_000.0, combined.points.last().cashValue, 0.000001)
+    }
+
+    @Test
     fun legacyUnscopedSourceKeysAreNotMistakenForBrokerAccountIds() {
         assertEquals(null, historyAccountId(null))
         assertEquals(null, historyAccountId("MANUAL:TRADE:123"))
