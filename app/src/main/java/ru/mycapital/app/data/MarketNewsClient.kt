@@ -82,6 +82,48 @@ internal fun parseCbrKeyRateCalendar(
 }
 
 
+
+internal fun parseCbrStatisticsCalendar(
+    html: String,
+    today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))
+): List<ParsedMarketCalendarEvent> {
+    val document = Jsoup.parse(html)
+    val datePattern = Regex("""(\d{2})\.(\d{2})\.(\d{4})""")
+    val relevant = listOf(
+        "инфляц", "денежн.*баз", "международн.*резерв", "внешн.*торгов",
+        "платежн.*баланс", "внешн.*долг", "рынк.*акци", "ключев.*ставк",
+        "кредит", "денежн.*агрегат", "ruonia", "ставк.*по кредит"
+    ).map { Regex(it, RegexOption.IGNORE_CASE) }
+
+    return document.select("tr").mapNotNull { row ->
+        val cells = row.select("th, td")
+        if (cells.size < 2) return@mapNotNull null
+        val dateMatch = datePattern.find(cells.first().text()) ?: return@mapNotNull null
+        val date = runCatching {
+            LocalDate.of(dateMatch.groupValues[3].toInt(), dateMatch.groupValues[2].toInt(), dateMatch.groupValues[1].toInt())
+        }.getOrNull() ?: return@mapNotNull null
+        if (date.isBefore(today)) return@mapNotNull null
+
+        val title = cells.last().text().replace(Regex("\\s+"), " ").trim()
+        if (title.isBlank() || relevant.none { it.containsMatchIn(title) }) return@mapNotNull null
+        val time = cells.getOrNull(1)?.text()?.trim().orEmpty()
+        val period = cells.drop(2).joinToString(" · ") { it.text().trim() }.trim(' ', '·')
+        val details = buildList {
+            if (time.isNotBlank() && time != "—" && time != "-") add("Время публикации: " + time)
+            if (period.isNotBlank() && period != title) add("Период данных: " + period)
+        }.joinToString(". ")
+        ParsedMarketCalendarEvent(
+            sourceKey = "CBR:STAT:" + date + ":" + title.lowercase(Locale.ROOT).hashCode(),
+            category = "ECONOMY",
+            eventDate = date.atStartOfDay(ZoneId.of("Europe/Moscow")).toInstant().toEpochMilli(),
+            title = title,
+            summary = "Запланированная публикация официальной статистики Банка России. " + details,
+            sourceName = "Банк России",
+            sourceUrl = "https://www.cbr.ru/statistics/indcalendar/"
+        )
+    }.distinctBy { it.sourceKey }.sortedBy { it.eventDate }
+}
+
 internal data class ParsedPlacementDetails(
     val issuer: String? = null,
     val instrumentType: String? = null,
@@ -247,6 +289,18 @@ class MarketNewsClient {
             if (!response.isSuccessful) throw IOException("Банк России: HTTP ${response.code}")
             val html = response.body?.string() ?: throw IOException("Банк России вернул пустой календарь")
             return parseCbrKeyRateCalendar(html, today)
+        }
+    }
+
+
+    fun getUpcomingStatisticsEvents(today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): List<ParsedMarketCalendarEvent> {
+        val request = Request.Builder().url("https://www.cbr.ru/statistics/indcalendar/")
+            .header("User-Agent", "MyCapital-Android/0.3")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Календарь статистики Банка России: HTTP " + response.code)
+            val html = response.body?.string() ?: throw IOException("Банк России вернул пустой календарь статистики")
+            return parseCbrStatisticsCalendar(html, today)
         }
     }
 
