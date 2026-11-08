@@ -165,7 +165,7 @@ class MarketNewsClient {
             .header("User-Agent", "MyCapital-Android/0.3")
             .build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Банк России: HTTP \${response.code}")
+            if (!response.isSuccessful) throw IOException("Банк России: HTTP ${response.code}")
             val html = response.body?.string() ?: throw IOException("Банк России вернул пустой календарь")
             return parseCbrKeyRateCalendar(html, today)
         }
