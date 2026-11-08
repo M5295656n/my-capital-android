@@ -267,10 +267,10 @@ internal fun MarketCalendarSection(
                         }
                         if (item.tickers.isNotBlank()) Text("Связанные бумаги в новости: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
                         if (item.portfolioExposure.isNotEmpty()) {
-                            Text("Позиции выбранного портфеля под воздействием темы", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text("Совпадающие позиции выбранного портфеля", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                             item.portfolioExposure.forEach { exposure -> Text(exposure, style = MaterialTheme.typography.bodySmall) }
                         } else if (item.tickers.isNotBlank()) {
-                            Text("В выбранном счёте совпадающих позиций нет.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("В выбранном портфеле совпадающих позиций нет.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (item.impactAssessment.isNotBlank()) {
                             Text("Важность: " + when (item.importance) { "HIGH" -> "Высокая"; "LOW" -> "Низкая"; else -> "Обычная" }, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
