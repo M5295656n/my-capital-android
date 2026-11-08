@@ -305,4 +305,13 @@ class MarketNewsClientTest {
         assertEquals(null, details.applicationDates)
         assertEquals(null, details.tradingStartDate)
     }
+
+
+    @Test
+    fun recognizesExplicitPlacementStartDateLabels() {
+        val byDate = parsePlacementDetails("Облигации", "Дата начала размещения: 17.11.2026.")
+        val byFrom = parsePlacementDetails("Облигации", "Размещение с 18.11.2026.")
+        assertTrue(byDate.applicationDates!!.contains("17.11.2026"))
+        assertTrue(byFrom.applicationDates!!.contains("18.11.2026"))
+    }
 }
