@@ -67,6 +67,7 @@ import ru.mycapital.app.data.MoexSecurityHistoryClient
 import ru.mycapital.app.data.MoexDailyClose
 import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
+import ru.mycapital.app.data.PortfolioBackup
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.isIncomePayoutType
@@ -175,6 +176,10 @@ private fun MyCapitalApp() {
     var isReconcilingReport by remember { mutableStateOf(false) }
     var isExportingData by remember { mutableStateOf(false) }
     var exportResultMessage by remember { mutableStateOf<String?>(null) }
+    var isCreatingBackup by remember { mutableStateOf(false) }
+    var isRestoringBackup by remember { mutableStateOf(false) }
+    var pendingBackupRestore by remember { mutableStateOf<Uri?>(null) }
+    var backupResultMessage by remember { mutableStateOf<String?>(null) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -218,6 +223,24 @@ private fun MyCapitalApp() {
                 }
             }
         }
+    }
+    val backupCreatePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) {
+            isCreatingBackup = true
+            scope.launch {
+                try {
+                    val info = withContext(Dispatchers.IO) { PortfolioBackup.export(context, uri) }
+                    backupResultMessage = "Полная резервная копия создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Архив содержит финансовые данные портфеля и историю."
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось создать резервную копию."
+                } finally {
+                    isCreatingBackup = false
+                }
+            }
+        }
+    }
+    val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) pendingBackupRestore = uri
     }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
     // Keep dashboard data at the app level: OverviewScreen is removed from composition
@@ -385,6 +408,10 @@ private fun MyCapitalApp() {
                     hasAssets = assets.isNotEmpty(),
                     isParsingReport = isParsingReport,
                     isExportingData = isExportingData,
+                    isCreatingBackup = isCreatingBackup,
+                    isRestoringBackup = isRestoringBackup,
+                    onCreateBackup = { backupCreatePicker.launch("MyCapital-backup.zip") },
+                    onRestoreBackup = { backupRestorePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
                     onExportData = { exportPicker.launch("my-capital-export.zip") },
                     onOpenAccounts = { selected = Screen.Accounts },
@@ -429,6 +456,40 @@ private fun MyCapitalApp() {
                     }
                 }
             }
+        )
+    }
+    if (pendingBackupRestore != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isRestoringBackup) pendingBackupRestore = null },
+            title = { Text("Восстановить резервную копию?") },
+            text = { Text("Текущая база данных будет заменена данными из выбранного архива. Перед продолжением рекомендуется создать свежую резервную копию текущего состояния. После восстановления приложение перезапустит экран.") },
+            confirmButton = {
+                TextButton(enabled = !isRestoringBackup, onClick = {
+                    val uri = pendingBackupRestore ?: return@TextButton
+                    isRestoringBackup = true
+                    scope.launch {
+                        try {
+                            val info = withContext(Dispatchers.IO) { PortfolioBackup.restore(context, uri) }
+                            pendingBackupRestore = null
+                            backupResultMessage = "База успешно проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
+                            (context as? ComponentActivity)?.recreate()
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "Не удалось восстановить резервную копию."
+                        } finally {
+                            isRestoringBackup = false
+                        }
+                    }
+                }) { Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить") }
+            },
+            dismissButton = { TextButton(enabled = !isRestoringBackup, onClick = { pendingBackupRestore = null }) { Text("Отмена") } }
+        )
+    }
+    if (backupResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { backupResultMessage = null },
+            title = { Text("Резервная копия") },
+            text = { Text(backupResultMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { backupResultMessage = null }) { Text("Готово") } }
         )
     }
     if (exportResultMessage != null) {
@@ -962,6 +1023,10 @@ private fun MoreScreen(
     hasAssets: Boolean,
     isParsingReport: Boolean,
     isExportingData: Boolean,
+    isCreatingBackup: Boolean,
+    isRestoringBackup: Boolean,
+    onCreateBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
     onImportReport: () -> Unit,
     onExportData: () -> Unit,
     onOpenAccounts: () -> Unit,
@@ -1028,10 +1093,21 @@ private fun MoreScreen(
             Spacer(Modifier.width(8.dp))
             Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
         }
+        OutlinedButton(onClick = onCreateBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Backup, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isCreatingBackup) "Создаю полную копию…" else "Создать резервную копию базы")
+        }
+        OutlinedButton(onClick = onRestoreBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Restore, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из резервной копии")
+        }
+        Text("Резервная копия содержит финансовые данные и историю портфеля. Храните ZIP в надёжном месте. Восстановление заменяет текущую базу.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.FileDownload, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
+            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать таблицы (CSV ZIP)")
         }
     }
 }
