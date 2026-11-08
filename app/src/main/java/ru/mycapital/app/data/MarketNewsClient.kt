@@ -311,6 +311,16 @@ internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: P
     )
 }
 
+internal data class OfficialPlacementDocumentResult(
+    val details: ParsedPlacementDetails,
+    val sourceUrl: String
+)
+
+private fun ParsedPlacementDetails.hasAnyKnownValue(): Boolean = listOf(
+    issuer, instrumentType, placementVolume, placementPrice, couponRate,
+    applicationDates, placementStartDate, tradingStartDate, isin, couponAmount
+).any { !it.isNullOrBlank() }
+
 internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): String? =
     findOfficialPlacementDocumentUrls(html, baseUrl).firstOrNull()
 
@@ -453,7 +463,7 @@ class MarketNewsClient {
         }
     }
 
-    private fun fetchOfficialPlacementDocument(url: String, title: String, allowNestedDocument: Boolean = true): ParsedPlacementDetails? {
+    private fun fetchOfficialPlacementDocument(url: String, title: String, allowNestedDocument: Boolean = true): OfficialPlacementDocumentResult? {
         val parsed = runCatching { okhttp3.HttpUrl.get(url) }.getOrNull() ?: return null
         if (parsed.scheme != "https" || !(parsed.host == "e-disclosure.ru" || parsed.host.endsWith(".e-disclosure.ru"))) return null
         return runCatching {
@@ -473,9 +483,11 @@ class MarketNewsClient {
                 val isPdf = isPdfContentType || hasPdfSignature
                 if (contentType.startsWith("application/octet-stream") && !hasPdfSignature) return@use null
                 if (isPdf && !hasPdfSignature) return@use null
+                val finalUrl = response.request.url.toString()
                 if (isPdf) {
                     val pdfText = extractPlacementTextFromPdf(bytes) ?: return@use null
-                    parsePlacementDetails(title, pdfText)
+                    val details = parsePlacementDetails(title, pdfText)
+                    OfficialPlacementDocumentResult(details, finalUrl)
                 } else {
                     val html = String(bytes, Charsets.UTF_8)
                     val document = Jsoup.parse(html, url)
@@ -485,11 +497,18 @@ class MarketNewsClient {
                         parsePlacementDetailsFromHtml(html, title)
                     )
                     if (allowNestedDocument) {
-                        val nestedUrl = findOfficialPlacementDocumentUrls(html, url)
-                            .firstOrNull { it != url }
-                        val nestedDetails = nestedUrl?.let { fetchOfficialPlacementDocument(it, title, false) }
-                        mergePlacementDetails(pageDetails, nestedDetails)
-                    } else pageDetails
+                        val nestedUrl = findOfficialPlacementDocumentUrls(html, finalUrl)
+                            .firstOrNull { it != finalUrl }
+                        val nestedResult = nestedUrl?.let { fetchOfficialPlacementDocument(it, title, false) }
+                        val merged = mergePlacementDetails(pageDetails, nestedResult?.details)
+                        val nestedContributed = nestedResult != null &&
+                            nestedResult.details.hasAnyKnownValue() &&
+                            merged != pageDetails
+                        OfficialPlacementDocumentResult(
+                            details = merged,
+                            sourceUrl = if (nestedContributed) nestedResult!!.sourceUrl else finalUrl
+                        )
+                    } else OfficialPlacementDocumentResult(pageDetails, finalUrl)
                 }
             }
         }.getOrNull()
@@ -517,8 +536,8 @@ class MarketNewsClient {
                     parsePlacementDetailsFromHtml(pageHtml, item.title)
                 )
                 val documentUrl = findOfficialPlacementDocumentUrl(pageHtml, item.sourceUrl)
-                val documentDetails = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
-                val bestDetails = mergePlacementDetails(pageDetails, documentDetails)
+                val documentResult = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
+                val bestDetails = mergePlacementDetails(pageDetails, documentResult?.details)
                 item.copy(
                     issuer = item.issuer ?: bestDetails.issuer,
                     instrumentType = item.instrumentType ?: bestDetails.instrumentType,
@@ -531,7 +550,7 @@ class MarketNewsClient {
                     eventDate = parseExplicitPlacementEventDate(bestDetails) ?: item.eventDate,
                     isin = item.isin ?: bestDetails.isin,
                     couponAmount = item.couponAmount ?: bestDetails.couponAmount,
-                    detailsSourceUrl = documentUrl ?: item.sourceUrl
+                    detailsSourceUrl = documentResult?.sourceUrl ?: item.sourceUrl
                 )
             }
         }.getOrDefault(item)
