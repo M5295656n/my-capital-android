@@ -40,6 +40,7 @@ class MarketNewsWorker(
             }
             val now = System.currentTimeMillis()
             val newsEntities = news.map { item ->
+                val impact = assessMarketNews(item.title, item.summary, item.category, item.relatedTickers)
                 MarketCalendarItemEntity(
                     sourceKey = item.sourceKey,
                     itemType = "NEWS",
@@ -51,10 +52,10 @@ class MarketNewsWorker(
                     sourceName = item.sourceName,
                     sourceUrl = item.sourceUrl,
                     relatedTickers = item.relatedTickers.joinToString(","),
-                    importance = "NORMAL",
-                    impactAssessment = "",
-                    impactHorizon = "",
-                    confidence = "LOW",
+                    importance = impact.importance,
+                    impactAssessment = impact.assessment,
+                    impactHorizon = impact.horizon,
+                    confidence = impact.confidence,
                     updatedAt = now,
                     issuer = item.issuer,
                     instrumentType = item.instrumentType,
@@ -82,9 +83,9 @@ class MarketNewsWorker(
                     sourceUrl = item.sourceUrl,
                     relatedTickers = "",
                     importance = "HIGH",
-                    impactAssessment = "",
-                    impactHorizon = "EVENT",
-                    confidence = "HIGH",
+                    impactAssessment = "Решение может изменить ожидания по инфляции, рублю, доходностям облигаций и стоимости фондирования. Направление реакции зависит от отличия решения от ожиданий рынка; консенсус здесь не задан.",
+                    impactHorizon = "В день решения и ближайшие недели",
+                    confidence = "HIGH — дата заседания; LOW — направление реакции",
                     updatedAt = now
                 )
             }
@@ -101,9 +102,9 @@ class MarketNewsWorker(
                     sourceUrl = item.sourceUrl,
                     relatedTickers = "",
                     importance = "NORMAL",
-                    impactAssessment = "",
-                    impactHorizon = "PUBLICATION",
-                    confidence = "HIGH",
+                    impactAssessment = "Публикация может изменить ожидания по инфляции, ставке и рублёвым активам. Для оценки реакции нужно сравнить факт с прогнозом и предыдущим значением; без этих данных направление не определяется.",
+                    impactHorizon = "В день публикации и последующие недели",
+                    confidence = "HIGH — дата публикации; LOW — рыночный эффект",
                     updatedAt = now
                 )
             }
