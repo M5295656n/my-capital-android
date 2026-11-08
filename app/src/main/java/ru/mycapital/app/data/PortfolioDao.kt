@@ -99,6 +99,15 @@ interface PortfolioDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertImportedOperation(operation: OperationEntity): Long
 
+    @Query("SELECT * FROM market_calendar_items ORDER BY eventDate ASC, publishedAt DESC")
+    fun observeMarketCalendarItems(): Flow<List<MarketCalendarItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMarketCalendarItems(items: List<MarketCalendarItemEntity>)
+
+    @Query("DELETE FROM market_calendar_items WHERE updatedAt < :cutoff")
+    suspend fun deleteStaleMarketCalendarItems(cutoff: Long)
+
     @Query("SELECT * FROM payouts ORDER BY COALESCE(expectedDate, actualDate) ASC")
     fun observePayouts(): Flow<List<PayoutEntity>>
 

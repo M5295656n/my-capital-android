@@ -60,6 +60,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import ru.mycapital.app.data.QuoteRefreshWorker
 import ru.mycapital.app.data.CorporateEventsWorker
+import ru.mycapital.app.data.MarketNewsWorker
+import ru.mycapital.app.data.MarketCalendarItemEntity
 import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
 import java.time.YearMonth
@@ -90,6 +92,7 @@ private enum class Screen(val title: String, val icon: androidx.compose.ui.graph
     Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
+    Events("События", Icons.Default.EventNote),
     More("Ещё", Icons.Default.MoreHoriz),
     Accounts("Счета", Icons.Default.AccountBalance),
     Operations("Операции", Icons.Default.SwapHoriz)
@@ -119,6 +122,7 @@ private fun MyCapitalApp() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    val marketCalendarItems by dao.observeMarketCalendarItems().collectAsState(initial = emptyList())
     // Portfolio history lives above navigation destinations so tab switches
     // cannot cancel its network requests or reset the chart state.
     var selectedHistoryRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
@@ -266,6 +270,9 @@ private fun MyCapitalApp() {
     val eventWorkInfos by WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("moex_events_refresh_manual")
         .collectAsState(initial = emptyList())
+    val newsWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("market_news_refresh_manual")
+        .collectAsState(initial = emptyList())
     // Show activity only while a worker is actually executing. ENQUEUED/BLOCKED can
     // persist while Android waits for network constraints and must not look like a stuck spinner.
     val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING } ||
@@ -281,6 +288,15 @@ private fun MyCapitalApp() {
             .setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "moex_corporate_events", ExistingPeriodicWorkPolicy.UPDATE, eventsPeriodic
+        )
+        val newsPeriodic = PeriodicWorkRequestBuilder<MarketNewsWorker>(6, TimeUnit.HOURS)
+            .setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "market_news_refresh", ExistingPeriodicWorkPolicy.UPDATE, newsPeriodic
+        )
+        val newsRequest = OneTimeWorkRequestBuilder<MarketNewsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "market_news_refresh_manual", ExistingWorkPolicy.KEEP, newsRequest
         )
         val snapshotPeriodic = PeriodicWorkRequestBuilder<PortfolioSnapshotWorker>(24, TimeUnit.HOURS).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -322,6 +338,26 @@ private fun MyCapitalApp() {
             )
         }
     }
+    val refreshNews: () -> Unit = {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<MarketNewsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "market_news_refresh_manual", ExistingWorkPolicy.REPLACE, request
+        )
+    }
+    val newsSyncMessage = (
+        newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
+            ?: newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
+            ?: newsWorkInfos.firstOrNull { it.state.isFinished }
+        )?.let { info ->
+            info.outputData.getString("summary") ?: info.progress.getString("summary")
+                ?: when (info.state) {
+                    androidx.work.WorkInfo.State.RUNNING -> "Обновление новостей выполняется…"
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Обновление новостей ожидает подключения к сети…"
+                    androidx.work.WorkInfo.State.FAILED -> "Не удалось обновить новости."
+                    else -> null
+                }
+        }
     val eventSyncMessage = (
         eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
             ?: eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
@@ -371,7 +407,7 @@ private fun MyCapitalApp() {
                     contentColor = androidx.compose.ui.graphics.Color(0xFFAAB9D0),
                     tonalElevation = 0.dp
                 ) {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
+                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.Events, Screen.More).forEach { screen ->
                         NavigationBarItem(
                             selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
@@ -399,6 +435,7 @@ private fun MyCapitalApp() {
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
+                Screen.Events -> EventsScreen(assets, cashBalance ?: 0.0, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -2765,6 +2802,99 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
             Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             Text(value, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EventsScreen(
+    assets: List<AssetEntity>,
+    cashBalance: Double,
+    payouts: List<PayoutEntity>,
+    marketCalendarItems: List<MarketCalendarItemEntity>,
+    accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
+    accountCash: List<BrokerAccountCashEntity>,
+    onRefreshNews: () -> Unit,
+    newsSyncMessage: String?,
+    modifier: Modifier = Modifier
+) {
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
+    val selectedAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets
+        else accountAssets.asSequence()
+            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
+            .sortedBy { it.assetType + it.ticker }
+            .toList()
+    }
+    val selectedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val selectedTickers = remember(accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+        else accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    val selectedPayouts = remember(payouts, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
+        else payouts.filter { payout ->
+            val payoutAccountId = historyAccountId(payout.sourceKey)
+            if (payoutAccountId != null) payoutAccountId == selectedAccountId
+            else payout.ticker.uppercase() in selectedTickers
+        }
+    }
+    val selectedNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) marketCalendarItems
+        else marketCalendarItems.filter { item ->
+            item.category == "ECONOMY" || item.relatedTickers.isBlank() ||
+                item.relatedTickers.split(",").any { it.trim().uppercase() in selectedTickers }
+        }
+    }
+    val selectedAccountLabel = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Все счета"
+        else accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName ?: "Счёт"
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("События и новости", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                if (accounts.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedAccountLabel, onValueChange = {}, readOnly = true,
+                            label = { Text("Брокерский счёт") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Все счета") }, onClick = {
+                                selectedAccountId = ALL_HISTORY_ACCOUNTS
+                                accountMenuExpanded = false
+                            })
+                            accounts.forEach { account ->
+                                DropdownMenuItem(text = { Text(account.displayName) }, onClick = {
+                                    selectedAccountId = account.accountId
+                                    accountMenuExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            MarketCalendarSection(
+                news = selectedNews,
+                payouts = selectedPayouts,
+                onRefreshNews = onRefreshNews,
+                newsSyncMessage = newsSyncMessage,
+                portfolioAssets = selectedAssets,
+                portfolioCash = selectedCash
+            )
         }
     }
 }

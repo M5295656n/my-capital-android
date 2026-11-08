@@ -58,6 +58,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-svg:2.7.0")
     implementation("org.jsoup:jsoup:1.20.1")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("net.lingala.zip4j:zip4j:2.11.5")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")

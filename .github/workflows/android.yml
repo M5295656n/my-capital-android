@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/analytics-events-news ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
     branches: [ main ]
