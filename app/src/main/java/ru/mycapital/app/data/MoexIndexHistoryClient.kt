@@ -35,7 +35,11 @@ class MoexIndexHistoryClient {
             "https://iss.moex.com/iss/history/engines/stock/markets/index/securities/$encodedCode.json"
         )
         var lastError: Exception? = null
+        val combinedByDate = linkedMapOf<String, MoexIndexPoint>()
 
+        // The board-specific SNDX history can contain only a recent subset.
+        // Query both routes and merge them so the benchmark reaches the
+        // portfolio's first available date instead of silently starting later.
         for (baseUrl in baseUrls) {
             try {
                 val result = mutableListOf<MoexIndexPoint>()
@@ -83,11 +87,12 @@ class MoexIndexHistoryClient {
                     if (rows.size < 100) break
                     start += rows.size
                 }
-                if (result.isNotEmpty()) return result.distinctBy { it.date }.sortedBy { it.date }
+                result.forEach { point -> combinedByDate[point.date] = point }
             } catch (error: Exception) {
                 lastError = error
             }
         }
+        if (combinedByDate.isNotEmpty()) return combinedByDate.values.sortedBy { it.date }
         lastError?.let { throw it }
         return emptyList()
     }
