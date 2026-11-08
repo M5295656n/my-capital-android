@@ -338,6 +338,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     price = trade.price,
                     commission = trade.totalFee,
                     operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    settlementDate = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
                     sourceKey = scopedSourceKey,
                     accountId = report.accountId
