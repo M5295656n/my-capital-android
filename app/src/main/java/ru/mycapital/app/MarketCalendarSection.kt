@@ -122,7 +122,11 @@ internal fun MarketCalendarSection(
                     if (it.category == "NEW_ISSUES") {
                         add("Объём: ${it.placementVolume ?: "Не сообщено"}")
                         add("Цена размещения: ${it.placementPrice ?: "Не сообщено"}")
-                        add("Купон: ${it.couponRate ?: "Не сообщено"}")
+                        val couponLabel = when {
+                            it.instrumentType?.contains("акци", ignoreCase = true) == true -> "Не применяется"
+                            else -> it.couponRate ?: "Не сообщено"
+                        }
+                        add("Купон: $couponLabel")
                     }
                     it.couponAmount?.let { value -> add("Размер купона: $value") }
                     it.isin?.let { value -> add("ISIN: $value") }
