@@ -24,5 +24,12 @@ data class MarketCalendarItemEntity(
     val impactAssessment: String = "",
     val impactHorizon: String = "",
     val confidence: String = "LOW",
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val issuer: String? = null,
+    val instrumentType: String? = null,
+    val placementVolume: String? = null,
+    val placementPrice: String? = null,
+    val couponRate: String? = null,
+    val applicationDates: String? = null,
+    val tradingStartDate: String? = null
 )
