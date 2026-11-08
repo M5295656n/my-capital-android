@@ -107,8 +107,6 @@ internal fun PortfolioAnalyticsSection(
             }
         }
 
-        PortfolioReturnHistoryCard(marketHistory, historyLoading, onRefreshHistory)
-
         Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Структура портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
