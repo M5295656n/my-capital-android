@@ -2792,7 +2792,7 @@ private fun AnalyticsScreen(
         else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
     val analyticsOperations = remember(operations, selectedAccountId) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
-        else operations.filter { it.accountId == selectedAccountId }
+        else operations.filter { historyAccountId(it.sourceKey) == selectedAccountId }
     }
     val analyticsHistoryAssets = remember(assets, analyticsAssets, analyticsOperations, selectedAccountId) {
         val currentByTicker = analyticsAssets.associateBy { it.ticker.trim().uppercase() }
@@ -2830,10 +2830,6 @@ private fun AnalyticsScreen(
     val analyticsMarketValue = analyticsAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }
     val selectedTickers = remember(accountAssets, selectedAccountId) {
         accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
-    }
-    val analyticsOperations = remember(operations, selectedAccountId) {
-        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
-        else operations.filter { historyAccountId(it.sourceKey) == selectedAccountId }
     }
     val analyticsPayouts = remember(payouts, selectedAccountId, selectedTickers) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
@@ -2992,8 +2988,9 @@ private fun PortfolioHistoryChart(history: List<PortfolioMarketHistoryPoint>) {
     val points = remember(history, selectedRange) {
         val ordered = history.sortedBy { it.dateKey }
         val latest = ordered.lastOrNull()?.let { java.time.LocalDate.parse(it.dateKey) }
-        if (selectedRange.months == null || latest == null) ordered else {
-            val from = latest.minusMonths(selectedRange.months)
+        val months = selectedRange.months
+        if (months == null || latest == null) ordered else {
+            val from = latest.minusMonths(months)
             ordered.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(from) }
         }
     }
