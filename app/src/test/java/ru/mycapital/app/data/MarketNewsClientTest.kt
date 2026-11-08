@@ -7,6 +7,18 @@ import java.time.Instant
 
 class MarketNewsClientTest {
     @Test
+    fun readsShortDisclosureBodiesWithoutExpectingTheFullLimit() {
+        val body = okhttp3.ResponseBody.create(null, "short html".toByteArray())
+        assertEquals("short html", String(readBoundedResponseBody(body, 1024)!!))
+    }
+
+    @Test
+    fun rejectsDisclosureBodiesLargerThanTheConfiguredLimit() {
+        val body = okhttp3.ResponseBody.create(null, ByteArray(32) { 1 })
+        assertEquals(null, readBoundedResponseBody(body, 16))
+    }
+
+    @Test
     fun parsesOfficialRssAndMatchesOnlyPortfolioTickers() {
         val now = Instant.parse("2026-11-08T12:00:00Z").toEpochMilli()
         val xml = """
