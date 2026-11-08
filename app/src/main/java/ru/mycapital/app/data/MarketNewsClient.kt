@@ -349,6 +349,8 @@ class MarketNewsClient {
                 if (!response.isSuccessful) return@use null
                 val host = response.request.url.host
                 if (response.request.url.scheme != "https" || !(host == "e-disclosure.ru" || host.endsWith(".e-disclosure.ru"))) return@use null
+                val contentType = response.header("Content-Type").orEmpty().lowercase(Locale.ROOT)
+                if (!contentType.startsWith("text/html") && !contentType.startsWith("text/plain")) return@use null
                 val body = response.body ?: return@use null
                 if (body.contentLength() > 512 * 1024L) return@use null
                 val bytes = body.source().readByteArray(512 * 1024L + 1L)
