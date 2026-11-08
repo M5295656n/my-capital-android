@@ -148,4 +148,38 @@ class PortfolioMarketHistoryTest {
         assertFalse(result.unavailableTickers.contains("SBER"))
     }
 
+    @Test
+    fun tradeDateAndSettlementDateDoNotDoubleCountCashAndHoldings() = kotlinx.coroutines.runBlocking {
+        val tradeDate = LocalDate.parse("2026-03-02")
+        val settlementDate = LocalDate.parse("2026-03-04")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 3L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0
+            )),
+            operations = listOf(
+                operation(20, "Пополнение", "2026-03-01", 1.0, 1_000.0, ticker = "RUB"),
+                operation(21, "Покупка", "2026-03-02", 1.0, 100.0).copy(
+                    settlementDate = settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                )
+            ),
+            currentCash = 900.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = settlementDate
+        ) { _, _, _, _ ->
+            listOf(
+                MoexDailyClose(tradeDate, 100.0),
+                MoexDailyClose(tradeDate.plusDays(1), 100.0),
+                MoexDailyClose(settlementDate, 100.0)
+            )
+        }
+
+        assertEquals(3, result.points.size)
+        assertEquals(1_000.0, result.points[0].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+        assertEquals(900.0, result.points[2].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[2].totalValue, 0.000001)
+    }
+
 }
