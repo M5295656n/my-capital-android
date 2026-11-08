@@ -182,4 +182,20 @@ class PortfolioMarketHistoryTest {
         assertEquals(1_000.0, result.points[2].totalValue, 0.000001)
     }
 
+    @Test
+    fun legacyUnscopedSourceKeysAreNotMistakenForBrokerAccountIds() {
+        assertEquals(null, historyAccountId(null))
+        assertEquals(null, historyAccountId("MANUAL:TRADE:123"))
+        assertEquals(null, historyAccountId("SBER:TRADE:123"))
+        assertEquals(null, historyAccountId("SBER:CASH:deposit-123"))
+        assertEquals(null, historyAccountId("SBER:PAYOUT:dividend-123"))
+    }
+
+    @Test
+    fun scopedSourceKeysResolveTheBrokerAccountId() {
+        assertEquals("403RY0J", historyAccountId("SBER:403RY0J:TRADE:deal-123"))
+        assertEquals("S25F9ZU", historyAccountId("SBER:S25F9ZU:CASH:deposit-123"))
+        assertEquals("403RY0J", historyAccountId("SBER:403RY0J:PAYOUT:dividend-123"))
+    }
+
 }
