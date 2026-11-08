@@ -1,6 +1,7 @@
 package ru.mycapital.app.data
 
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
@@ -120,7 +121,7 @@ internal fun parseCbrKeyRateCalendar(
             sourceName = "Банк России",
             sourceUrl = "https://www.cbr.ru/dkp/cal_mp"
         )
-    }.distinctBy { it.sourceKey }.sortedBy { it.eventDate }
+    }.toList().distinctBy { it.sourceKey }.sortedBy { it.eventDate }
 }
 
 
@@ -140,13 +141,15 @@ internal fun parseCbrStatisticsCalendar(
     return document.select("tr").mapNotNull { row ->
         val cells = row.select("th, td")
         if (cells.size < 2) return@mapNotNull null
-        val dateMatch = datePattern.find(cells.first().text()) ?: return@mapNotNull null
+        val firstCell = cells.firstOrNull() ?: return@mapNotNull null
+        val lastCell = cells.lastOrNull() ?: return@mapNotNull null
+        val dateMatch = datePattern.find(firstCell.text()) ?: return@mapNotNull null
         val date = runCatching {
             LocalDate.of(dateMatch.groupValues[3].toInt(), dateMatch.groupValues[2].toInt(), dateMatch.groupValues[1].toInt())
         }.getOrNull() ?: return@mapNotNull null
         if (date.isBefore(today)) return@mapNotNull null
 
-        val title = cells.last().text().replace(Regex("\\s+"), " ").trim()
+        val title = lastCell.text().replace(Regex("\\s+"), " ").trim()
         if (title.isBlank() || relevant.none { it.containsMatchIn(title) }) return@mapNotNull null
         val time = cells.getOrNull(1)?.text()?.trim().orEmpty()
         val period = cells.drop(2).joinToString(" · ") { it.text().trim() }.trim(' ', '·')
@@ -377,7 +380,7 @@ internal fun findOfficialPlacementDocumentUrls(html: String, baseUrl: String): L
     )
     return document.select("a[href]").mapNotNull { anchor ->
         val href = anchor.absUrl("href")
-        val url = runCatching { okhttp3.HttpUrl.get(href) }.getOrNull() ?: return@mapNotNull null
+        val url = runCatching { href.toHttpUrlOrNull() }.getOrNull() ?: return@mapNotNull null
         val hostAllowed = url.host == "e-disclosure.ru" || url.host.endsWith(".e-disclosure.ru")
         val pathLooksDocument = url.encodedPath.endsWith(".pdf", ignoreCase = true)
         if (url.scheme == "https" && hostAllowed &&
@@ -485,7 +488,7 @@ class MarketNewsClient {
         .callTimeout(22, TimeUnit.SECONDS)
         .build()
 
-    fun getUpcomingKeyRateEvents(today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): List<ParsedMarketCalendarEvent> {
+    internal fun getUpcomingKeyRateEvents(today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): List<ParsedMarketCalendarEvent> {
         val request = Request.Builder().url("https://www.cbr.ru/dkp/cal_mp")
             .header("User-Agent", "MyCapital-Android/0.3")
             .build()
@@ -497,7 +500,7 @@ class MarketNewsClient {
     }
 
 
-    fun getUpcomingStatisticsEvents(today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): List<ParsedMarketCalendarEvent> {
+    internal fun getUpcomingStatisticsEvents(today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): List<ParsedMarketCalendarEvent> {
         val request = Request.Builder().url("https://www.cbr.ru/statistics/indcalendar/")
             .header("User-Agent", "MyCapital-Android/0.3")
             .build()
@@ -509,7 +512,7 @@ class MarketNewsClient {
     }
 
     private fun fetchOfficialPlacementDocument(url: String, title: String, allowNestedDocument: Boolean = true): OfficialPlacementDocumentResult? {
-        val parsed = runCatching { okhttp3.HttpUrl.get(url) }.getOrNull() ?: return null
+        val parsed = runCatching { url.toHttpUrlOrNull() }.getOrNull() ?: return null
         if (parsed.scheme != "https" || !(parsed.host == "e-disclosure.ru" || parsed.host.endsWith(".e-disclosure.ru"))) return null
         return runCatching {
             val request = Request.Builder().url(parsed).header("User-Agent", "MyCapital-Android/0.3").build()
@@ -557,7 +560,7 @@ class MarketNewsClient {
 
     private fun enrichPlacementFromLinkedPage(item: ParsedMarketNews): ParsedMarketNews {
         if (item.category != "NEW_ISSUES") return item
-        val parsedUrl = runCatching { okhttp3.HttpUrl.get(item.sourceUrl) }.getOrNull() ?: return item
+        val parsedUrl = runCatching { item.sourceUrl.toHttpUrlOrNull() }.getOrNull() ?: return item
         // Follow only the MOEX article URL supplied by the official MOEX RSS feed.
         if (parsedUrl.scheme != "https" || (parsedUrl.host != "moex.com" && !parsedUrl.host.endsWith(".moex.com"))) return item
         return runCatching {
@@ -597,7 +600,7 @@ class MarketNewsClient {
         }.getOrDefault(item)
     }
 
-    fun getLatestNews(portfolioTickers: Set<String>): List<ParsedMarketNews> {
+    internal fun getLatestNews(portfolioTickers: Set<String>): List<ParsedMarketNews> {
         val result = mutableListOf<ParsedMarketNews>()
         val errors = mutableListOf<String>()
         defaultMarketNewsFeeds.forEach { feed ->
