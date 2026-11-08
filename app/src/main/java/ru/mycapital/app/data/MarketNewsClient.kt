@@ -35,7 +35,10 @@ internal data class ParsedMarketNews(
     val placementPrice: String? = null,
     val couponRate: String? = null,
     val applicationDates: String? = null,
-    val tradingStartDate: String? = null
+    val tradingStartDate: String? = null,
+    val isin: String? = null,
+    val couponAmount: String? = null,
+    val detailsSourceUrl: String? = null
 )
 
 internal val defaultMarketNewsFeeds = listOf(
@@ -131,7 +134,9 @@ internal data class ParsedPlacementDetails(
     val placementPrice: String? = null,
     val couponRate: String? = null,
     val applicationDates: String? = null,
-    val tradingStartDate: String? = null
+    val tradingStartDate: String? = null,
+    val isin: String? = null,
+    val couponAmount: String? = null
 )
 
 internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacementDetails {
@@ -147,10 +152,12 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
     }
     val volume = capture(Regex("объ[её]м(?: выпуска| размещения)?\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
     val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
-    val coupon = capture(Regex("(?:купон(?:ная ставка)?|ставка купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
+    val coupon = capture(Regex("(?:купонная ставка|ставка купона|доходность купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
+    val couponAmount = capture(Regex("(?:размер купона|купонный доход|сумма купона|купон)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
+    val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
     val applicationDates = capture(Regex("((?:сбор заявок|приём заявок|прием заявок|книга заявок)[^.;]{0,120}(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?))", RegexOption.IGNORE_CASE))
     val tradingDate = capture(Regex("(?:начало торгов|первые торги|торги начнутся)\\s*[:—-]?\\s*(\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)", RegexOption.IGNORE_CASE))
-    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate)
+    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate, isin, couponAmount)
 }
 
 
@@ -263,7 +270,9 @@ internal fun parseMarketNewsRss(
             placementPrice = placement.placementPrice,
             couponRate = placement.couponRate,
             applicationDates = placement.applicationDates,
-            tradingStartDate = placement.tradingStartDate
+            tradingStartDate = placement.tradingStartDate,
+            isin = placement.isin,
+            couponAmount = placement.couponAmount
         )
     }.distinctBy { it.sourceKey }.sortedByDescending { it.publishedAt }
 }
@@ -304,6 +313,38 @@ class MarketNewsClient {
         }
     }
 
+    private fun enrichPlacementFromLinkedPage(item: ParsedMarketNews): ParsedMarketNews {
+        if (item.category != "NEW_ISSUES") return item
+        val parsedUrl = runCatching { okhttp3.HttpUrl.get(item.sourceUrl) }.getOrNull() ?: return item
+        // Follow only the MOEX article URL supplied by the official MOEX RSS feed.
+        if (parsedUrl.host != "moex.com" && !parsedUrl.host.endsWith(".moex.com")) return item
+        return runCatching {
+            val request = Request.Builder().url(parsedUrl).header("User-Agent", "MyCapital-Android/0.3").build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use item
+                val body = response.body ?: return@use item
+                if (body.contentLength() > 512 * 1024L) return@use item
+                val bytes = body.source().readByteArray(512 * 1024L + 1L)
+                if (bytes.size > 512 * 1024) return@use item
+                val pageText = Jsoup.parse(String(bytes, Charsets.UTF_8), item.sourceUrl).text()
+                    .replace(Regex("\\s+"), " ").take(12000)
+                val pageDetails = parsePlacementDetails(item.title, pageText)
+                item.copy(
+                    issuer = item.issuer ?: pageDetails.issuer,
+                    instrumentType = item.instrumentType ?: pageDetails.instrumentType,
+                    placementVolume = item.placementVolume ?: pageDetails.placementVolume,
+                    placementPrice = item.placementPrice ?: pageDetails.placementPrice,
+                    couponRate = item.couponRate ?: pageDetails.couponRate,
+                    applicationDates = item.applicationDates ?: pageDetails.applicationDates,
+                    tradingStartDate = item.tradingStartDate ?: pageDetails.tradingStartDate,
+                    isin = item.isin ?: pageDetails.isin,
+                    couponAmount = pageDetails.couponAmount,
+                    detailsSourceUrl = item.sourceUrl
+                )
+            }
+        }.getOrDefault(item)
+    }
+
     fun getLatestNews(portfolioTickers: Set<String>): List<ParsedMarketNews> {
         val result = mutableListOf<ParsedMarketNews>()
         val errors = mutableListOf<String>()
@@ -325,6 +366,7 @@ class MarketNewsClient {
         if (result.isEmpty() && errors.isNotEmpty()) {
             throw IOException("Не удалось загрузить новостные ленты: ${errors.joinToString("; ")}")
         }
-        return result.distinctBy { it.sourceKey }.sortedByDescending { it.publishedAt }
+        return result.distinctBy { it.sourceKey }.map { enrichPlacementFromLinkedPage(it) }
+            .sortedByDescending { it.publishedAt }
     }
 }
