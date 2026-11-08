@@ -185,7 +185,7 @@ internal data class ParsedPlacementDetails(
 internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacementDetails {
     val text = "$title $summary".replace(Regex("\\s+"), " ")
     fun capture(pattern: Regex): String? =
-        pattern.find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+        pattern.find(text)?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.')?.takeIf { it.isNotBlank() }
 
     val issuer = capture(Regex(
         "(?:полное\\s+наименование\\s+эмитента|наименование\\s+эмитента|эмитент|компания)\\s*[:—-]\\s*([^.;,]{2,120})",
@@ -198,7 +198,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         Regex("акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции"
         else -> null
     }
-    val amount = "[0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей|ля)?|штук|шт\\.?|акций|облигаций)?\\.?"
+    val amount = "[0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей|ля)?\\.?|штук|шт\\.?|акций|облигаций)?"
     val volume = capture(Regex(
         "(?:об[ъь]?[её]м(?:\\s+(?:эмиссии|выпуска|размещения))?|общий\\s+об[ъь]?[её]м\\s+размещения|номинальный\\s+об[ъь]?[её]м|количество\\s+размещаемых\\s+(?:ценных\\s+бумаг|акций|облигаций)|количество\\s+(?:облигаций|акций))\\s*[:—-]?\\s*($amount)",
         RegexOption.IGNORE_CASE
@@ -222,7 +222,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val placementStartDate = capture(Regex(
-        "((?:дата\\s+начала\\s+размещения|размещение\\s+с)[^.;]{0,120}?$explicitDate)",
+        "((?:дата\\s+начала\\s+размещения|начало\\s+размещения|размещение\\s+с)[^.;]{0,120}?$explicitDate)",
         RegexOption.IGNORE_CASE
     ))
     val tradingDate = capture(Regex(
