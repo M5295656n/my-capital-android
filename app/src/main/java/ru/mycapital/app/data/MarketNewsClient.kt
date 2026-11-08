@@ -6,6 +6,8 @@ import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import java.io.IOException
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -33,6 +35,43 @@ internal val defaultMarketNewsFeeds = listOf(
     MarketNewsFeed("https://www.cbr.ru/rss/eventrss", "Банк России", "ECONOMY"),
     MarketNewsFeed("https://moex.com/export/news.aspx?cat=100", "Московская биржа", "COMPANIES")
 )
+
+
+internal data class ParsedMarketCalendarEvent(
+    val sourceKey: String, val category: String, val eventDate: Long,
+    val title: String, val summary: String, val sourceName: String, val sourceUrl: String
+)
+
+internal fun parseCbrKeyRateCalendar(
+    html: String,
+    today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))
+): List<ParsedMarketCalendarEvent> {
+    val text = Jsoup.parse(html).text().replace(Regex("\\s+"), " ")
+    val monthNumbers = mapOf(
+        "января" to 1, "февраля" to 2, "марта" to 3, "апреля" to 4,
+        "мая" to 5, "июня" to 6, "июля" to 7, "августа" to 8,
+        "сентября" to 9, "октября" to 10, "ноября" to 11, "декабря" to 12
+    )
+    val pattern = Regex(
+        "(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})\\s+года\\s+Заседание Совета директоров Банка России по ключевой ставке",
+        RegexOption.IGNORE_CASE
+    )
+    return pattern.findAll(text).mapNotNull { match ->
+        val date = runCatching {
+            LocalDate.of(match.groupValues[3].toInt(), monthNumbers.getValue(match.groupValues[2].lowercase(Locale.ROOT)), match.groupValues[1].toInt())
+        }.getOrNull() ?: return@mapNotNull null
+        if (date.isBefore(today)) return@mapNotNull null
+        ParsedMarketCalendarEvent(
+            sourceKey = "CBR:KEY_RATE_MEETING:$date",
+            category = "ECONOMY",
+            eventDate = date.atStartOfDay(ZoneId.of("Europe/Moscow")).toInstant().toEpochMilli(),
+            title = "Заседание Совета директоров Банка России по ключевой ставке",
+            summary = "Ожидаемое время публикации пресс-релиза — 13:30 МСК; пресс-конференции — 15:00 МСК. Время указано Банком России как предполагаемое.",
+            sourceName = "Банк России",
+            sourceUrl = "https://www.cbr.ru/dkp/cal_mp"
+        )
+    }.distinctBy { it.sourceKey }.sortedBy { it.eventDate }
+}
 
 internal fun classifyMarketNews(title: String, summary: String, fallbackCategory: String): String {
     val text = "$title $summary".lowercase(Locale.ROOT)
@@ -120,6 +159,17 @@ class MarketNewsClient {
         .readTimeout(18, TimeUnit.SECONDS)
         .callTimeout(22, TimeUnit.SECONDS)
         .build()
+
+    fun getUpcomingKeyRateEvents(today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))): List<ParsedMarketCalendarEvent> {
+        val request = Request.Builder().url("https://www.cbr.ru/dkp/cal_mp")
+            .header("User-Agent", "MyCapital-Android/0.3")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Банк России: HTTP \${response.code}")
+            val html = response.body?.string() ?: throw IOException("Банк России вернул пустой календарь")
+            return parseCbrKeyRateCalendar(html, today)
+        }
+    }
 
     fun getLatestNews(portfolioTickers: Set<String>): List<ParsedMarketNews> {
         val result = mutableListOf<ParsedMarketNews>()
