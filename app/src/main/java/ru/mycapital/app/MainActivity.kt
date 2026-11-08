@@ -2885,6 +2885,13 @@ private fun AnalyticsScreen(
             else payout.ticker.uppercase() in selectedTickers
         }
     }
+    val analyticsNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) marketCalendarItems
+        else marketCalendarItems.filter { item ->
+            item.category == "ECONOMY" || item.relatedTickers.isBlank() ||
+                item.relatedTickers.split(",").any { it.trim().uppercase() in selectedTickers }
+        }
+    }
     val invested = analyticsAssets.sumOf { it.quantity * it.averagePrice }
     val unrealized = analyticsMarketValue - invested
     val realizedResult = calculateRealizedTradingResult(analyticsOperations)
@@ -2915,7 +2922,7 @@ private fun AnalyticsScreen(
         }
         item {
             MarketCalendarSection(
-                news = marketCalendarItems,
+                news = analyticsNews,
                 payouts = analyticsPayouts,
                 onRefreshNews = onRefreshNews,
                 newsSyncMessage = newsSyncMessage
