@@ -48,7 +48,14 @@ class MarketNewsWorker(
                     impactAssessment = "",
                     impactHorizon = "",
                     confidence = "LOW",
-                    updatedAt = now
+                    updatedAt = now,
+                    issuer = item.issuer,
+                    instrumentType = item.instrumentType,
+                    placementVolume = item.placementVolume,
+                    placementPrice = item.placementPrice,
+                    couponRate = item.couponRate,
+                    applicationDates = item.applicationDates,
+                    tradingStartDate = item.tradingStartDate
                 )
             }
             val eventEntities = keyRateEvents.map { item ->
