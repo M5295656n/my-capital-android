@@ -11,8 +11,8 @@ android {
         applicationId = "ru.mycapital.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 88
-        versionName = "0.3.76"
+        versionCode = 89
+        versionName = "0.3.77"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -58,6 +58,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-svg:2.7.0")
     implementation("org.jsoup:jsoup:1.20.1")
+    implementation("net.lingala.zip4j:zip4j:2.11.5")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
