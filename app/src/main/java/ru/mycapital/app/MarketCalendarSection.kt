@@ -74,6 +74,7 @@ internal fun MarketCalendarSection(
     onRefreshNews: () -> Unit,
     newsSyncMessage: String?,
     portfolioAssets: List<ru.mycapital.app.data.AssetEntity>,
+    portfolioCash: Double,
     modifier: Modifier = Modifier
 ) {
     val zone = remember { ZoneId.of("Europe/Moscow") }
@@ -82,7 +83,10 @@ internal fun MarketCalendarSection(
     var selectedDate by remember { mutableStateOf(today) }
     var selectedFilter by remember { mutableStateOf("Все") }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale("ru", "RU")) }
-    val portfolioValue = remember(portfolioAssets) { portfolioAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } }
+    // The exposure share is measured against the full selected portfolio, including free cash.
+    val portfolioValue = remember(portfolioAssets, portfolioCash) {
+        portfolioAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } + portfolioCash.coerceAtLeast(0.0)
+    }
     val newsItems = remember(news, portfolioAssets, portfolioValue) {
         news.map {
             CalendarDisplayItem(
@@ -105,7 +109,7 @@ internal fun MarketCalendarSection(
                 portfolioExposure = it.relatedTickers.split(",").map { ticker -> ticker.trim().uppercase() }
                     .filter { ticker -> ticker.isNotBlank() }
                     .distinct()
-                    .mapNotNull { ticker -> portfolioAssets.firstOrNull { it.ticker.equals(ticker, true) } }
+                    .mapNotNull { ticker -> portfolioAssets.firstOrNull { it.ticker.equals(ticker, true) && it.quantity > 0.0 } }
                     .map { asset ->
                         val value = asset.quantity * asset.currentPrice
                         val share = if (portfolioValue > 0.0) value / portfolioValue * 100.0 else null
