@@ -322,6 +322,8 @@ class MarketNewsClient {
             val request = Request.Builder().url(parsedUrl).header("User-Agent", "MyCapital-Android/0.3").build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use item
+                val finalHost = response.request.url.host
+                if (finalHost != "moex.com" && !finalHost.endsWith(".moex.com")) return@use item
                 val body = response.body ?: return@use item
                 if (body.contentLength() > 512 * 1024L) return@use item
                 val bytes = body.source().readByteArray(512 * 1024L + 1L)
@@ -337,6 +339,7 @@ class MarketNewsClient {
                     couponRate = item.couponRate ?: pageDetails.couponRate,
                     applicationDates = item.applicationDates ?: pageDetails.applicationDates,
                     tradingStartDate = item.tradingStartDate ?: pageDetails.tradingStartDate,
+                    eventDate = parseExplicitPlacementEventDate(pageDetails) ?: item.eventDate,
                     isin = item.isin ?: pageDetails.isin,
                     couponAmount = pageDetails.couponAmount,
                     detailsSourceUrl = item.sourceUrl
