@@ -321,6 +321,16 @@ private fun ParsedPlacementDetails.hasAnyKnownValue(): Boolean = listOf(
     applicationDates, placementStartDate, tradingStartDate, isin, couponAmount
 ).any { !it.isNullOrBlank() }
 
+internal fun selectPlacementDocumentSourceUrl(
+    pageUrl: String,
+    pageDetails: ParsedPlacementDetails,
+    nestedResult: OfficialPlacementDocumentResult?
+): String {
+    if (nestedResult == null || !nestedResult.details.hasAnyKnownValue()) return pageUrl
+    val merged = mergePlacementDetails(pageDetails, nestedResult.details)
+    return if (merged != pageDetails) nestedResult.sourceUrl else pageUrl
+}
+
 internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): String? =
     findOfficialPlacementDocumentUrls(html, baseUrl).firstOrNull()
 
@@ -500,13 +510,9 @@ class MarketNewsClient {
                         val nestedUrl = findOfficialPlacementDocumentUrls(html, finalUrl)
                             .firstOrNull { it != finalUrl }
                         val nestedResult = nestedUrl?.let { fetchOfficialPlacementDocument(it, title, false) }
-                        val merged = mergePlacementDetails(pageDetails, nestedResult?.details)
-                        val nestedContributed = nestedResult != null &&
-                            nestedResult.details.hasAnyKnownValue() &&
-                            merged != pageDetails
                         OfficialPlacementDocumentResult(
-                            details = merged,
-                            sourceUrl = if (nestedContributed) nestedResult!!.sourceUrl else finalUrl
+                            details = mergePlacementDetails(pageDetails, nestedResult?.details),
+                            sourceUrl = selectPlacementDocumentSourceUrl(finalUrl, pageDetails, nestedResult)
                         )
                     } else OfficialPlacementDocumentResult(pageDetails, finalUrl)
                 }
