@@ -191,25 +191,13 @@ internal suspend fun buildPortfolioMarketHistory(
         val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
-            .sumOf { operation ->
-                when (operation.operationType) {
-                    "Пополнение" -> operation.quantity * operation.price
-                    "Вывод" -> -operation.quantity * operation.price
-                    else -> 0.0
-                }
-            }
+            .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers) }
 
         val priorValue = previousValue
         if (priorValue != null && priorValue > 0.0) {
             val periodFlow = orderedOperations.asSequence()
                 .filter { it.operationDate >= (previousEndOfDay ?: Long.MIN_VALUE) && it.operationDate < endOfDay }
-                .sumOf {
-                    when (it.operationType) {
-                        "Пополнение" -> it.quantity * it.price
-                        "Вывод" -> -it.quantity * it.price
-                        else -> 0.0
-                    }
-                }
+                .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers) }
             val valueBeforeFlow = totalValue - periodFlow
             if (valueBeforeFlow > 0.0) nav *= valueBeforeFlow / priorValue
         }
@@ -244,6 +232,20 @@ private fun cashEffectiveTimestamp(operation: OperationEntity): Long =
     } else {
         operation.operationDate
     }
+
+private fun portfolioExternalFlowEffect(
+    operation: OperationEntity,
+    includeInternalTransfers: Boolean
+): Double {
+    val amount = operation.quantity * operation.price
+    return when (operation.operationType) {
+        "Пополнение", "Внутренний перевод входящий" ->
+            if (operation.operationType == "Пополнение" || includeInternalTransfers) amount else 0.0
+        "Вывод", "Внутренний перевод исходящий" ->
+            if (operation.operationType == "Вывод" || includeInternalTransfers) -amount else 0.0
+        else -> 0.0
+    }
+}
 
 private fun portfolioOperationCashEffect(
     operation: OperationEntity,
