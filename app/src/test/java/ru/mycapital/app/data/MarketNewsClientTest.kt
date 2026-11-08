@@ -25,6 +25,25 @@ class MarketNewsClientTest {
         assertEquals("https://example.test/news/1", parsed.single().sourceUrl)
     }
 
+
+    @Test
+    fun parsesOnlyFutureRelevantRowsFromCbrStatisticsCalendar() {
+        val html = """
+            <table>
+              <tr><th>Дата публикации</th><th>Время</th><th>Информация</th></tr>
+              <tr><td>19.11.2026</td><td>16:00</td><td>Общий объем международных резервных активов</td></tr>
+              <tr><td>27.11.2026</td><td>11:00</td><td>Денежная база в узком определении</td></tr>
+              <tr><td>02.11.2026</td><td>—</td><td>Инфляция в России</td></tr>
+              <tr><td>20.11.2026</td><td>—</td><td>Сведения о страховщиках</td></tr>
+            </table>
+        """.trimIndent()
+        val events = parseCbrStatisticsCalendar(html, java.time.LocalDate.parse("2026-11-08"))
+        assertEquals(2, events.size)
+        assertTrue(events.all { it.sourceUrl == "https://www.cbr.ru/statistics/indcalendar/" })
+        assertTrue(events.any { it.title.contains("международных резервных") })
+        assertTrue(events.any { it.title.contains("Денежная база") })
+    }
+
     @Test
     fun parsesFutureCbrKeyRateMeetingFromOfficialCalendar() {
         val html = """
