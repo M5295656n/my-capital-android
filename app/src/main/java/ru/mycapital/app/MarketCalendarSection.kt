@@ -63,7 +63,8 @@ private data class CalendarDisplayItem(
     val confidence: String = "",
     val importance: String = "NORMAL",
     val publishedAt: Long? = null,
-    val updatedAt: Long? = null
+    val updatedAt: Long? = null,
+    val portfolioExposure: List<String> = emptyList()
 )
 
 @Composable
@@ -72,6 +73,7 @@ internal fun MarketCalendarSection(
     payouts: List<PayoutEntity>,
     onRefreshNews: () -> Unit,
     newsSyncMessage: String?,
+    portfolioAssets: List<ru.mycapital.app.data.AssetEntity>,
     modifier: Modifier = Modifier
 ) {
     val zone = remember { ZoneId.of("Europe/Moscow") }
@@ -80,7 +82,8 @@ internal fun MarketCalendarSection(
     var selectedDate by remember { mutableStateOf(today) }
     var selectedFilter by remember { mutableStateOf("Все") }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale("ru", "RU")) }
-    val newsItems = remember(news) {
+    val portfolioValue = remember(portfolioAssets) { portfolioAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } }
+    val newsItems = remember(news, portfolioAssets, portfolioValue) {
         news.map {
             CalendarDisplayItem(
                 key = it.sourceKey,
@@ -99,6 +102,16 @@ internal fun MarketCalendarSection(
                 importance = it.importance,
                 publishedAt = it.publishedAt,
                 updatedAt = it.updatedAt,
+                portfolioExposure = it.relatedTickers.split(",").map { ticker -> ticker.trim().uppercase() }
+                    .filter { ticker -> ticker.isNotBlank() }
+                    .distinct()
+                    .mapNotNull { ticker -> portfolioAssets.firstOrNull { it.ticker.equals(ticker, true) } }
+                    .map { asset ->
+                        val value = asset.quantity * asset.currentPrice
+                        val share = if (portfolioValue > 0.0) value / portfolioValue * 100.0 else null
+                        "${asset.ticker}: ${quantity(asset.quantity)} шт. · ${money(value)} ₽" +
+                            (share?.let { " · ${String.format(Locale(\"ru\", \"RU\"), \"%.2f%%\", it)} портфеля" } ?: "")
+                    },
                 placementDetails = buildList {
                     it.issuer?.let { value -> add("Эмитент: $value") }
                     it.instrumentType?.let { value -> add("Инструмент: $value") }
@@ -248,7 +261,13 @@ internal fun MarketCalendarSection(
                         item.updatedAt?.let { timestamp ->
                             Text("Обновлено в приложении: ${java.time.Instant.ofEpochMilli(timestamp).atZone(zone).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale("ru", "RU")))} МСК", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (item.tickers.isNotBlank()) Text("Связанные бумаги: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
+                        if (item.tickers.isNotBlank()) Text("Связанные бумаги в новости: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
+                        if (item.portfolioExposure.isNotEmpty()) {
+                            Text("Позиции выбранного портфеля под воздействием темы", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            item.portfolioExposure.forEach { exposure -> Text(exposure, style = MaterialTheme.typography.bodySmall) }
+                        } else if (item.tickers.isNotBlank()) {
+                            Text("В выбранном счёте совпадающих позиций нет.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (item.impactAssessment.isNotBlank()) {
                             Text("Важность: " + when (item.importance) { "HIGH" -> "Высокая"; "LOW" -> "Низкая"; else -> "Обычная" }, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                             Text("Почему важно", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
