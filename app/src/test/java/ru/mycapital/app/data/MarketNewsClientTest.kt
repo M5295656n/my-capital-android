@@ -455,6 +455,6 @@ class MarketNewsClientTest {
             "Тип ценных бумаг: структурные процентные дисконтные облигации."
         )
         assertEquals("Структурные дисконтные облигации", details.instrumentType)
-        assertEquals("\"Сбербанк КИБ\"", Parser.unescapeEntities("&quot;Сбербанк КИБ&quot;", false))
+        assertEquals("\"Сбербанк КИБ\"", org.jsoup.parser.Parser.unescapeEntities("&quot;Сбербанк КИБ&quot;", false))
     }
 }
