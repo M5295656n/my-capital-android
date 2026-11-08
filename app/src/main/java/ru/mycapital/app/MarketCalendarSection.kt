@@ -110,7 +110,7 @@ internal fun MarketCalendarSection(
                         val value = asset.quantity * asset.currentPrice
                         val share = if (portfolioValue > 0.0) value / portfolioValue * 100.0 else null
                         "${asset.ticker}: ${String.format(Locale("ru", "RU"), "%.6f", asset.quantity).trimEnd('0').trimEnd(',')} шт. · ${String.format(Locale("ru", "RU"), "%,.2f", value)} ₽" +
-                            (share?.let { " · ${String.format(Locale(\"ru\", \"RU\"), \"%.2f%%\", it)} портфеля" } ?: "")
+                            (share?.let { " · ${String.format(Locale("ru", "RU"), "%.2f%%", it)} портфеля" } ?: "")
                     },
                 placementDetails = buildList {
                     it.issuer?.let { value -> add("Эмитент: $value") }
