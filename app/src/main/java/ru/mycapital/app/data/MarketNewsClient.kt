@@ -38,6 +38,7 @@ internal data class ParsedMarketNews(
     val placementPrice: String? = null,
     val couponRate: String? = null,
     val applicationDates: String? = null,
+    val placementStartDate: String? = null,
     val tradingStartDate: String? = null,
     val isin: String? = null,
     val couponAmount: String? = null,
@@ -137,6 +138,7 @@ internal data class ParsedPlacementDetails(
     val placementPrice: String? = null,
     val couponRate: String? = null,
     val applicationDates: String? = null,
+    val placementStartDate: String? = null,
     val tradingStartDate: String? = null,
     val isin: String? = null,
     val couponAmount: String? = null
@@ -178,21 +180,25 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
     val explicitDate = "(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)"
     val applicationDates = capture(Regex(
-        "((?:дата\\s+сбора\\s+заявок|период\\s+букбилдинга|дата\\s+начала\\s+размещения|размещение\\s+с|сбор\\s+заявок|при[её]м\\s+заявок|книга\\s+заявок)[^.;]{0,120}?$explicitDate)",
+        "((?:дата\\s+сбора\\s+заявок|период\\s+букбилдинга|сбор\\s+заявок|при[её]м\\s+заявок|книга\\s+заявок)[^.;]{0,120}?$explicitDate)",
+        RegexOption.IGNORE_CASE
+    ))
+    val placementStartDate = capture(Regex(
+        "((?:дата\\s+начала\\s+размещения|размещение\\s+с)[^.;]{0,120}?$explicitDate)",
         RegexOption.IGNORE_CASE
     ))
     val tradingDate = capture(Regex(
         "(?:дата\\s+начала\\s+торгов|начало\\s+торгов|торги\\s+начнутся|допуск\\s+к\\s+торгам)\\s*[:—-]?\\s*($explicitDate)",
         RegexOption.IGNORE_CASE
     ))
-    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate, isin, couponAmount)
+    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, placementStartDate, tradingDate, isin, couponAmount)
 }
 
 internal fun parseExplicitPlacementEventDate(
     details: ParsedPlacementDetails,
     zone: ZoneId = ZoneId.of("Europe/Moscow")
 ): Long? {
-    val candidates = listOfNotNull(details.applicationDates, details.tradingStartDate)
+    val candidates = listOfNotNull(details.applicationDates, details.placementStartDate, details.tradingStartDate)
     val monthNumbers = mapOf(
         "января" to 1, "февраля" to 2, "марта" to 3, "апреля" to 4,
         "мая" to 5, "июня" to 6, "июля" to 7, "августа" to 8,
@@ -243,7 +249,8 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
         Regex("купонная ставка|ставка купона|процентная ставка по купону|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
         Regex("размер купона|размер купонного дохода|сумма купона|сумма выплаты на одну облигацию|денежный размер купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
         Regex("\\bisin\\b", RegexOption.IGNORE_CASE) to "ISIN",
-        Regex("дата сбора заявок|период букбилдинга|дата начала размещения|размещение с|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
+        Regex("дата сбора заявок|период букбилдинга|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
+        Regex("дата начала размещения|размещение с", RegexOption.IGNORE_CASE) to "Начало размещения",
         Regex("дата начала торгов|начало торгов|дата допуска к торгам|допуск к торгам", RegexOption.IGNORE_CASE) to "Начало торгов"
     )
     fun canonicalLabel(label: String): String? {
@@ -287,6 +294,7 @@ internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: P
         placementPrice = primary.placementPrice ?: secondary.placementPrice,
         couponRate = primary.couponRate ?: secondary.couponRate,
         applicationDates = primary.applicationDates ?: secondary.applicationDates,
+        placementStartDate = primary.placementStartDate ?: secondary.placementStartDate,
         tradingStartDate = primary.tradingStartDate ?: secondary.tradingStartDate,
         isin = primary.isin ?: secondary.isin,
         couponAmount = primary.couponAmount ?: secondary.couponAmount
@@ -391,6 +399,7 @@ internal fun parseMarketNewsRss(
             placementPrice = placement.placementPrice,
             couponRate = placement.couponRate,
             applicationDates = placement.applicationDates,
+            placementStartDate = placement.placementStartDate,
             tradingStartDate = placement.tradingStartDate,
             isin = placement.isin,
             couponAmount = placement.couponAmount
@@ -509,6 +518,7 @@ class MarketNewsClient {
                     placementPrice = item.placementPrice ?: bestDetails.placementPrice,
                     couponRate = item.couponRate ?: bestDetails.couponRate,
                     applicationDates = item.applicationDates ?: bestDetails.applicationDates,
+                    placementStartDate = item.placementStartDate ?: bestDetails.placementStartDate,
                     tradingStartDate = item.tradingStartDate ?: bestDetails.tradingStartDate,
                     eventDate = parseExplicitPlacementEventDate(bestDetails) ?: item.eventDate,
                     isin = item.isin ?: bestDetails.isin,
