@@ -227,6 +227,7 @@ class PortfolioMarketHistoryTest {
         assertEquals(2, individual.points.size)
         assertEquals(1_000.0, individual.points.first().cashValue, 0.000001)
         assertEquals(200.0, individual.points.last().cashValue, 0.000001)
+        assertEquals(individual.points.first().nav, individual.points.last().nav, 0.000001)
         assertEquals(1_000.0, combined.points.first().cashValue, 0.000001)
         assertEquals(1_000.0, combined.points.last().cashValue, 0.000001)
     }
