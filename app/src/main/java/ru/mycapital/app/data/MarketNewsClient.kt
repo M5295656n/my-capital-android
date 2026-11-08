@@ -198,7 +198,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         Regex("акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции"
         else -> null
     }
-    val amount = "[0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей|ля)?|штук|шт\\.?|акций|облигаций)?"
+    val amount = "[0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей|ля)?|штук|шт\\.?|акций|облигаций)?\\.?"
     val volume = capture(Regex(
         "(?:об[ъь]?[её]м(?:\\s+(?:эмиссии|выпуска|размещения))?|общий\\s+об[ъь]?[её]м\\s+размещения|номинальный\\s+об[ъь]?[её]м|количество\\s+размещаемых\\s+(?:ценных\\s+бумаг|акций|облигаций)|количество\\s+(?:облигаций|акций))\\s*[:—-]?\\s*($amount)",
         RegexOption.IGNORE_CASE
