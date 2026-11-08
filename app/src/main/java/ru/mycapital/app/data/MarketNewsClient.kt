@@ -330,7 +330,17 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
             addPair(term.text(), value)
         }
     }
-    return parsePlacementDetails(title, labeledValues.distinct().joinToString(". "))
+    val parsed = parsePlacementDetails(title, labeledValues.distinct().joinToString(". "))
+    fun preserveDisplayedPeriod(label: String, value: String?): String? {
+        if (value == null) return null
+        val raw = labeledValues.firstOrNull { it.startsWith("$label: ") }
+            ?.substringAfter(": ")?.trim()
+        return if (raw?.endsWith('.') == true && !value.endsWith('.')) "$value." else value
+    }
+    return parsed.copy(
+        placementVolume = preserveDisplayedPeriod("Объём выпуска", parsed.placementVolume),
+        couponAmount = preserveDisplayedPeriod("Размер купона", parsed.couponAmount)
+    )
 }
 
 internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: ParsedPlacementDetails?): ParsedPlacementDetails {
