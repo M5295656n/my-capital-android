@@ -447,4 +447,14 @@ class MarketNewsClientTest {
         assertEquals("1000 руб", details.placementPrice)
         assertEquals(null, details.couponRate)
     }
+
+    @Test
+    fun classifiesStructuredDiscountBondsAndDecodesHtmlEntities() {
+        val details = parsePlacementDetails(
+            "Размещение облигаций",
+            "Тип ценных бумаг: структурные процентные дисконтные облигации."
+        )
+        assertEquals("Структурные дисконтные облигации", details.instrumentType)
+        assertEquals("\"Сбербанк КИБ\"", Parser.unescapeEntities("&quot;Сбербанк КИБ&quot;", false))
+    }
 }
