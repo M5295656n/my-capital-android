@@ -192,6 +192,42 @@ internal fun parseExplicitPlacementEventDate(
     return null
 }
 
+internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedPlacementDetails {
+    val document = Jsoup.parse(html)
+    val labeledValues = mutableListOf<String>()
+    val labelRules = listOf(
+        Regex("эмитент|наименование эмитента|полное наименование компании", RegexOption.IGNORE_CASE) to "Эмитент",
+        Regex("об[ъь]?[её]м выпуска|об[ъь]?[её]м размещения|количество облигаций|количество акций", RegexOption.IGNORE_CASE) to "Объём выпуска",
+        Regex("цена размещения|цена предложения|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
+        Regex("купонная ставка|ставка купона|процентная ставка|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
+        Regex("размер купона|сумма купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
+        Regex("\\bisin\\b", RegexOption.IGNORE_CASE) to "ISIN",
+        Regex("дата начала размещения|период размещения|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
+        Regex("дата начала торгов|начало торгов|дата допуска к торгам", RegexOption.IGNORE_CASE) to "Начало торгов"
+    )
+    fun addPair(label: String, value: String) {
+        val cleanLabel = label.replace(Regex("\\s+"), " ").trim().trimEnd(':', '：')
+        val cleanValue = value.replace(Regex("\\s+"), " ").trim()
+        if (cleanLabel.isBlank() || cleanValue.isBlank() || cleanValue == "—" || cleanValue == "-") return
+        val canonical = labelRules.firstOrNull { it.first.containsMatchIn(cleanLabel) }?.second ?: return
+        labeledValues += "$canonical: $cleanValue"
+    }
+    document.select("table tr").forEach { row ->
+        val cells = row.select("th, td")
+        if (cells.size >= 2) {
+            for (index in 0 until cells.size - 1) addPair(cells[index].text(), cells[index + 1].text())
+        }
+    }
+    document.select("dl").forEach { list ->
+        val terms = list.select("dt")
+        terms.forEachIndexed { index, term ->
+            val value = term.nextElementSibling()?.takeIf { it.tagName() == "dd" }?.text().orEmpty()
+            addPair(term.text(), value)
+        }
+    }
+    return parsePlacementDetails(title, labeledValues.distinct().joinToString(". "))
+}
+
 internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: ParsedPlacementDetails?): ParsedPlacementDetails {
     if (secondary == null) return primary
     return ParsedPlacementDetails(
@@ -355,9 +391,13 @@ class MarketNewsClient {
                 if (body.contentLength() > 512 * 1024L) return@use null
                 val bytes = body.source().readByteArray(512 * 1024L + 1L)
                 if (bytes.size > 512 * 1024) return@use null
-                val text = Jsoup.parse(String(bytes, Charsets.UTF_8), url).text()
-                    .replace(Regex("\\s+"), " ").take(16000)
-                parsePlacementDetails(title, text)
+                val html = String(bytes, Charsets.UTF_8)
+                val document = Jsoup.parse(html, url)
+                val text = document.text().replace(Regex("\\s+"), " ").take(16000)
+                mergePlacementDetails(
+                    parsePlacementDetails(title, text),
+                    parsePlacementDetailsFromHtml(html, title)
+                )
             }
         }.getOrNull()
     }
@@ -380,7 +420,10 @@ class MarketNewsClient {
                 val pageHtml = String(bytes, Charsets.UTF_8)
                 val pageDocument = Jsoup.parse(pageHtml, item.sourceUrl)
                 val pageText = pageDocument.text().replace(Regex("\\s+"), " ").take(12000)
-                val pageDetails = parsePlacementDetails(item.title, pageText)
+                val pageDetails = mergePlacementDetails(
+                    parsePlacementDetails(item.title, pageText),
+                    parsePlacementDetailsFromHtml(pageHtml, item.title)
+                )
                 val documentUrl = findOfficialPlacementDocumentUrl(pageHtml, item.sourceUrl)
                 val documentDetails = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
                 val bestDetails = mergePlacementDetails(pageDetails, documentDetails)
