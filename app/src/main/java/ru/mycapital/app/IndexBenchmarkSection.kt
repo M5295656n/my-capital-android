@@ -56,8 +56,8 @@ private object IndexBenchmarkMemoryCache {
 }
 
 @Composable
-fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: PortfolioDao) {
-    val ordered = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
+fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, dao: PortfolioDao) {
+    val ordered = remember(history) { history.sortedBy { it.dateKey } }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
     val cacheKey = if (from != null && till != null) "$from|$till" else null
@@ -154,7 +154,7 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
         Text("Сравнение с индексами Мосбиржи", style = MaterialTheme.typography.titleLarge)
         when {
             ordered.size < 2 -> Text(
-                "Сравнение появится после накопления двух дневных снимков портфеля.",
+                "Сравнение появится после восстановления как минимум двух торговых дней истории операций и котировок.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -190,25 +190,14 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
 
 @Composable
 private fun BenchmarkChart(
-    snapshots: List<PortfolioSnapshotEntity>,
+    history: List<PortfolioMarketHistoryPoint>,
     imoex: List<MoexIndexPoint>,
     mcftr: List<MoexIndexPoint>
 ) {
     val priceByDate = java.util.TreeMap(imoex.associate { it.date to it.value })
     val totalByDate = java.util.TreeMap(mcftr.associate { it.date to it.value })
-    val navByDate = mutableMapOf<String, Double>()
-    var nav = 100.0
-    snapshots.forEachIndexed { index, snapshot ->
-        if (index > 0) {
-            val previous = snapshots[index - 1].totalValue
-            val valueBeforeEndOfDayFlow = snapshot.totalValue - snapshot.externalFlow
-            if (previous > 0.0 && valueBeforeEndOfDayFlow > 0.0) {
-                nav *= valueBeforeEndOfDayFlow / previous
-            }
-        }
-        navByDate[snapshot.dateKey] = nav
-    }
-    val dates = snapshots.map { it.dateKey }.filter {
+    val navByDate = history.associate { it.dateKey to it.nav }
+    val dates = history.map { it.dateKey }.filter {
         priceByDate.floorEntry(it) != null && totalByDate.floorEntry(it) != null
     }
     if (dates.size < 2) {
@@ -276,7 +265,7 @@ private fun BenchmarkChart(
             Text(dates.last(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            "Доходность портфеля — дневное приближение TWR: внешние денежные потоки учитываются на конец дня. Сравнение начинается с первой сохранённой даты портфеля; более ранних дневных снимков нет. Используется только общая история всех трёх рядов.",
+            "Доходность портфеля рассчитана по восстановленной истории операций; внешние денежные потоки учитываются на конец дня. Все три ряда нормированы на первой общей торговой дате.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
