@@ -75,7 +75,7 @@ internal fun MarketCalendarSection(
             CalendarDisplayItem(
                 key = it.sourceKey,
                 date = java.time.Instant.ofEpochMilli(it.eventDate).atZone(zone).toLocalDate(),
-                category = if (it.category == "ECONOMY") "Экономика" else "Компании",
+                category = when (it.category) { "ECONOMY" -> "Экономика"; "NEW_ISSUES" -> "Новые размещения"; else -> "Компании" },
                 title = it.title,
                 description = it.summary,
                 source = it.sourceName,
@@ -132,7 +132,7 @@ internal fun MarketCalendarSection(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                listOf("Все", "Экономика", "Компании", "Выплаты").forEach { filter ->
+                listOf("Все", "Экономика", "Компании", "Новые размещения", "Выплаты").forEach { filter ->
                     FilterChip(
                         selected = selectedFilter == filter,
                         onClick = { selectedFilter = filter },
