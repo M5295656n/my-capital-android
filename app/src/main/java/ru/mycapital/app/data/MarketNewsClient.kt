@@ -317,7 +317,7 @@ class MarketNewsClient {
         if (item.category != "NEW_ISSUES") return item
         val parsedUrl = runCatching { okhttp3.HttpUrl.get(item.sourceUrl) }.getOrNull() ?: return item
         // Follow only the MOEX article URL supplied by the official MOEX RSS feed.
-        if (parsedUrl.host != "moex.com" && !parsedUrl.host.endsWith(".moex.com")) return item
+        if (parsedUrl.scheme != "https" || (parsedUrl.host != "moex.com" && !parsedUrl.host.endsWith(".moex.com"))) return item
         return runCatching {
             val request = Request.Builder().url(parsedUrl).header("User-Agent", "MyCapital-Android/0.3").build()
             client.newCall(request).execute().use { response ->
