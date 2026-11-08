@@ -225,6 +225,16 @@ internal fun parseExplicitPlacementEventDate(
     return null
 }
 
+internal fun readBoundedResponseBody(body: okhttp3.ResponseBody, maxBytes: Int): ByteArray? {
+    if (maxBytes < 0) return null
+    if (body.contentLength() > maxBytes.toLong()) return null
+    return body.source().use { source ->
+        source.request(maxBytes.toLong() + 1L)
+        val bytes = source.buffer.readByteArray()
+        bytes.takeIf { it.size <= maxBytes }
+    }
+}
+
 internal fun extractPlacementTextFromPdf(bytes: ByteArray): String? {
     if (bytes.size < 5 || !bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII))) return null
     return runCatching {
@@ -458,8 +468,7 @@ class MarketNewsClient {
                 val body = response.body ?: return@use null
                 val maxBytes = if (isPdfContentType || contentType.startsWith("application/octet-stream")) 4L * 1024 * 1024 else 512L * 1024
                 if (body.contentLength() > maxBytes) return@use null
-                val bytes = body.source().readByteArray(maxBytes + 1L)
-                if (bytes.size.toLong() > maxBytes) return@use null
+                val bytes = readBoundedResponseBody(body, maxBytes.toInt()) ?: return@use null
                 val hasPdfSignature = bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII))
                 val isPdf = isPdfContentType || hasPdfSignature
                 if (contentType.startsWith("application/octet-stream") && !hasPdfSignature) return@use null
@@ -499,8 +508,7 @@ class MarketNewsClient {
                 if (finalHost != "moex.com" && !finalHost.endsWith(".moex.com")) return@use item
                 val body = response.body ?: return@use item
                 if (body.contentLength() > 512 * 1024L) return@use item
-                val bytes = body.source().readByteArray(512 * 1024L + 1L)
-                if (bytes.size > 512 * 1024) return@use item
+                val bytes = readBoundedResponseBody(body, 512 * 1024) ?: return@use item
                 val pageHtml = String(bytes, Charsets.UTF_8)
                 val pageDocument = Jsoup.parse(pageHtml, item.sourceUrl)
                 val pageText = pageDocument.text().replace(Regex("\\s+"), " ").take(12000)
