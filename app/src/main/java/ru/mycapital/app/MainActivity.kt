@@ -2794,6 +2794,18 @@ private fun AnalyticsScreen(
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
         else operations.filter { it.accountId == selectedAccountId }
     }
+    val analyticsHistoryAssets = remember(assets, analyticsAssets, analyticsOperations, selectedAccountId) {
+        val currentByTicker = analyticsAssets.associateBy { it.ticker.trim().uppercase() }
+        val allByTicker = assets.associateBy { it.ticker.trim().uppercase() }
+        val historicalTickers = analyticsOperations.asSequence()
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .mapNotNull { it.ticker?.trim()?.uppercase()?.takeIf(String::isNotBlank) }
+            .toSet()
+        val tickers = currentByTicker.keys + historicalTickers
+        tickers.mapNotNull { ticker ->
+            currentByTicker[ticker] ?: allByTicker[ticker]?.copy(quantity = 0.0)
+        }.sortedBy { it.ticker }
+    }
     var analyticsMarketHistory by remember { mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList())) }
     var analyticsHistoryLoading by remember { mutableStateOf(false) }
     LaunchedEffect(analyticsAssets, analyticsOperations, analyticsCash, selectedAccountId) {
@@ -2801,7 +2813,7 @@ private fun AnalyticsScreen(
         try {
             analyticsMarketHistory = withContext(Dispatchers.IO) {
                 buildPortfolioMarketHistory(
-                    assets = analyticsAssets,
+                    assets = analyticsHistoryAssets,
                     operations = analyticsOperations,
                     currentCash = analyticsCash,
                     range = PortfolioHistoryRange.ALL
