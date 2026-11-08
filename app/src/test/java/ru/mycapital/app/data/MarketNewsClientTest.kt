@@ -66,6 +66,24 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun extractsOnlyExplicitPlacementTerms() {
+        val details = parsePlacementDetails(
+            "Новый выпуск облигаций",
+            "Эмитент: ТестФинанс. Объём выпуска: 2 млрд руб. Цена размещения: 1000 руб. Купонная ставка: 12,5%. Сбор заявок: 12 ноября 2026."
+        )
+        assertEquals("ТестФинанс", details.issuer)
+        assertEquals("Облигации", details.instrumentType)
+        assertEquals("2 млрд руб", details.placementVolume)
+        assertEquals("1000 руб", details.placementPrice)
+        assertEquals("12,5%", details.couponRate)
+        assertTrue(details.applicationDates!!.contains("12 ноября 2026"))
+        val unknown = parsePlacementDetails("Объявлено размещение", "Подробности будут позднее.")
+        assertEquals(null, unknown.placementVolume)
+        assertEquals(null, unknown.placementPrice)
+        assertEquals(null, unknown.couponRate)
+    }
+
+    @Test
     fun doesNotMatchTickerInsideAnotherWord() {
         assertTrue(matchPortfolioTickers("SBERBANK and LKOH", setOf("SBER", "LKOH")) == listOf("LKOH"))
     }
