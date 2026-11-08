@@ -59,6 +59,7 @@ internal fun PortfolioAnalyticsSection(
     compositionSnapshots: List<PortfolioCompositionSnapshotEntity>,
     marketHistory: PortfolioMarketHistoryResult,
     historyLoading: Boolean,
+    onRefreshHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var accountMenuExpanded by remember { mutableStateOf(false) }
@@ -105,6 +106,8 @@ internal fun PortfolioAnalyticsSection(
                 }
             }
         }
+
+        PortfolioReturnHistoryCard(marketHistory, historyLoading, onRefreshHistory)
 
         Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -245,6 +248,87 @@ internal fun PortfolioAnalyticsSection(
                 PortfolioCompositionHistoryChart(marketHistory, assets, historyLoading)
             }
         }
+    }
+}
+
+@Composable
+private fun PortfolioReturnHistoryCard(
+    history: PortfolioMarketHistoryResult,
+    loading: Boolean,
+    onRefresh: () -> Unit
+) {
+    val points = remember(history) { history.points.sortedBy { it.dateKey } }
+    val first = points.firstOrNull()
+    val last = points.lastOrNull()
+    val hasReturn = points.size >= 2 && first != null && last != null && first.nav > 0.0
+    val returnPercent = if (hasReturn) (last!!.nav / first!!.nav - 1.0) * 100.0 else 0.0
+    val returnColor = if (returnPercent >= 0.0) Color(0xFF238B63) else MaterialTheme.colorScheme.error
+
+    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Доходность портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("TWR — изменение стоимости портфеля без влияния пополнений и выводов",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hasReturn) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(String.format(Locale("ru", "RU"), "%+.2f%%", returnPercent),
+                        style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = returnColor)
+                    Text("индекс 100 → " + String.format(Locale("ru", "RU"), "%.2f", last!!.nav),
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                PortfolioReturnLineChart(points)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(first!!.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(last!!.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Расчёт по дневным котировкам MOEX и журналу операций. Это оценка TWR; точность зависит от полноты истории сделок и выплат.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(if (loading) "Загружаю котировки и восстанавливаю историю портфеля…" else
+                    "Для расчёта пока недостаточно исторических котировок или операций.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!loading && history.unavailableTickers.isNotEmpty()) {
+                    Text("Не удалось получить историю: " + history.unavailableTickers.joinToString(),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                if (!loading && history.firstPurchaseDate == null) {
+                    Text("В журнале не найдена операция покупки с тикером. Проверьте импорт истории сделок.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Text(if (loading) "Обновление…" else "Обновить историю",
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !loading, onClick = onRefresh).padding(horizontal = 10.dp, vertical = 7.dp),
+                    color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PortfolioReturnLineChart(points: List<PortfolioMarketHistoryPoint>) {
+    val plotted = if (points.size > 100) points.filterIndexed { index, _ -> index % ((points.size / 60).coerceAtLeast(1)) == 0 }.takeLast(100) else points
+    val values = plotted.map { it.nav }
+    val minValue = (values.minOrNull() ?: 100.0).let { minOf(it, 100.0) }
+    val maxValue = (values.maxOrNull() ?: 100.0).let { maxOf(it, 100.0) }
+    val spread = (maxValue - minValue).coerceAtLeast(0.5)
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val lineColor = MaterialTheme.colorScheme.primary
+    Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+        val left = 4f; val right = size.width - 4f; val top = 8f; val bottom = size.height - 8f
+        for (i in 0..4) {
+            val y = top + (bottom - top) * i / 4f
+            drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
+        }
+        val baselineY = bottom - ((100.0 - minValue) / spread).toFloat() * (bottom - top)
+        drawLine(Color.Gray.copy(alpha = 0.65f), Offset(left, baselineY), Offset(right, baselineY), strokeWidth = 1.5f)
+        val path = androidx.compose.ui.graphics.Path()
+        plotted.forEachIndexed { index, point ->
+            val x = left + (right - left) * index / (plotted.size - 1).toFloat()
+            val y = bottom - ((point.nav - minValue) / spread).toFloat() * (bottom - top)
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, lineColor, style = Stroke(width = 3f, cap = StrokeCap.Round))
     }
 }
 
