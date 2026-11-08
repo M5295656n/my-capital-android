@@ -61,7 +61,9 @@ private data class CalendarDisplayItem(
     val impactAssessment: String = "",
     val impactHorizon: String = "",
     val confidence: String = "",
-    val importance: String = "NORMAL"
+    val importance: String = "NORMAL",
+    val publishedAt: Long? = null,
+    val updatedAt: Long? = null
 )
 
 @Composable
@@ -95,6 +97,8 @@ internal fun MarketCalendarSection(
                 impactHorizon = it.impactHorizon,
                 confidence = it.confidence,
                 importance = it.importance,
+                publishedAt = it.publishedAt,
+                updatedAt = it.updatedAt,
                 placementDetails = buildList {
                     it.issuer?.let { value -> add("Эмитент: $value") }
                     it.instrumentType?.let { value -> add("Инструмент: $value") }
@@ -238,6 +242,12 @@ internal fun MarketCalendarSection(
                             color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                         Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall)
+                        item.publishedAt?.let { timestamp ->
+                            Text("Опубликовано: ${java.time.Instant.ofEpochMilli(timestamp).atZone(zone).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale("ru", "RU")))} МСК", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        item.updatedAt?.let { timestamp ->
+                            Text("Обновлено в приложении: ${java.time.Instant.ofEpochMilli(timestamp).atZone(zone).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale("ru", "RU")))} МСК", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (item.tickers.isNotBlank()) Text("Связанные бумаги: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
                         if (item.impactAssessment.isNotBlank()) {
                             Text("Важность: " + when (item.importance) { "HIGH" -> "Высокая"; "LOW" -> "Низкая"; else -> "Обычная" }, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
@@ -263,8 +273,10 @@ internal fun MarketCalendarSection(
                                     Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.padding(start = 4.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
                             }
-                            Text("Оценка влияния будет добавлена после анализа содержания новости; автоматический прогноз цены не формируется.",
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (item.impactAssessment.isBlank()) {
+                                Text("Отдельная оценка влияния для этой записи пока отсутствует. Прогноз цены не формируется.",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
