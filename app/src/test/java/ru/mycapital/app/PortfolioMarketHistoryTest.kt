@@ -183,6 +183,45 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
+    fun internalTransfersAffectIndividualAccountCashButNotCombinedPortfolio() = kotlinx.coroutines.runBlocking {
+        val transferDate = LocalDate.parse("2026-05-04")
+        val transfer = operation(
+            id = 30,
+            type = "Внутренний перевод исходящий",
+            date = "2026-05-04",
+            quantity = 1.0,
+            price = 800.0,
+            ticker = "RUB"
+        )
+        val currentCashAfterTransfer = 200.0
+
+        val individual = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 0.0, averagePrice = 0.0, currentPrice = 100.0
+            )),
+            operations = listOf(transfer),
+            currentCash = currentCashAfterTransfer,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = transferDate,
+            includeInternalTransfers = true
+        ) { _, _, _, _ -> listOf(MoexDailyClose(transferDate, 100.0)) }
+
+        val combined = buildPortfolioMarketHistory(
+            assets = emptyList(),
+            operations = listOf(transfer),
+            currentCash = currentCashAfterTransfer,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = transferDate,
+            includeInternalTransfers = false
+        ) { _, _, _, _ -> emptyList() }
+
+        assertEquals(1, individual.points.size)
+        assertEquals(1_000.0, individual.points.single().cashValue, 0.000001)
+        assertTrue(combined.points.isEmpty())
+    }
+
+    @Test
     fun legacyUnscopedSourceKeysAreNotMistakenForBrokerAccountIds() {
         assertEquals(null, historyAccountId(null))
         assertEquals(null, historyAccountId("MANUAL:TRADE:123"))
