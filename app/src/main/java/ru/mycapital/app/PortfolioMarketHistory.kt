@@ -172,8 +172,11 @@ internal suspend fun buildPortfolioMarketHistory(
             }
         }
 
+        // Holdings change on trade date, but broker cash changes on settlement
+        // date. For imported trades use T+ settlement; manual/legacy operations
+        // retain operationDate as their cash-effective date.
         val futureCashEffects = orderedOperations.asSequence()
-            .filter { it.operationDate >= endOfDay }
+            .filter { cashEffectiveTimestamp(it) >= endOfDay }
             .sumOf(::portfolioOperationCashEffect)
         val cashAtClose = currentCash - futureCashEffects
         val totalValue = marketValue + cashAtClose
@@ -225,6 +228,13 @@ internal suspend fun buildPortfolioMarketHistory(
     }
     return PortfolioMarketHistoryResult(normalized, firstPurchase, unavailableConcurrent.toList().sorted())
 }
+
+private fun cashEffectiveTimestamp(operation: OperationEntity): Long =
+    if (operation.operationType == "Покупка" || operation.operationType == "Продажа") {
+        operation.settlementDate ?: operation.operationDate
+    } else {
+        operation.operationDate
+    }
 
 private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
     val amount = operation.quantity * operation.price
