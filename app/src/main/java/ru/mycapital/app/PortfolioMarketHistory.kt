@@ -21,7 +21,10 @@ internal data class PortfolioMarketHistoryPoint(
     val dateKey: String,
     val totalValue: Double,
     val investedCapital: Double,
-    val nav: Double
+    val nav: Double,
+    val cashValue: Double = 0.0,
+    val quantities: Map<String, Double> = emptyMap(),
+    val assetValues: Map<String, Double> = emptyMap()
 )
 
 internal data class PortfolioMarketHistoryResult(
@@ -125,6 +128,8 @@ internal suspend fun buildPortfolioMarketHistory(
     dates.forEach { date ->
         val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         var marketValue = 0.0
+        val quantitiesAtClose = linkedMapOf<String, Double>()
+        val valuesAtClose = linkedMapOf<String, Double>()
 
         supported.forEach { (ticker, asset) ->
             val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
@@ -142,7 +147,12 @@ internal suspend fun buildPortfolioMarketHistory(
             }
             if (quantityAtClose > 0.0000001) {
                 val historicalPrice = pricesByTicker[ticker]?.entries?.lastOrNull { !it.key.isAfter(date) }?.value
-                if (historicalPrice != null) marketValue += quantityAtClose * historicalPrice
+                if (historicalPrice != null) {
+                    val positionValue = quantityAtClose * historicalPrice
+                    marketValue += positionValue
+                    quantitiesAtClose[ticker] = quantityAtClose
+                    valuesAtClose[ticker] = positionValue
+                }
             }
         }
 
@@ -179,7 +189,10 @@ internal suspend fun buildPortfolioMarketHistory(
             dateKey = date.toString(),
             totalValue = totalValue,
             investedCapital = externalFlow,
-            nav = nav
+            nav = nav,
+            cashValue = cashAtClose,
+            quantities = quantitiesAtClose.toMap(),
+            assetValues = valuesAtClose.toMap()
         )
         previousValue = totalValue
         previousEndOfDay = endOfDay
@@ -204,7 +217,7 @@ private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
         "Вывод" -> -amount
         "Покупка" -> -(amount + operation.commission)
         "Продажа" -> amount - operation.commission
-        "Дивиденд", "Купон" -> amount - operation.commission
+        "Дивиденд", "Купон", "Амортизация", "Погашение" -> amount - operation.commission
         else -> 0.0
     }
 }
