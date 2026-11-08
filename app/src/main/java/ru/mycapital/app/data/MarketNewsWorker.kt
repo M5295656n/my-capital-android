@@ -17,10 +17,14 @@ class MarketNewsWorker(
             .map { it.ticker.trim().uppercase() }.filter { it.isNotBlank() }.toSet()
         setProgress(Data.Builder().putString("summary", "Загружаю новости Банка России и Московской биржи…").build())
         try {
-            val news = MarketNewsClient().getLatestNews(tickers)
-            if (news.isEmpty()) throw java.io.IOException("Источники не вернули новостей")
+            val client = MarketNewsClient()
+            val news = client.getLatestNews(tickers)
+            val keyRateEvents = client.getUpcomingKeyRateEvents()
+            if (news.isEmpty() && keyRateEvents.isEmpty()) {
+                throw java.io.IOException("Источники не вернули новостей и будущих событий")
+            }
             val now = System.currentTimeMillis()
-            val entities = news.map { item ->
+            val newsEntities = news.map { item ->
                 MarketCalendarItemEntity(
                     sourceKey = item.sourceKey,
                     itemType = "NEWS",
@@ -39,10 +43,32 @@ class MarketNewsWorker(
                     updatedAt = now
                 )
             }
+            val eventEntities = keyRateEvents.map { item ->
+                MarketCalendarItemEntity(
+                    sourceKey = item.sourceKey,
+                    itemType = "EVENT",
+                    category = item.category,
+                    eventDate = item.eventDate,
+                    publishedAt = null,
+                    title = item.title,
+                    summary = item.summary,
+                    sourceName = item.sourceName,
+                    sourceUrl = item.sourceUrl,
+                    relatedTickers = "",
+                    importance = "HIGH",
+                    impactAssessment = "",
+                    impactHorizon = "EVENT",
+                    confidence = "HIGH",
+                    updatedAt = now
+                )
+            }
+            val entities = newsEntities + eventEntities
             dao.upsertMarketCalendarItems(entities)
-            // Keep a 180-day local history; old items are not useful in the month calendar.
+            // Keep 180 days of news and preserve upcoming scheduled events.
             dao.deleteStaleMarketCalendarItems(now - 180L * 24 * 60 * 60 * 1000)
-            val summary = "Загружено новостей: ${entities.size}; связанных с бумагами портфеля: ${entities.count { it.relatedTickers.isNotBlank() }}."
+            val summary = "Загружено новостей: " + newsEntities.size +
+                "; будущих заседаний ЦБ: " + eventEntities.size +
+                "; связанных с бумагами портфеля: " + newsEntities.count { it.relatedTickers.isNotBlank() } + "."
             setProgress(Data.Builder().putString("summary", summary).build())
             Result.success(Data.Builder().putString("summary", summary).build())
         } catch (error: Exception) {
