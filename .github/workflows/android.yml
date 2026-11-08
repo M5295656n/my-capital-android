@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/analytics-stage-1, test/portfolio-history-twr-cases ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
     branches: [ main ]
