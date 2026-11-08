@@ -154,7 +154,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         else -> null
     }
     val volume = capture(Regex("объ[её]м(?: выпуска| размещения)?\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
-    val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
+    val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?|%\\s*от\\s*номинала))", RegexOption.IGNORE_CASE))
     val coupon = capture(Regex("(?:купонная ставка|ставка купона|доходность купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
     val couponAmount = capture(Regex("(?:размер купона|купонный доход|сумма купона|купон)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
