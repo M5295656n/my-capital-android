@@ -192,6 +192,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val instrumentType = when {
+        Regex("структурн[^\\s]*.{0,50}дисконтн[^\\s]*|дисконтн[^\\s]*.{0,50}структурн[^\\s]*", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Структурные дисконтные облигации"
         Regex("\\bIPO\\b|первичн[^\\s]* размещени[^\\s]* акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (IPO)"
         Regex("\\bSPO\\b|дополнительн[^\\s]* эмисс", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (SPO / допэмиссия)"
         Regex("облигац", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Облигации"
