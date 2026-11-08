@@ -60,7 +60,10 @@ class MarketNewsWorker(
                     placementPrice = item.placementPrice,
                     couponRate = item.couponRate,
                     applicationDates = item.applicationDates,
-                    tradingStartDate = item.tradingStartDate
+                    tradingStartDate = item.tradingStartDate,
+                    isin = item.isin,
+                    couponAmount = item.couponAmount,
+                    detailsSourceUrl = item.detailsSourceUrl
                 )
             }
             val eventEntities = keyRateEvents.map { item ->
