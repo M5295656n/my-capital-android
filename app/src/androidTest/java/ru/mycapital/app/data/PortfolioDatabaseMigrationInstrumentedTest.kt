@@ -55,7 +55,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
         }
 
         val database = Room.databaseBuilder(context, PortfolioDatabase::class.java, databaseName)
-            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12, PortfolioDatabase.MIGRATION_12_13, PortfolioDatabase.MIGRATION_13_14)
+            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12, PortfolioDatabase.MIGRATION_12_13, PortfolioDatabase.MIGRATION_13_14, PortfolioDatabase.MIGRATION_14_15)
             .allowMainThreadQueries()
             .build()
 
@@ -68,7 +68,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
             assertEquals("Старая операция", oldOperation.single().note)
             assertEquals(null, oldOperation.single().sourceKey)
             assertEquals(null, oldOperation.single().accountId)
-            assertEquals(null, oldOperation.single().accountId)
+            assertEquals(null, oldOperation.single().settlementDate)
             assertEquals(123.45, dao.getCashBalance()!!, 0.000001)
             assertEquals(0, dao.getBrokerAccountCashAccounts().size)
             assertEquals(0, dao.getBrokerAccountAssets("403RY0J").size)
