@@ -1168,7 +1168,7 @@ private fun MoreScreen(
             Spacer(Modifier.width(8.dp))
             Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из резервной копии")
         }
-        Text("Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.FileDownload, contentDescription = null)
             Spacer(Modifier.width(8.dp))
