@@ -314,4 +314,39 @@ class MarketNewsClientTest {
         assertTrue(byDate.applicationDates!!.contains("17.11.2026"))
         assertTrue(byFrom.applicationDates!!.contains("18.11.2026"))
     }
+
+
+    @Test
+    fun parsesDisclosureRowsWithTdLabelsAndIgnoresUnrelatedAdjacentCells() {
+        val html = """
+            <table>
+              <tr><td>Сведения о выпуске</td><td>Общие данные</td><td>Без параметра</td></tr>
+              <tr><td>Объём эмиссии</td><td>750 млн руб.</td></tr>
+              <tr><td>ISIN</td><td>RU000A10XYZ9</td></tr>
+              <tr><td>Дата начала размещения</td><td>19.11.2026</td></tr>
+            </table>
+            <dl>
+              <dt>Цена размещения</dt><dd>1000 руб.</dd>
+              <dt>Ставка купона</dt><dd>12,7% годовых</dd>
+            </dl>
+        """.trimIndent()
+        val details = parsePlacementDetailsFromHtml(html, "Выпуск облигаций")
+        assertEquals("750 млн руб.", details.placementVolume)
+        assertEquals("RU000A10XYZ9", details.isin)
+        assertTrue(details.applicationDates!!.contains("19.11.2026"))
+        assertEquals("1000 руб", details.placementPrice)
+        assertEquals("12,7%", details.couponRate)
+    }
+
+    @Test
+    fun doesNotUseUnrelatedTableValueAsAnotherParameterLabel() {
+        val html = """
+            <table>
+              <tr><td>Цена размещения</td><td>1000 руб.</td><td>Ставка купона</td><td>Не сообщено</td></tr>
+            </table>
+        """.trimIndent()
+        val details = parsePlacementDetailsFromHtml(html, "Размещение")
+        assertEquals("1000 руб", details.placementPrice)
+        assertEquals(null, details.couponRate)
+    }
 }
