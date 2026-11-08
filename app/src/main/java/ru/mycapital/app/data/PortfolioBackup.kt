@@ -24,7 +24,7 @@ object PortfolioBackup {
     data class BackupInfo(val databaseVersion: Int, val databaseBytes: Long)
 
     fun export(context: Context, destination: Uri, password: CharArray): BackupInfo {
-        require(password.size >= 12) { "Пароль должен содержать не менее 12 символов." }
+        require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
         val database = PortfolioDatabase.getInstance(context)
         val source = context.getDatabasePath(DATABASE_FILE)
         val tempDb = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.db")
@@ -69,7 +69,7 @@ object PortfolioBackup {
     }
 
     fun restore(context: Context, sourceUri: Uri, password: CharArray): BackupInfo {
-        require(password.size >= 12) { "Пароль должен содержать не менее 12 символов." }
+        require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
         val archive = File(context.cacheDir, "mycapital-restore-${System.currentTimeMillis()}.zip")
         val extractDir = File(context.cacheDir, "mycapital-restore-${System.currentTimeMillis()}")
         val tempDb = File(extractDir, BACKUP_ENTRY)
