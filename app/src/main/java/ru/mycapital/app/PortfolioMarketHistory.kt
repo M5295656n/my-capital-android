@@ -65,12 +65,28 @@ internal suspend fun buildPortfolioMarketHistory(
                 currentPrice = rows.first().currentPrice
             )
         }
-    val boughtTickers = operations.asSequence()
-        .filter { it.operationType == "Покупка" && it.quantity > 0.0 }
+    // Historical holdings must include instruments that were fully sold and
+    // therefore no longer exist in the current assets table. Otherwise their
+    // pre-sale market value disappears while the reverse cash ledger also removes
+    // the future sale proceeds, creating an artificial NAV collapse.
+    val tradedTickers = operations.asSequence()
+        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+        .filter { it.quantity > 0.0 }
         .mapNotNull { it.ticker?.trim()?.uppercase()?.takeIf(String::isNotBlank) }
         .toSet()
-    val relevant = (assetsByTicker.keys + boughtTickers).mapNotNull { ticker ->
-        assetsByTicker[ticker]?.let { ticker to it }
+    val relevantTickers = assetsByTicker.keys + tradedTickers
+    val relevant = relevantTickers.map { ticker ->
+        ticker to (assetsByTicker[ticker] ?: AssetEntity(
+            ticker = ticker,
+            name = ticker,
+            // Broker history stores no asset type on operations. MOEX bond tickers
+            // use the SU...RMFS... convention; other supported traded instruments
+            // are quoted by MOEX in the shares market (including exchange funds).
+            assetType = if (ticker.startsWith("SU") && ticker.contains("RMFS")) "Облигация" else "Акция",
+            quantity = 0.0,
+            averagePrice = 0.0,
+            currentPrice = 0.0
+        ))
     }
     val supported = relevant.filter { (_, asset) ->
         val type = asset.assetType.lowercase()
