@@ -288,6 +288,7 @@ class MarketNewsClientTest {
         assertEquals("11,8%", details.couponRate)
         assertEquals("29,45 руб.", details.couponAmount)
         assertTrue(details.applicationDates!!.contains("16 ноября 2026"))
+        assertTrue(details.placementStartDate!!.contains("19 ноября 2026"))
         assertTrue(details.tradingStartDate!!.contains("23 ноября 2026"))
     }
 
@@ -311,8 +312,11 @@ class MarketNewsClientTest {
     fun recognizesExplicitPlacementStartDateLabels() {
         val byDate = parsePlacementDetails("Облигации", "Дата начала размещения: 17.11.2026.")
         val byFrom = parsePlacementDetails("Облигации", "Размещение с 18.11.2026.")
-        assertTrue(byDate.applicationDates!!.contains("17.11.2026"))
-        assertTrue(byFrom.applicationDates!!.contains("18.11.2026"))
+        val applications = parsePlacementDetails("Облигации", "Сбор заявок: 16.11.2026.")
+        assertTrue(byDate.placementStartDate!!.contains("17.11.2026"))
+        assertTrue(byFrom.placementStartDate!!.contains("18.11.2026"))
+        assertTrue(applications.applicationDates!!.contains("16.11.2026"))
+        assertEquals(null, applications.placementStartDate)
     }
 
 
@@ -333,7 +337,7 @@ class MarketNewsClientTest {
         val details = parsePlacementDetailsFromHtml(html, "Выпуск облигаций")
         assertEquals("750 млн руб.", details.placementVolume)
         assertEquals("RU000A10XYZ9", details.isin)
-        assertTrue(details.applicationDates!!.contains("19.11.2026"))
+        assertTrue(details.placementStartDate!!.contains("19.11.2026"))
         assertEquals("1000 руб", details.placementPrice)
         assertEquals("12,7%", details.couponRate)
     }
