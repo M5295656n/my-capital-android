@@ -83,6 +83,29 @@ class MarketNewsClientTest {
         assertEquals(null, unknown.couponRate)
     }
 
+
+    @Test
+    fun usesExplicitPlacementApplicationDateAsCalendarDate() {
+        val details = parsePlacementDetails(
+            "Новый выпуск облигаций",
+            "Сбор заявок: 12 ноября 2026. Цена размещения будет объявлена позднее."
+        )
+        val eventDate = parseExplicitPlacementEventDate(details)
+        assertEquals(
+            Instant.parse("2026-11-11T21:00:00Z").toEpochMilli(),
+            eventDate
+        )
+    }
+
+    @Test
+    fun doesNotGuessYearForPlacementDatesWithoutYear() {
+        val details = parsePlacementDetails(
+            "Новый выпуск облигаций",
+            "Сбор заявок: 12 ноября."
+        )
+        assertEquals(null, parseExplicitPlacementEventDate(details))
+    }
+
     @Test
     fun doesNotMatchTickerInsideAnotherWord() {
         assertTrue(matchPortfolioTickers("SBERBANK and LKOH", setOf("SBER", "LKOH")) == listOf("LKOH"))
