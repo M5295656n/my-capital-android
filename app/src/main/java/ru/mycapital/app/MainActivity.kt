@@ -2806,6 +2806,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EventsScreen(
     assets: List<AssetEntity>,
