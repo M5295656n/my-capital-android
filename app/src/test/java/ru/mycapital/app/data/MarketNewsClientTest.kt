@@ -26,6 +26,28 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun parsesFutureCbrKeyRateMeetingFromOfficialCalendar() {
+        val html = """
+            <html><body>
+              <h2>2026 год</h2>
+              <div>18 декабря 2026 года Заседание Совета директоров Банка России по ключевой ставке</div>
+              <div>30 декабря 2026 года Резюме обсуждения ключевой ставки</div>
+            </body></html>
+        """.trimIndent()
+        val events = parseCbrKeyRateCalendar(html, java.time.LocalDate.parse("2026-11-08"))
+        assertEquals(1, events.size)
+        assertEquals("CBR:KEY_RATE_MEETING:2026-12-18", events.single().sourceKey)
+        assertEquals("ECONOMY", events.single().category)
+        assertTrue(events.single().summary.contains("13:30"))
+    }
+
+    @Test
+    fun ignoresPastCbrKeyRateMeetings() {
+        val html = """<div>23 октября 2026 года Заседание Совета директоров Банка России по ключевой ставке</div>"""
+        assertTrue(parseCbrKeyRateCalendar(html, java.time.LocalDate.parse("2026-11-08")).isEmpty())
+    }
+
+    @Test
     fun classifiesEquityAndBondPlacementsSeparatelyFromGeneralNews() {
         val placementCases = listOf(
             "Компания объявила IPO" to "",
