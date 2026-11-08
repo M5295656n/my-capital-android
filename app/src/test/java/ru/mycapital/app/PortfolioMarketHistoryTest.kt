@@ -55,7 +55,12 @@ class PortfolioMarketHistoryTest {
         assertEquals("2026-01-02", result.points.first().dateKey)
         assertEquals(999.0, result.points.first().totalValue, 0.000001)
         assertEquals(1_000.0, result.points.first().investedCapital, 0.000001)
+        assertEquals(899.0, result.points.first().cashValue, 0.000001)
+        assertEquals(1.0, result.points.first().quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(100.0, result.points.first().assetValues["SBER"] ?: 0.0, 0.000001)
         assertEquals(1_009.0, result.points.last().totalValue, 0.000001)
+        assertEquals(1.0, result.points.last().quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(110.0, result.points.last().assetValues["SBER"] ?: 0.0, 0.000001)
         assertTrue(result.unavailableTickers.isEmpty())
     }
 
