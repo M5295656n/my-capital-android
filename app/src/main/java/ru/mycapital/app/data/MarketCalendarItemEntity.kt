@@ -31,5 +31,8 @@ data class MarketCalendarItemEntity(
     val placementPrice: String? = null,
     val couponRate: String? = null,
     val applicationDates: String? = null,
-    val tradingStartDate: String? = null
+    val tradingStartDate: String? = null,
+    val isin: String? = null,
+    val couponAmount: String? = null,
+    val detailsSourceUrl: String? = null
 )
