@@ -34,6 +34,26 @@ internal val defaultMarketNewsFeeds = listOf(
     MarketNewsFeed("https://moex.com/export/news.aspx?cat=100", "Московская биржа", "COMPANIES")
 )
 
+internal fun classifyMarketNews(title: String, summary: String, fallbackCategory: String): String {
+    val text = "$title $summary".lowercase(Locale.ROOT)
+    val issuancePatterns = listOf(
+        Regex("\\bipo\\b", RegexOption.IGNORE_CASE),
+        Regex("\\bspo\\b", RegexOption.IGNORE_CASE),
+        Regex("первичн\\w* размещен"),
+        Regex("нов\\w* выпуск\\w* облигац"),
+        Regex("размещени\\w* облигац"),
+        Regex("сбор\\w* заявок"),
+        Regex("книг\\w* заявок"),
+        Regex("дополнительн\\w* эмисс"),
+        Regex("начал\\w* торгов\\w* (акци\\w*|облигац)"),
+        Regex("дата размещени"),
+        Regex("цена размещени"),
+        Regex("объем размещени"),
+        Regex("биржев\\w* облигац")
+    )
+    return if (issuancePatterns.any { it.containsMatchIn(text) }) "NEW_ISSUES" else fallbackCategory
+}
+
 internal fun matchPortfolioTickers(text: String, tickers: Set<String>): List<String> {
     val normalized = text.uppercase(Locale.ROOT)
     return tickers.map { it.trim().uppercase(Locale.ROOT) }
@@ -77,7 +97,7 @@ internal fun parseMarketNewsRss(
         val key = "$sourceName:$guid"
         ParsedMarketNews(
             sourceKey = key,
-            category = category,
+            category = classifyMarketNews(title, description, category),
             publishedAt = publishedAt,
             title = title,
             summary = description.take(1200),
