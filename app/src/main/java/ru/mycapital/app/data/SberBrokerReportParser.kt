@@ -37,7 +37,7 @@ data class BrokerReportCashFlow(
     val kind: BrokerCashFlowKind
         get() = classifyBrokerCashFlow(description)
 
-    val internalTransfer: BrokerInternalTransfer?
+    internal val internalTransfer: BrokerInternalTransfer?
         get() = parseBrokerInternalTransfer(description)
 }
 
