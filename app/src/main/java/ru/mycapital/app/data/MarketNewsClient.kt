@@ -192,6 +192,33 @@ internal fun parseExplicitPlacementEventDate(
     return null
 }
 
+internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: ParsedPlacementDetails?): ParsedPlacementDetails {
+    if (secondary == null) return primary
+    return ParsedPlacementDetails(
+        issuer = primary.issuer ?: secondary.issuer,
+        instrumentType = primary.instrumentType ?: secondary.instrumentType,
+        placementVolume = primary.placementVolume ?: secondary.placementVolume,
+        placementPrice = primary.placementPrice ?: secondary.placementPrice,
+        couponRate = primary.couponRate ?: secondary.couponRate,
+        applicationDates = primary.applicationDates ?: secondary.applicationDates,
+        tradingStartDate = primary.tradingStartDate ?: secondary.tradingStartDate,
+        isin = primary.isin ?: secondary.isin,
+        couponAmount = primary.couponAmount ?: secondary.couponAmount
+    )
+}
+
+internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): String? {
+    val document = Jsoup.parse(html, baseUrl)
+    val relevantLinkText = Regex("проспект|решение о выпуске|документарн\\\\w*|раскрыти\\\\w* информаци|услови\\\\w* размещени|эмиссионн\\\\w* документ", RegexOption.IGNORE_CASE)
+    return document.select("a[href]").firstNotNullOfOrNull { anchor ->
+        if (!relevantLinkText.containsMatchIn(anchor.text())) return@firstNotNullOfOrNull null
+        val url = runCatching { anchor.absUrl("href").takeIf { it.isNotBlank() }?.let(okhttp3.HttpUrl::get) }.getOrNull()
+            ?: return@firstNotNullOfOrNull null
+        val allowedHost = url.host == "e-disclosure.ru" || url.host.endsWith(".e-disclosure.ru")
+        if (url.scheme == "https" && allowedHost) url.toString() else null
+    }
+}
+
 internal fun classifyMarketNews(title: String, summary: String, fallbackCategory: String): String {
     val text = "$title $summary".lowercase(Locale.ROOT)
     val issuancePatterns = listOf(
@@ -313,6 +340,26 @@ class MarketNewsClient {
         }
     }
 
+    private fun fetchOfficialPlacementDocument(url: String, title: String): ParsedPlacementDetails? {
+        val parsed = runCatching { okhttp3.HttpUrl.get(url) }.getOrNull() ?: return null
+        if (parsed.scheme != "https" || !(parsed.host == "e-disclosure.ru" || parsed.host.endsWith(".e-disclosure.ru"))) return null
+        return runCatching {
+            val request = Request.Builder().url(parsed).header("User-Agent", "MyCapital-Android/0.3").build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val host = response.request.url.host
+                if (response.request.url.scheme != "https" || !(host == "e-disclosure.ru" || host.endsWith(".e-disclosure.ru"))) return@use null
+                val body = response.body ?: return@use null
+                if (body.contentLength() > 512 * 1024L) return@use null
+                val bytes = body.source().readByteArray(512 * 1024L + 1L)
+                if (bytes.size > 512 * 1024) return@use null
+                val text = Jsoup.parse(String(bytes, Charsets.UTF_8), url).text()
+                    .replace(Regex("\\s+"), " ").take(16000)
+                parsePlacementDetails(title, text)
+            }
+        }.getOrNull()
+    }
+
     private fun enrichPlacementFromLinkedPage(item: ParsedMarketNews): ParsedMarketNews {
         if (item.category != "NEW_ISSUES") return item
         val parsedUrl = runCatching { okhttp3.HttpUrl.get(item.sourceUrl) }.getOrNull() ?: return item
@@ -328,21 +375,25 @@ class MarketNewsClient {
                 if (body.contentLength() > 512 * 1024L) return@use item
                 val bytes = body.source().readByteArray(512 * 1024L + 1L)
                 if (bytes.size > 512 * 1024) return@use item
-                val pageText = Jsoup.parse(String(bytes, Charsets.UTF_8), item.sourceUrl).text()
-                    .replace(Regex("\\s+"), " ").take(12000)
+                val pageHtml = String(bytes, Charsets.UTF_8)
+                val pageDocument = Jsoup.parse(pageHtml, item.sourceUrl)
+                val pageText = pageDocument.text().replace(Regex("\\s+"), " ").take(12000)
                 val pageDetails = parsePlacementDetails(item.title, pageText)
+                val documentUrl = findOfficialPlacementDocumentUrl(pageHtml, item.sourceUrl)
+                val documentDetails = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
+                val bestDetails = mergePlacementDetails(pageDetails, documentDetails)
                 item.copy(
-                    issuer = item.issuer ?: pageDetails.issuer,
-                    instrumentType = item.instrumentType ?: pageDetails.instrumentType,
-                    placementVolume = item.placementVolume ?: pageDetails.placementVolume,
-                    placementPrice = item.placementPrice ?: pageDetails.placementPrice,
-                    couponRate = item.couponRate ?: pageDetails.couponRate,
-                    applicationDates = item.applicationDates ?: pageDetails.applicationDates,
-                    tradingStartDate = item.tradingStartDate ?: pageDetails.tradingStartDate,
-                    eventDate = parseExplicitPlacementEventDate(pageDetails) ?: item.eventDate,
-                    isin = item.isin ?: pageDetails.isin,
-                    couponAmount = pageDetails.couponAmount,
-                    detailsSourceUrl = item.sourceUrl
+                    issuer = item.issuer ?: bestDetails.issuer,
+                    instrumentType = item.instrumentType ?: bestDetails.instrumentType,
+                    placementVolume = item.placementVolume ?: bestDetails.placementVolume,
+                    placementPrice = item.placementPrice ?: bestDetails.placementPrice,
+                    couponRate = item.couponRate ?: bestDetails.couponRate,
+                    applicationDates = item.applicationDates ?: bestDetails.applicationDates,
+                    tradingStartDate = item.tradingStartDate ?: bestDetails.tradingStartDate,
+                    eventDate = parseExplicitPlacementEventDate(bestDetails) ?: item.eventDate,
+                    isin = item.isin ?: bestDetails.isin,
+                    couponAmount = item.couponAmount ?: bestDetails.couponAmount,
+                    detailsSourceUrl = documentUrl ?: item.sourceUrl
                 )
             }
         }.getOrDefault(item)
