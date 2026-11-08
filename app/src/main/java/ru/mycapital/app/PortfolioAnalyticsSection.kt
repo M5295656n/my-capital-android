@@ -328,11 +328,13 @@ private fun PortfolioCompositionHistoryChart(
     assets: List<AssetEntity>,
     loading: Boolean
 ) {
-    var selectedMonths by remember { mutableStateOf(1) }
+    // By default, composition history must cover the full available period,
+    // starting with the first purchase just like the capital and benchmark charts.
+    var selectedMonths by remember { mutableStateOf<Int?>(null) }
     val points = remember(history, assets, selectedMonths) {
         val ordered = history.points.sortedBy { it.dateKey }
         val latest = ordered.lastOrNull()?.let { java.time.LocalDate.parse(it.dateKey) }
-        val cutoff = latest?.minusMonths(selectedMonths.toLong())
+        val cutoff = selectedMonths?.let { months -> latest?.minusMonths(months.toLong()) }
         ordered.asSequence()
             .filter { point -> cutoff == null || !java.time.LocalDate.parse(point.dateKey).isBefore(cutoff) }
             .mapNotNull { point ->
@@ -350,6 +352,8 @@ private fun PortfolioCompositionHistoryChart(
             }.toList()
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = selectedMonths == null, onClick = { selectedMonths = null },
+            label = { Text("Всё время") })
         listOf(1, 3, 6, 12).forEach { months ->
             FilterChip(selected = selectedMonths == months, onClick = { selectedMonths = months },
                 label = { Text(if (months == 12) "1Г" else "${months}М") })
