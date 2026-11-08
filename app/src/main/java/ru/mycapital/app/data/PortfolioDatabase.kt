@@ -106,6 +106,12 @@ abstract class PortfolioDatabase : RoomDatabase() {
 
         @Volatile private var INSTANCE: PortfolioDatabase? = null
 
+        @Synchronized
+        fun closeForRestore() {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
+
         fun getInstance(context: Context): PortfolioDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
