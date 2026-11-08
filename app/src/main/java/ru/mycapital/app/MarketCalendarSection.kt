@@ -57,7 +57,10 @@ private data class CalendarDisplayItem(
     val detailsUrl: String?,
     val tickers: String,
     val isPayout: Boolean,
-    val placementDetails: List<String> = emptyList()
+    val placementDetails: List<String> = emptyList(),
+    val impactAssessment: String = "",
+    val impactHorizon: String = "",
+    val confidence: String = ""
 )
 
 @Composable
@@ -87,6 +90,9 @@ internal fun MarketCalendarSection(
                 detailsUrl = it.detailsSourceUrl,
                 tickers = it.relatedTickers,
                 isPayout = false,
+                impactAssessment = it.impactAssessment,
+                impactHorizon = it.impactHorizon,
+                confidence = it.confidence,
                 placementDetails = buildList {
                     it.issuer?.let { value -> add("Эмитент: $value") }
                     it.instrumentType?.let { value -> add("Инструмент: $value") }
@@ -231,6 +237,12 @@ internal fun MarketCalendarSection(
                         Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall)
                         if (item.tickers.isNotBlank()) Text("Связанные бумаги: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
+                        if (item.impactAssessment.isNotBlank()) {
+                            Text("Почему важно", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text(item.impactAssessment, style = MaterialTheme.typography.bodySmall)
+                            if (item.impactHorizon.isNotBlank()) Text("Горизонт: ${item.impactHorizon}", style = MaterialTheme.typography.labelSmall)
+                            if (item.confidence.isNotBlank()) Text("Уверенность: ${item.confidence}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         item.placementDetails.forEach { detail ->
                             Text(detail, style = MaterialTheme.typography.bodySmall)
                         }
