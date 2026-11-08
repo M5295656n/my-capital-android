@@ -2790,6 +2790,31 @@ private fun AnalyticsScreen(
     }
     val analyticsCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
         else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val analyticsOperations = remember(operations, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
+        else operations.filter { it.accountId == selectedAccountId }
+    }
+    var analyticsMarketHistory by remember { mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList())) }
+    var analyticsHistoryLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(analyticsAssets, analyticsOperations, analyticsCash, selectedAccountId) {
+        analyticsHistoryLoading = true
+        try {
+            analyticsMarketHistory = withContext(Dispatchers.IO) {
+                buildPortfolioMarketHistory(
+                    assets = analyticsAssets,
+                    operations = analyticsOperations,
+                    currentCash = analyticsCash,
+                    range = PortfolioHistoryRange.ALL
+                )
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            analyticsMarketHistory = PortfolioMarketHistoryResult(emptyList(), null, emptyList())
+        } finally {
+            analyticsHistoryLoading = false
+        }
+    }
     val analyticsMarketValue = analyticsAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }
     val selectedTickers = remember(accountAssets, selectedAccountId) {
         accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
@@ -2828,7 +2853,9 @@ private fun AnalyticsScreen(
                 accounts = accounts,
                 selectedAccountId = selectedAccountId,
                 onAccountSelected = { selectedAccountId = it },
-                compositionSnapshots = compositionSnapshots
+                compositionSnapshots = compositionSnapshots,
+                marketHistory = analyticsMarketHistory,
+                historyLoading = analyticsHistoryLoading
             )
         }
         item {
@@ -2927,32 +2954,36 @@ private fun AnalyticsScreen(
         item {
             if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
                 Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                if (snapshots.size >= 2) {
-                PortfolioHistoryChart(snapshots)
+                if (analyticsMarketHistory.points.size >= 2) {
+                PortfolioHistoryChart(analyticsMarketHistory.points)
                 Text("График показывает условную доходность (база 100) с исключением пополнений и выводов. Денежные потоки учитываются на конец дневного интервала; для точного TWR потребуется точное время каждого потока.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                Text("История только начинается. Приложение сохраняет ежедневную стоимость капитала; график появится после второго дневного снимка.",
+                Text(if (analyticsHistoryLoading) "Восстанавливаю историю операций и загружаю котировки MOEX…" else "Для восстановления динамики пока недостаточно полной истории операций и котировок.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                Text("Историческая динамика по отдельному счёту пока недоступна: дневные снимки сохраняются для портфеля целиком.",
+                if (analyticsMarketHistory.points.size >= 2) PortfolioHistoryChart(analyticsMarketHistory.points)
+                else Text(if (analyticsHistoryLoading) "Восстанавливаю историю выбранного счёта…" else "Для выбранного счёта пока недостаточно полной истории операций и котировок.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
-            item { IndexBenchmarkSection(snapshots, dao) }
-        }
+        item { IndexBenchmarkSection(analyticsMarketHistory.points, dao) }
     }
 }
 
 
 @Composable
-private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
+private fun PortfolioHistoryChart(history: List<PortfolioMarketHistoryPoint>) {
     var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
     var showReturn by remember { mutableStateOf(false) }
-    val points = remember(snapshots, selectedRange) {
-        calculatePortfolioHistoryPoints(snapshots, selectedRange)
+    val points = remember(history, selectedRange) {
+        val ordered = history.sortedBy { it.dateKey }
+        val latest = ordered.lastOrNull()?.let { java.time.LocalDate.parse(it.dateKey) }
+        if (selectedRange.months == null || latest == null) ordered else {
+            val from = latest.minusMonths(selectedRange.months)
+            ordered.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(from) }
+        }
     }
     val plottedValues = points.map { if (showReturn) it.nav else it.totalValue }.map { it.toFloat() }
     val minValue = plottedValues.minOrNull() ?: 0f
@@ -2979,7 +3010,7 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
             )
         }
         Text(
-            "Ежедневные снимки портфеля доступны с ${snapshots.minOfOrNull { it.dateKey } ?: "—"}. Более ранние значения в базе не сохранялись.",
+            "История восстановлена по операциям и историческим котировкам; начало — первая достоверная дата покупки.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
