@@ -125,6 +125,38 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun extractsPlacementTermsFromExplicitHtmlTableLabels() {
+        val html = """
+            <table>
+              <tr><th>Эмитент</th><td>ООО ТестФинанс</td></tr>
+              <tr><td>Объём выпуска</td><td>5 млрд руб.</td></tr>
+              <tr><td>Цена размещения</td><td>100% от номинала</td></tr>
+              <tr><td>Ставка купона</td><td>14,2% годовых</td></tr>
+              <tr><td>Размер купона</td><td>35,50 руб.</td></tr>
+              <tr><td>ISIN</td><td>RU000A10ABC1</td></tr>
+              <tr><td>Дата начала торгов</td><td>20.11.2026</td></tr>
+            </table>
+        """.trimIndent()
+        val details = parsePlacementDetailsFromHtml(html, "Новый выпуск облигаций")
+        assertEquals("ООО ТестФинанс", details.issuer)
+        assertEquals("5 млрд руб.", details.placementVolume)
+        assertEquals("14,2%", details.couponRate)
+        assertEquals("35,50 руб.", details.couponAmount)
+        assertEquals("RU000A10ABC1", details.isin)
+        assertTrue(details.tradingStartDate!!.contains("20.11.2026"))
+    }
+
+    @Test
+    fun doesNotInferCouponRateFromCouponAmountInHtmlTable() {
+        val html = """
+            <table><tr><td>Размер купона</td><td>42 руб.</td></tr></table>
+        """.trimIndent()
+        val details = parsePlacementDetailsFromHtml(html, "Облигации")
+        assertEquals("42 руб.", details.couponAmount)
+        assertEquals(null, details.couponRate)
+    }
+
+    @Test
     fun extractsOnlyExplicitPlacementTerms() {
         val details = parsePlacementDetails(
             "Новый выпуск облигаций",
