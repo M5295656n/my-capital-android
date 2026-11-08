@@ -347,7 +347,12 @@ private fun PortfolioCompositionHistoryChart(
                     }
                 }
                 values[PortfolioAssetClass.CASH] = (values[PortfolioAssetClass.CASH] ?: 0.0) + point.cashValue.coerceAtLeast(0.0)
-                val total = values.values.sum()
+                // Keep the composition timeline aligned with the capital history.
+                // Any valued part not assigned to a known class remains visible as OTHER.
+                val represented = values.values.sum()
+                val unclassified = (point.totalValue - represented).coerceAtLeast(0.0)
+                values[PortfolioAssetClass.OTHER] = unclassified
+                val total = point.totalValue
                 if (total <= 0.0) null else point.dateKey to values.mapValues { it.value / total }
             }.toList()
     }
@@ -368,7 +373,7 @@ private fun PortfolioCompositionHistoryChart(
         )
     } else {
         val plotted = if (points.size > 60) points.filterIndexed { index, _ -> index % ((points.size / 30).coerceAtLeast(1)) == 0 }.takeLast(60) else points
-        val tracked = listOf(PortfolioAssetClass.EQUITIES, PortfolioAssetClass.FIXED_INCOME, PortfolioAssetClass.GOLD, PortfolioAssetClass.CASH)
+        val tracked = listOf(PortfolioAssetClass.EQUITIES, PortfolioAssetClass.FIXED_INCOME, PortfolioAssetClass.GOLD, PortfolioAssetClass.CASH, PortfolioAssetClass.OTHER)
         val colors = tracked.map { classColor(it) }
         val gridColor = MaterialTheme.colorScheme.outlineVariant
         Canvas(Modifier.fillMaxWidth().height(160.dp)) {
