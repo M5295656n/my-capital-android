@@ -85,15 +85,17 @@ internal fun MarketCalendarSection(
                 url = it.sourceUrl,
                 tickers = it.relatedTickers,
                 isPayout = false,
-                placementDetails = listOfNotNull(
-                    it.issuer?.let { value -> "Эмитент: $value" },
-                    it.instrumentType?.let { value -> "Инструмент: $value" },
-                    it.placementVolume?.let { value -> "Объём: $value" },
-                    it.placementPrice?.let { value -> "Цена размещения: $value" },
-                    it.couponRate?.let { value -> "Купон: $value" },
-                    it.applicationDates?.let { value -> "Заявки: $value" },
-                    it.tradingStartDate?.let { value -> "Начало торгов: $value" }
-                )
+                placementDetails = buildList {
+                    it.issuer?.let { value -> add("Эмитент: $value") }
+                    it.instrumentType?.let { value -> add("Инструмент: $value") }
+                    if (it.category == "NEW_ISSUES") {
+                        add("Объём: ${it.placementVolume ?: "Не сообщено"}")
+                        add("Цена размещения: ${it.placementPrice ?: "Не сообщено"}")
+                        add("Купон: ${it.couponRate ?: "Не сообщено"}")
+                    }
+                    it.applicationDates?.let { value -> add("Сбор заявок: $value") }
+                    it.tradingStartDate?.let { value -> add("Начало торгов: $value") }
+                }
             )
         }
     }
