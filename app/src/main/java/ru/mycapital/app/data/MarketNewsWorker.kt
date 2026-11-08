@@ -37,7 +37,7 @@ class MarketNewsWorker(
                     sourceKey = item.sourceKey,
                     itemType = "NEWS",
                     category = item.category,
-                    eventDate = item.publishedAt,
+                    eventDate = item.eventDate,
                     publishedAt = item.publishedAt,
                     title = item.title,
                     summary = item.summary,
