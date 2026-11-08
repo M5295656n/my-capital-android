@@ -2926,7 +2926,8 @@ private fun AnalyticsScreen(
                 payouts = analyticsPayouts,
                 onRefreshNews = onRefreshNews,
                 newsSyncMessage = newsSyncMessage,
-                portfolioAssets = analyticsAssets
+                portfolioAssets = analyticsAssets,
+                portfolioCash = analyticsCash
             )
         }
         item {
