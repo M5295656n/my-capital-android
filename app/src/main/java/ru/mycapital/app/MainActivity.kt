@@ -435,7 +435,7 @@ private fun MyCapitalApp() {
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
-                Screen.Events -> EventsScreen(assets, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
+                Screen.Events -> EventsScreen(assets, cashBalance ?: 0.0, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -2809,6 +2809,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 @Composable
 private fun EventsScreen(
     assets: List<AssetEntity>,
+    cashBalance: Double,
     payouts: List<PayoutEntity>,
     marketCalendarItems: List<MarketCalendarItemEntity>,
     accounts: List<BrokerAccountEntity>,
@@ -2829,12 +2830,8 @@ private fun EventsScreen(
             .sortedBy { it.assetType + it.ticker }
             .toList()
     }
-    val selectedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
-        selectedAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }.let { total ->
-            // The all-account cash value is derived from the portfolio cash balance below.
-            total
-        }
-    } else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val selectedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
     val selectedTickers = remember(accountAssets, selectedAccountId) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
         else accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
