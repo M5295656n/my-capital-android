@@ -404,12 +404,14 @@ class MarketNewsClient {
                 if (response.request.url.scheme != "https" || !(host == "e-disclosure.ru" || host.endsWith(".e-disclosure.ru"))) return@use null
                 val contentType = response.header("Content-Type").orEmpty().lowercase(Locale.ROOT)
                 val isPdfContentType = contentType.startsWith("application/pdf")
-                if (!isPdfContentType && !contentType.startsWith("text/html") && !contentType.startsWith("text/plain")) return@use null
+                if (!isPdfContentType && !contentType.startsWith("text/html") && !contentType.startsWith("text/plain") && !contentType.startsWith("application/octet-stream")) return@use null
                 val body = response.body ?: return@use null
                 if (body.contentLength() > 512 * 1024L) return@use null
                 val bytes = body.source().readByteArray(512 * 1024L + 1L)
                 if (bytes.size > 512 * 1024) return@use null
-                val isPdf = isPdfContentType || (bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII)))
+                val hasPdfSignature = bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII))
+                val isPdf = isPdfContentType || hasPdfSignature
+                if (contentType.startsWith("application/octet-stream") && !hasPdfSignature) return@use null
                 if (isPdf) {
                     val pdfText = extractPlacementTextFromPdf(bytes) ?: return@use null
                     parsePlacementDetails(title, pdfText)
