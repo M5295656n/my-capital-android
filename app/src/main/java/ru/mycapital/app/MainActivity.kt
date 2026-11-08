@@ -2837,6 +2837,11 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Text(
+            "Ежедневные снимки портфеля доступны с ${snapshots.minOfOrNull { it.dateKey } ?: "—"}. Более ранние значения в базе не сохранялись.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = !showReturn,
