@@ -102,7 +102,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         Regex("акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции"
         else -> null
     }
-    val volume = capture(Regex("(?:объ[её]м|объ[её]м выпуска|объ[её]м размещения)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
+    val volume = capture(Regex("объ[её]м(?: выпуска| размещения)?\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
     val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
     val coupon = capture(Regex("(?:купон(?:ная ставка)?|ставка купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
     val applicationDates = capture(Regex("((?:сбор заявок|приём заявок|прием заявок|книга заявок)[^.;]{0,120}(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+))", RegexOption.IGNORE_CASE))
@@ -171,6 +171,7 @@ internal fun parseMarketNewsRss(
         if (title.isBlank() || url.isBlank() || publishedAt > now + 5 * 60_000L) return@mapNotNull null
         val guid = item.selectFirst("guid")?.text()?.trim().orEmpty().ifBlank { url }
         val key = "$sourceName:$guid"
+        val placement = parsePlacementDetails(title, description)
         ParsedMarketNews(
             sourceKey = key,
             category = classifyMarketNews(title, description, category),
@@ -180,13 +181,13 @@ internal fun parseMarketNewsRss(
             sourceName = sourceName,
             sourceUrl = url,
             relatedTickers = matchPortfolioTickers("$title $description", portfolioTickers),
-            issuer = parsePlacementDetails(title, description).issuer,
-            instrumentType = parsePlacementDetails(title, description).instrumentType,
-            placementVolume = parsePlacementDetails(title, description).placementVolume,
-            placementPrice = parsePlacementDetails(title, description).placementPrice,
-            couponRate = parsePlacementDetails(title, description).couponRate,
-            applicationDates = parsePlacementDetails(title, description).applicationDates,
-            tradingStartDate = parsePlacementDetails(title, description).tradingStartDate
+            issuer = placement.issuer,
+            instrumentType = placement.instrumentType,
+            placementVolume = placement.placementVolume,
+            placementPrice = placement.placementPrice,
+            couponRate = placement.couponRate,
+            applicationDates = placement.applicationDates,
+            tradingStartDate = placement.tradingStartDate
         )
     }.distinctBy { it.sourceKey }.sortedByDescending { it.publishedAt }
 }
