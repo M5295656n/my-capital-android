@@ -270,7 +270,9 @@ private fun PortfolioSectorDonut(
     sectors: List<PortfolioSectorSlice>,
     modifier: Modifier = Modifier
 ) {
-    val colors = sectors.indices.map { sectorColor(it) }
+    val colors = sectors.mapIndexed { index, sector ->
+        sectorColor(index, sector.sector == "Вне отраслевого состава")
+    }
     Canvas(modifier) {
         val stroke = size.minDimension * 0.18f
         var startAngle = -90f
