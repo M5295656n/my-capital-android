@@ -23,6 +23,7 @@ internal data class ParsedMarketNews(
     val sourceKey: String,
     val category: String,
     val publishedAt: Long,
+    val eventDate: Long,
     val title: String,
     val summary: String,
     val sourceName: String,
@@ -110,6 +111,40 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
     return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate)
 }
 
+
+internal fun parseExplicitPlacementEventDate(
+    details: ParsedPlacementDetails,
+    zone: ZoneId = ZoneId.of("Europe/Moscow")
+): Long? {
+    val candidates = listOfNotNull(details.applicationDates, details.tradingStartDate)
+    val monthNumbers = mapOf(
+        "января" to 1, "февраля" to 2, "марта" to 3, "апреля" to 4,
+        "мая" to 5, "июня" to 6, "июля" to 7, "августа" to 8,
+        "сентября" to 9, "октября" to 10, "ноября" to 11, "декабря" to 12
+    )
+    for (candidate in candidates) {
+        val numeric = Regex("""(\\d{1,2})[. ](\\d{1,2})[. ](\\d{4})""").find(candidate)
+        val date = if (numeric != null) {
+            runCatching {
+                LocalDate.of(numeric.groupValues[3].toInt(), numeric.groupValues[2].toInt(), numeric.groupValues[1].toInt())
+            }.getOrNull()
+        } else {
+            val textual = Regex("""(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})""", RegexOption.IGNORE_CASE).find(candidate)
+            textual?.let {
+                runCatching {
+                    LocalDate.of(
+                        it.groupValues[3].toInt(),
+                        monthNumbers.getValue(it.groupValues[2].lowercase(Locale.ROOT)),
+                        it.groupValues[1].toInt()
+                    )
+                }.getOrNull()
+            }
+        }
+        if (date != null) return date.atStartOfDay(zone).toInstant().toEpochMilli()
+    }
+    return null
+}
+
 internal fun classifyMarketNews(title: String, summary: String, fallbackCategory: String): String {
     val text = "$title $summary".lowercase(Locale.ROOT)
     val issuancePatterns = listOf(
@@ -176,6 +211,7 @@ internal fun parseMarketNewsRss(
             sourceKey = key,
             category = classifyMarketNews(title, description, category),
             publishedAt = publishedAt,
+            eventDate = parseExplicitPlacementEventDate(placement) ?: publishedAt,
             title = title,
             summary = description.take(1200),
             sourceName = sourceName,
