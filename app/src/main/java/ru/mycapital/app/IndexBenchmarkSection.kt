@@ -227,7 +227,7 @@ private fun BenchmarkChart(
     val max = values.maxOrNull() ?: 100f
     val range = (max - min).takeIf { it > 0.0001f } ?: 1f
     val portfolioColor = MaterialTheme.colorScheme.primary
-    val priceColor = MaterialTheme.colorScheme.tertiary
+    val priceColor = Color(0xFFFFB74D) // Amber: clearly distinct from the blue portfolio series
     val totalColor = MaterialTheme.colorScheme.secondary
     val grid = MaterialTheme.colorScheme.outlineVariant
 
