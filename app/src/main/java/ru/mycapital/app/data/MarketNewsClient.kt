@@ -242,26 +242,35 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
         Regex("цена размещения|цена предложения|ценовой диапазон|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
         Regex("купонная ставка|ставка купона|процентная ставка по купону|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
         Regex("размер купона|размер купонного дохода|сумма купона|сумма выплаты на одну облигацию|денежный размер купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
-        Regex("\\\\bisin\\\\b", RegexOption.IGNORE_CASE) to "ISIN",
+        Regex("\\bisin\\b", RegexOption.IGNORE_CASE) to "ISIN",
         Regex("дата сбора заявок|период букбилдинга|дата начала размещения|размещение с|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
         Regex("дата начала торгов|начало торгов|дата допуска к торгам|допуск к торгам", RegexOption.IGNORE_CASE) to "Начало торгов"
     )
+    fun canonicalLabel(label: String): String? {
+        val clean = label.replace(Regex("\\s+"), " ").trim().trimEnd(':', '：')
+        return labelRules.firstOrNull { it.first.containsMatchIn(clean) }?.second
+    }
     fun addPair(label: String, value: String) {
-        val cleanLabel = label.replace(Regex("\\s+"), " ").trim().trimEnd(':', '：')
+        val canonical = canonicalLabel(label) ?: return
         val cleanValue = value.replace(Regex("\\s+"), " ").trim()
-        if (cleanLabel.isBlank() || cleanValue.isBlank() || cleanValue == "—" || cleanValue == "-") return
-        val canonical = labelRules.firstOrNull { it.first.containsMatchIn(cleanLabel) }?.second ?: return
+        if (cleanValue.isBlank() || cleanValue in setOf("—", "-", "не сообщено")) return
         labeledValues += "$canonical: $cleanValue"
     }
+
+    // A row is interpreted only when a cell itself is a known parameter label.
+    // This avoids treating a previous value as the label for the next cell.
     document.select("table tr").forEach { row ->
-        val cells = row.select("th, td")
-        if (cells.size >= 2) {
-            for (index in 0 until cells.size - 1) addPair(cells[index].text(), cells[index + 1].text())
+        val cells = row.children().filter { it.tagName() == "th" || it.tagName() == "td" }
+        cells.forEachIndexed { index, cell ->
+            if (canonicalLabel(cell.text()) != null) {
+                val valueCell = cells.getOrNull(index + 1)
+                if (valueCell != null) addPair(cell.text(), valueCell.text())
+            }
         }
     }
+
     document.select("dl").forEach { list ->
-        val terms = list.select("dt")
-        terms.forEachIndexed { index, term ->
+        list.children().filter { it.tagName() == "dt" }.forEach { term ->
             val value = term.nextElementSibling()?.takeIf { it.tagName() == "dd" }?.text().orEmpty()
             addPair(term.text(), value)
         }
