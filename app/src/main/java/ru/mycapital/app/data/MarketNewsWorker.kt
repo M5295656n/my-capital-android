@@ -18,8 +18,16 @@ class MarketNewsWorker(
         setProgress(Data.Builder().putString("summary", "Загружаю новости Банка России и Московской биржи…").build())
         try {
             val client = MarketNewsClient()
-            val news = client.getLatestNews(tickers)
-            val keyRateEvents = client.getUpcomingKeyRateEvents()
+            val keyRateEvents = runCatching { client.getUpcomingKeyRateEvents() }
+                .getOrElse { error ->
+                    setProgress(Data.Builder().putString("summary", "Не удалось загрузить календарь Банка России: ${error.message}").build())
+                    emptyList()
+                }
+            val news = runCatching { client.getLatestNews(tickers) }
+                .getOrElse { error ->
+                    setProgress(Data.Builder().putString("summary", "Не удалось загрузить RSS-новости: ${error.message}").build())
+                    emptyList()
+                }
             if (news.isEmpty() && keyRateEvents.isEmpty()) {
                 throw java.io.IOException("Источники не вернули новостей и будущих событий")
             }
