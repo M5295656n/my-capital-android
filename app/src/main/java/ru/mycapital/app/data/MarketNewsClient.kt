@@ -52,6 +52,41 @@ internal val defaultMarketNewsFeeds = listOf(
 )
 
 
+internal data class NewsImpactAssessment(
+    val importance: String,
+    val assessment: String,
+    val horizon: String,
+    val confidence: String
+)
+
+/** Conservative editorial guidance, not a directional price forecast. */
+internal fun assessMarketNews(
+    title: String, summary: String, category: String, relatedTickers: List<String>
+): NewsImpactAssessment {
+    val text = "$title $summary".lowercase(Locale.ROOT)
+    val linked = relatedTickers.isNotEmpty()
+    return when {
+        category == "NEW_ISSUES" -> NewsImpactAssessment("HIGH",
+            "Новое размещение может изменить предложение бумаг и привлечь ликвидность. Сам факт объявления не указывает направление цены. Перед оценкой спроса проверьте объём, цену, купон и сроки; неуказанные условия считаются неизвестными.",
+            "До размещения и первые торги", "HIGH — факт объявления; LOW — влияние на цену")
+        Regex("ключев\\w* ставк|совет\\w* директор\\w* банк\\w* россии", RegexOption.IGNORE_CASE).containsMatchIn(text) -> NewsImpactAssessment("HIGH",
+            "Решение по ключевой ставке влияет на стоимость фондирования, доходности облигаций и ожидания по акциям. Направление реакции зависит от разницы между решением и ожиданиями рынка; без подтверждённого консенсуса прогноз направления не делается.",
+            "В день решения и ближайшие недели", "HIGH — дата события; LOW — направление реакции")
+        category == "ECONOMY" -> NewsImpactAssessment("NORMAL",
+            "Макростатистика может повлиять на ожидания по ставке, инфляции и рублёвым активам. Для оценки реакции нужны фактическое значение, сопоставимый прогноз и предыдущее значение; если их нет, направление влияния не определено.",
+            "В день публикации и последующие недели", "HIGH — факт публикации; LOW — рыночный эффект")
+        linked && Regex("дивиденд|отч[её]тност|финансов\\w* результат|выручк|прибыл|убыт|байбек|обратн\\w* выкуп|прогноз|гайденс|санкц|дефолт|оферт", RegexOption.IGNORE_CASE).containsMatchIn(text) -> NewsImpactAssessment("HIGH",
+            "Новость относится к бумаге из портфеля (" + relatedTickers.joinToString(", ") + "). Проверьте первоисточник, влияние на денежные потоки/долг и отличие от ожиданий. Сам заголовок не подтверждает изменение справедливой стоимости.",
+            "От нескольких дней до нескольких кварталов", "MEDIUM — связь с бумагой; LOW — финансовый эффект")
+        linked -> NewsImpactAssessment("NORMAL",
+            "В тексте найден тикер из портфеля (" + relatedTickers.joinToString(", ") + "). Связь по тикеру требует проверки контекста; существенное влияние на бизнес или стоимость бумаги пока не подтверждено.",
+            "Требует уточнения", "LOW")
+        else -> NewsImpactAssessment("NORMAL",
+            "Публикация сохранена как рыночный информационный фон. Прямая связь с позициями портфеля и измеримое влияние на стоимость пока не установлены.",
+            "Не определён", "LOW")
+    }
+}
+
 internal data class ParsedMarketCalendarEvent(
     val sourceKey: String, val category: String, val eventDate: Long,
     val title: String, val summary: String, val sourceName: String, val sourceUrl: String
