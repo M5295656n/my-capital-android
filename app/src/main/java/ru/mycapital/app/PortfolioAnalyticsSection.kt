@@ -63,6 +63,18 @@ internal fun PortfolioAnalyticsSection(
     val portfolioValue = assets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } + cashBalance.coerceAtLeast(0.0)
     val classSlices = remember(assets, cashBalance) { calculatePortfolioClassSlices(assets, cashBalance) }
     val sectorSlices = remember(assets, portfolioValue) { calculatePortfolioSectorSlices(assets, portfolioValue) }
+    val sectorSlicesWithRemainder = remember(sectorSlices, portfolioValue) {
+        val representedValue = sectorSlices.sumOf { it.value }
+        val remainder = (portfolioValue - representedValue).coerceAtLeast(0.0)
+        if (portfolioValue > 0.0 && remainder > 0.01) {
+            sectorSlices + PortfolioSectorSlice(
+                sector = "Вне отраслевого состава",
+                value = remainder,
+                shareOfPortfolio = remainder / portfolioValue,
+                positions = emptyList()
+            )
+        } else sectorSlices
+    }
     val concentration = remember(assets, portfolioValue) { calculatePortfolioConcentration(assets, portfolioValue) }
     val selectedAccountLabel = if (selectedAccountId == ANALYTICS_ALL_ACCOUNTS) "Все счета"
         else accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName ?: "Счёт"
@@ -146,22 +158,22 @@ internal fun PortfolioAnalyticsSection(
         Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Структура по секторам", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Доля от всего портфеля. Фонды без раскрытого состава не распределяются по отраслям.",
+                Text("Отрасли показаны для отдельных акций. Остальная часть портфеля выделена отдельно.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (sectorSlices.isEmpty()) {
+                if (sectorSlicesWithRemainder.isEmpty()) {
                     Text("Пока нет акций с определённой отраслью.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    PortfolioSectorDonut(sectorSlices, Modifier.size(132.dp).align(Alignment.CenterHorizontally))
-                    sectorSlices.forEachIndexed { sectorIndex, sector ->
+                    PortfolioSectorDonut(sectorSlicesWithRemainder, Modifier.size(132.dp).align(Alignment.CenterHorizontally))
+                    sectorSlicesWithRemainder.forEachIndexed { sectorIndex, sector ->
                         var expanded by remember(sector.sector) { mutableStateOf(false) }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { expanded = !expanded }.padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(9.dp).clip(CircleShape).background(sectorColor(sectorIndex)))
+                                Box(Modifier.size(9.dp).clip(CircleShape).background(sectorColor(sectorIndex, sector.sector == "Вне отраслевого состава")))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(sector.sector, fontWeight = FontWeight.Medium)
-                                    Text("${moneyAnalytics(sector.value)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("${moneyAnalytics(sector.value)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)\n                                    if (sector.sector == "Вне отраслевого состава") {\n                                        Text("Фонды, облигации, золото, деньги и прочие активы", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)\n                                    }
                                 }
                                 Text(percentAnalytics(sector.shareOfPortfolio), fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(6.dp))
@@ -277,7 +289,7 @@ private fun PortfolioSectorDonut(
     }
 }
 
-private fun sectorColor(index: Int): Color = when (index % 8) {
+private fun sectorColor(index: Int, isOutsideSectorMix: Boolean = false): Color = if (isOutsideSectorMix) Color(0xFF64748B) else when (index % 8) {
     0 -> Color(0xFF3989DB)
     1 -> Color(0xFF26A69A)
     2 -> Color(0xFFD5A344)
