@@ -29,7 +29,10 @@ data class OperationEntity(
     val operationDate: Long = System.currentTimeMillis(),
     val note: String = "",
     val sourceKey: String? = null,
-    val accountId: String? = null
+    val accountId: String? = null,
+    // Cash settlement may occur after the trade date (notably for bonds).
+    // Null preserves legacy/manual operation behavior.
+    val settlementDate: Long? = null
 )
 
 @Entity(tableName = "payouts", indices = [Index(value = ["sourceKey"], unique = true)])
