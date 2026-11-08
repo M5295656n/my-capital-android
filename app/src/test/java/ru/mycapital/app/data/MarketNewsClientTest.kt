@@ -118,6 +118,39 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun usesNestedDisclosureUrlWhenItProvidesPlacementDetails() {
+        val pageDetails = ParsedPlacementDetails(issuer = "АО Тест")
+        val nested = OfficialPlacementDocumentResult(
+            details = ParsedPlacementDetails(placementPrice = "100% от номинала"),
+            sourceUrl = "https://e-disclosure.ru/files/prospectus.pdf"
+        )
+        assertEquals(
+            nested.sourceUrl,
+            selectPlacementDocumentSourceUrl(
+                "https://e-disclosure.ru/portal/landing",
+                pageDetails,
+                nested
+            )
+        )
+    }
+
+    @Test
+    fun keepsLandingPageUrlWhenNestedDocumentAddsNoDetails() {
+        val pageUrl = "https://e-disclosure.ru/portal/landing"
+        val nested = OfficialPlacementDocumentResult(
+            details = ParsedPlacementDetails(),
+            sourceUrl = "https://e-disclosure.ru/files/empty.pdf"
+        )
+        assertEquals(pageUrl, selectPlacementDocumentSourceUrl(pageUrl, ParsedPlacementDetails(), nested))
+    }
+
+    @Test
+    fun usesFinalPageUrlWhenNoNestedDocumentWasFound() {
+        val finalUrl = "https://e-disclosure.ru/portal/final"
+        assertEquals(finalUrl, selectPlacementDocumentSourceUrl(finalUrl, ParsedPlacementDetails(), null))
+    }
+
+    @Test
     fun mergesPlacementDetailsWithoutOverwritingKnownAnnouncementValues() {
         val announcement = ParsedPlacementDetails(
             placementVolume = "2 млрд руб",
