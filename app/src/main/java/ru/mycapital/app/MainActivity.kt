@@ -99,6 +99,42 @@ private enum class Screen(val title: String, val icon: androidx.compose.ui.graph
 }
 
 @Composable
+private fun AnalyticsNavigationIcon() {
+    val tint = LocalContentColor.current
+    Canvas(Modifier.size(24.dp)) {
+        val barColor = tint.copy(alpha = 0.48f)
+        val barWidth = size.width * 0.13f
+        val bottom = size.height * 0.94f
+        val bars = listOf(
+            0.12f to 0.20f,
+            0.34f to 0.34f,
+            0.56f to 0.48f,
+            0.78f to 0.29f
+        )
+        bars.forEach { (xFraction, heightFraction) ->
+            val barHeight = size.height * heightFraction
+            drawRoundRect(
+                color = barColor,
+                topLeft = Offset(size.width * xFraction, bottom - barHeight),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.035f)
+            )
+        }
+        val trend = Path().apply {
+            moveTo(size.width * 0.08f, size.height * 0.43f)
+            lineTo(size.width * 0.34f, size.height * 0.27f)
+            lineTo(size.width * 0.59f, size.height * 0.35f)
+            lineTo(size.width * 0.91f, size.height * 0.10f)
+        }
+        drawPath(
+            path = trend,
+            color = tint,
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        )
+    }
+}
+
+@Composable
 private fun MyCapitalApp() {
     val context = LocalContext.current
     val dao = remember { PortfolioDatabase.getInstance(context).portfolioDao() }
@@ -411,8 +447,18 @@ private fun MyCapitalApp() {
                         NavigationBarItem(
                             selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
-                            label = { Text(screen.title, fontSize = 10.sp) },
+                            icon = {
+                                if (screen == Screen.Analytics) AnalyticsNavigationIcon()
+                                else Icon(screen.icon, contentDescription = screen.title)
+                            },
+                            label = {
+                                Text(
+                                    screen.title,
+                                    fontSize = if (screen == Screen.Analytics) 8.5.sp else 9.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = androidx.compose.ui.graphics.Color(0xFF4B9BFF),
                                 selectedTextColor = androidx.compose.ui.graphics.Color(0xFF69AFFF),
@@ -433,7 +479,7 @@ private fun MyCapitalApp() {
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(operations, payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
                 Screen.Events -> EventsScreen(assets, cashBalance ?: 0.0, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
@@ -2137,8 +2183,16 @@ private fun OperationsScreen(
 }
 
 
+private data class SoldAssetSummary(
+    val ticker: String,
+    val name: String,
+    val quantity: Double,
+    val saleCount: Int
+)
+
 @Composable
 private fun PayoutsScreen(
+    operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     assets: List<AssetEntity>,
     accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
@@ -2223,6 +2277,35 @@ private fun PayoutsScreen(
     fun payoutAmount(p: PayoutEntity): Double =
         if (p.status == "RECEIVED") (p.reportedNetAmount ?: (p.totalAmount - p.taxAmount)).coerceAtLeast(0.0)
         else p.totalAmount.coerceAtLeast(0.0)
+    val soldAssets = remember(operations, selectedAccountId, periodDates, assets) {
+        operations.asSequence()
+            .filter { it.operationType == "Продажа" }
+            .filter { operation ->
+                val accountMatches = when (selectedAccountId) {
+                    ALL_HISTORY_ACCOUNTS -> true
+                    UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
+                    else -> historyAccountId(operation.sourceKey) == selectedAccountId
+                }
+                val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
+                    .atZone(zone).toLocalDate()
+                accountMatches && !operationDate.isBefore(periodDates.first) && !operationDate.isAfter(periodDates.second)
+            }
+            .mapNotNull { operation ->
+                val ticker = operation.ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+                    ?: assets.firstOrNull { it.id == operation.assetId }?.ticker?.trim()?.uppercase()
+                ticker?.let { it to operation }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (ticker, sales) ->
+                SoldAssetSummary(
+                    ticker = ticker,
+                    name = assets.firstOrNull { it.ticker.equals(ticker, true) }?.name ?: ticker,
+                    quantity = sales.sumOf { it.quantity.coerceAtLeast(0.0) },
+                    saleCount = sales.size
+                )
+            }
+            .sortedByDescending { it.quantity }
+    }
     // Principal returned at bond amortization/maturity is capital, not income.
     // Keep redemption rows visible below, but exclude them from income metrics.
     val totalAmount = filtered.filter { isIncomePayoutType(it.payoutType) }.sumOf(::payoutAmount)
@@ -2338,6 +2421,65 @@ private fun PayoutsScreen(
                 androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(listOf("Все", "Дивиденды", "Купоны", "Погашения")) { filter ->
                         FilterChip(selected = typeFilter == filter, onClick = { typeFilter = filter }, label = { Text(filter) })
+                    }
+                }
+            }
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            "Проданные активы за ${selectedPeriod.substringAfter("year:")}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "Суммарное количество по сделкам продажи за выбранный год",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (soldAssets.isEmpty()) {
+                            Text(
+                                "За этот период продаж не было.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            soldAssets.forEach { sold ->
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(sold.ticker, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            sold.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            "${sold.saleCount} ${if (sold.saleCount == 1) "сделка" else "сделок"}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        "${quantity(sold.quantity)} шт.",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                if (sold != soldAssets.last()) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                }
+                            }
+                        }
                     }
                 }
             }
