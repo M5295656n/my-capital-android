@@ -39,6 +39,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -179,6 +180,10 @@ private fun MyCapitalApp() {
     var isCreatingBackup by remember { mutableStateOf(false) }
     var isRestoringBackup by remember { mutableStateOf(false) }
     var pendingBackupRestore by remember { mutableStateOf<Uri?>(null) }
+    var pendingBackupCreate by remember { mutableStateOf<Uri?>(null) }
+    var backupCreatePassword by remember { mutableStateOf("") }
+    var backupCreatePasswordConfirm by remember { mutableStateOf("") }
+    var backupRestorePassword by remember { mutableStateOf("") }
     var backupResultMessage by remember { mutableStateOf<String?>(null) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -226,17 +231,9 @@ private fun MyCapitalApp() {
     }
     val backupCreatePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri != null) {
-            isCreatingBackup = true
-            scope.launch {
-                try {
-                    val info = withContext(Dispatchers.IO) { PortfolioBackup.export(context, uri) }
-                    backupResultMessage = "Полная резервная копия создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Архив содержит финансовые данные портфеля и историю."
-                } catch (error: Exception) {
-                    errorMessage = error.message ?: "Не удалось создать резервную копию."
-                } finally {
-                    isCreatingBackup = false
-                }
-            }
+            pendingBackupCreate = uri
+            backupCreatePassword = ""
+            backupCreatePasswordConfirm = ""
         }
     }
     val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -458,30 +455,98 @@ private fun MyCapitalApp() {
             }
         )
     }
+    if (pendingBackupCreate != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isCreatingBackup) { pendingBackupCreate = null; backupCreatePassword = ""; backupCreatePasswordConfirm = "" } },
+            title = { Text("Защитить резервную копию") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Архив будет зашифрован AES-256. Придумайте пароль длиной не менее 12 символов и сохраните его отдельно. Без пароля восстановить данные будет невозможно. Приложение пароль не сохраняет.")
+                    OutlinedTextField(
+                        value = backupCreatePassword,
+                        onValueChange = { backupCreatePassword = it },
+                        label = { Text("Пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isCreatingBackup
+                    )
+                    OutlinedTextField(
+                        value = backupCreatePasswordConfirm,
+                        onValueChange = { backupCreatePasswordConfirm = it },
+                        label = { Text("Повторите пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isCreatingBackup
+                    )
+                    if (backupCreatePasswordConfirm.isNotEmpty() && backupCreatePassword != backupCreatePasswordConfirm) {
+                        Text("Пароли не совпадают.", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isCreatingBackup && backupCreatePassword.length >= 12 && backupCreatePassword == backupCreatePasswordConfirm,
+                    onClick = {
+                        val uri = pendingBackupCreate ?: return@TextButton
+                        val password = backupCreatePassword
+                        isCreatingBackup = true
+                        pendingBackupCreate = null
+                        backupCreatePassword = ""
+                        backupCreatePasswordConfirm = ""
+                        scope.launch {
+                            try {
+                                val info = withContext(Dispatchers.IO) { PortfolioBackup.export(context, uri, password.toCharArray()) }
+                                backupResultMessage = "Зашифрованная резервная копия AES-256 создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Пароль не сохранён — храните его отдельно."
+                            } catch (error: Exception) {
+                                errorMessage = error.message ?: "Не удалось создать резервную копию."
+                            } finally {
+                                isCreatingBackup = false
+                            }
+                        }
+                    }
+                ) { Text(if (isCreatingBackup) "Создаю…" else "Создать архив") }
+            },
+            dismissButton = { TextButton(enabled = !isCreatingBackup, onClick = { pendingBackupCreate = null; backupCreatePassword = ""; backupCreatePasswordConfirm = "" }) { Text("Отмена") } }
+        )
+    }
     if (pendingBackupRestore != null) {
         AlertDialog(
-            onDismissRequest = { if (!isRestoringBackup) pendingBackupRestore = null },
+            onDismissRequest = { if (!isRestoringBackup) { pendingBackupRestore = null; backupRestorePassword = "" } },
             title = { Text("Восстановить резервную копию?") },
-            text = { Text("Текущая база данных будет заменена данными из выбранного архива. Перед продолжением рекомендуется создать свежую резервную копию текущего состояния. После восстановления приложение перезапустит экран.") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Введите пароль AES-256. Сначала архив будет расшифрован и проверен; только после успешной проверки текущая база будет заменена. Перед продолжением рекомендуется сохранить свежую копию текущих данных.")
+                    OutlinedTextField(
+                        value = backupRestorePassword,
+                        onValueChange = { backupRestorePassword = it },
+                        label = { Text("Пароль архива") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isRestoringBackup
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(enabled = !isRestoringBackup, onClick = {
+                TextButton(enabled = !isRestoringBackup && backupRestorePassword.isNotBlank(), onClick = {
                     val uri = pendingBackupRestore ?: return@TextButton
+                    val password = backupRestorePassword
                     isRestoringBackup = true
+                    backupRestorePassword = ""
                     scope.launch {
                         try {
-                            val info = withContext(Dispatchers.IO) { PortfolioBackup.restore(context, uri) }
+                            val info = withContext(Dispatchers.IO) { PortfolioBackup.restore(context, uri, password.toCharArray()) }
                             pendingBackupRestore = null
-                            backupResultMessage = "База успешно проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
+                            backupResultMessage = "База успешно расшифрована, проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
                             (context as? ComponentActivity)?.recreate()
                         } catch (error: Exception) {
-                            errorMessage = error.message ?: "Не удалось восстановить резервную копию."
+                            errorMessage = error.message ?: "Не удалось восстановить резервную копию. Проверьте пароль и целостность архива."
                         } finally {
                             isRestoringBackup = false
                         }
                     }
                 }) { Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить") }
             },
-            dismissButton = { TextButton(enabled = !isRestoringBackup, onClick = { pendingBackupRestore = null }) { Text("Отмена") } }
+            dismissButton = { TextButton(enabled = !isRestoringBackup, onClick = { pendingBackupRestore = null; backupRestorePassword = "" }) { Text("Отмена") } }
         )
     }
     if (backupResultMessage != null) {
@@ -1103,7 +1168,7 @@ private fun MoreScreen(
             Spacer(Modifier.width(8.dp))
             Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из резервной копии")
         }
-        Text("Резервная копия содержит финансовые данные и историю портфеля. Храните ZIP в надёжном месте. Восстановление заменяет текущую базу.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.FileDownload, contentDescription = null)
             Spacer(Modifier.width(8.dp))
