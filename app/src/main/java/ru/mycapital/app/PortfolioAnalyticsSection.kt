@@ -57,6 +57,8 @@ internal fun PortfolioAnalyticsSection(
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
     compositionSnapshots: List<PortfolioCompositionSnapshotEntity>,
+    marketHistory: PortfolioMarketHistoryResult,
+    historyLoading: Boolean,
     modifier: Modifier = Modifier
 ) {
     var accountMenuExpanded by remember { mutableStateOf(false) }
@@ -240,7 +242,7 @@ internal fun PortfolioAnalyticsSection(
         Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Историческая структура", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                PortfolioCompositionHistoryChart(compositionSnapshots, selectedAccountId)
+                PortfolioCompositionHistoryChart(marketHistory, assets, historyLoading)
             }
         }
     }
@@ -322,40 +324,43 @@ private fun percentAnalytics(value: Double): String =
 
 @Composable
 private fun PortfolioCompositionHistoryChart(
-    snapshots: List<PortfolioCompositionSnapshotEntity>,
-    accountId: String
+    history: PortfolioMarketHistoryResult,
+    assets: List<AssetEntity>,
+    loading: Boolean
 ) {
     var selectedMonths by remember { mutableStateOf(1) }
-    val points = remember(snapshots, accountId, selectedMonths) {
-        val cutoff = java.time.LocalDate.now().minusMonths(selectedMonths.toLong())
-        snapshots.asSequence()
-            .filter { it.accountId == accountId && it.dimension == "CLASS" }
-            .filter { row -> runCatching { !java.time.LocalDate.parse(row.dateKey).isBefore(cutoff) }.getOrDefault(false) }
-            .groupBy { it.dateKey }
-            .toSortedMap()
-            .mapNotNull { (dateKey, rows) ->
-                val total = rows.sumOf { it.value }.takeIf { it > 0.0 } ?: return@mapNotNull null
-                val shares = PortfolioAssetClass.entries.associateWith { assetClass ->
-                    rows.firstOrNull { it.category == assetClass.name }?.value?.div(total) ?: 0.0
+    val points = remember(history, assets, selectedMonths) {
+        val ordered = history.points.sortedBy { it.dateKey }
+        val latest = ordered.lastOrNull()?.let { java.time.LocalDate.parse(it.dateKey) }
+        val cutoff = latest?.minusMonths(selectedMonths.toLong())
+        ordered.asSequence()
+            .filter { point -> cutoff == null || !java.time.LocalDate.parse(point.dateKey).isBefore(cutoff) }
+            .mapNotNull { point ->
+                val values = PortfolioAssetClass.entries.associateWith { 0.0 }.toMutableMap()
+                assets.forEach { asset ->
+                    val value = point.assetValues[asset.ticker.trim().uppercase()] ?: 0.0
+                    if (value > 0.0) {
+                        val assetClass = classifyPortfolioAsset(asset)
+                        values[assetClass] = (values[assetClass] ?: 0.0) + value
+                    }
                 }
-                dateKey to shares
-            }
+                values[PortfolioAssetClass.CASH] = (values[PortfolioAssetClass.CASH] ?: 0.0) + point.cashValue.coerceAtLeast(0.0)
+                val total = values.values.sum()
+                if (total <= 0.0) null else point.dateKey to values.mapValues { it.value / total }
+            }.toList()
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(1, 3, 6, 12).forEach { months ->
-            FilterChip(
-                selected = selectedMonths == months,
-                onClick = { selectedMonths = months },
-                label = { Text(if (months == 12) "1Г" else "${months}М") }
-            )
+            FilterChip(selected = selectedMonths == months, onClick = { selectedMonths = months },
+                label = { Text(if (months == 12) "1Г" else "${months}М") })
         }
     }
     if (points.size < 2) {
         Text(
-            if (points.isEmpty()) "История распределения начнёт накапливаться после обновления приложения. Для выбранного периода пока нет двух дневных снимков."
-            else "Сохранён один дневной снимок от ${points.first().first}. Второй снимок появится после следующего ежедневного обновления.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (loading) "Восстанавливаю исторический состав по операциям и котировкам MOEX…"
+            else if (points.isEmpty()) "Исторический состав пока нельзя рассчитать: проверьте полноту истории операций и доступность котировок."
+            else "Доступен один торговый день истории состава: ${points.first().first}.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     } else {
         val plotted = if (points.size > 60) points.filterIndexed { index, _ -> index % ((points.size / 30).coerceAtLeast(1)) == 0 }.takeLast(60) else points
@@ -363,10 +368,7 @@ private fun PortfolioCompositionHistoryChart(
         val colors = tracked.map { classColor(it) }
         val gridColor = MaterialTheme.colorScheme.outlineVariant
         Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-            val left = 5f
-            val right = size.width - 5f
-            val top = 8f
-            val bottom = size.height - 8f
+            val left = 5f; val right = size.width - 5f; val top = 8f; val bottom = size.height - 8f
             for (i in 0..4) {
                 val y = top + (bottom - top) * i / 4f
                 drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
@@ -390,16 +392,13 @@ private fun PortfolioCompositionHistoryChart(
             tracked.forEach { assetClass ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.size(7.dp).clip(CircleShape).background(classColor(assetClass)))
-                    Text(
-                        when (assetClass) {
-                            PortfolioAssetClass.EQUITIES -> "Акции"
-                            PortfolioAssetClass.FIXED_INCOME -> "Облигации"
-                            PortfolioAssetClass.GOLD -> "Золото"
-                            PortfolioAssetClass.CASH -> "Кэш"
-                            PortfolioAssetClass.OTHER -> "Прочее"
-                        },
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    Text(when (assetClass) {
+                        PortfolioAssetClass.EQUITIES -> "Акции"
+                        PortfolioAssetClass.FIXED_INCOME -> "Облигации"
+                        PortfolioAssetClass.GOLD -> "Золото"
+                        PortfolioAssetClass.CASH -> "Кэш"
+                        PortfolioAssetClass.OTHER -> "Прочее"
+                    }, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
