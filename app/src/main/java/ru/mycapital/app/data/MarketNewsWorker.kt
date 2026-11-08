@@ -62,6 +62,7 @@ class MarketNewsWorker(
                     placementPrice = item.placementPrice,
                     couponRate = item.couponRate,
                     applicationDates = item.applicationDates,
+                    placementStartDate = item.placementStartDate,
                     tradingStartDate = item.tradingStartDate,
                     isin = item.isin,
                     couponAmount = item.couponAmount,
