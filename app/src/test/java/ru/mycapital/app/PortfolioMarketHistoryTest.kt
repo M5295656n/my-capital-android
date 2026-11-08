@@ -55,7 +55,12 @@ class PortfolioMarketHistoryTest {
         assertEquals("2026-01-02", result.points.first().dateKey)
         assertEquals(999.0, result.points.first().totalValue, 0.000001)
         assertEquals(1_000.0, result.points.first().investedCapital, 0.000001)
+        assertEquals(899.0, result.points.first().cashValue, 0.000001)
+        assertEquals(1.0, result.points.first().quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(100.0, result.points.first().assetValues["SBER"] ?: 0.0, 0.000001)
         assertEquals(1_009.0, result.points.last().totalValue, 0.000001)
+        assertEquals(1.0, result.points.last().quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(110.0, result.points.last().assetValues["SBER"] ?: 0.0, 0.000001)
         assertTrue(result.unavailableTickers.isEmpty())
     }
 
@@ -108,6 +113,73 @@ class PortfolioMarketHistoryTest {
         assertEquals(1, result.points.size)
         assertEquals(1_017.0, result.points.single().totalValue, 0.000001)
         assertTrue(result.unavailableTickers.isEmpty())
+    }
+
+    @Test
+    fun fullySoldInstrumentRemainsInHistoricalNavWithoutCurrentAssetRow() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-02-02")
+        val sellDate = LocalDate.parse("2026-02-03")
+        val requestedTickers = mutableListOf<String>()
+        val result = buildPortfolioMarketHistory(
+            // A fully sold instrument is correctly absent from the current assets table.
+            assets = emptyList(),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-02-01", 1.0, 500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-02-02", 2.0, 100.0, 1.0),
+                operation(3, "Продажа", "2026-02-03", 2.0, 110.0, 1.0)
+            ),
+            currentCash = 518.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = sellDate
+        ) { ticker, type, _, _ ->
+            requestedTickers += ticker
+            assertFalse(type.contains("облиг", ignoreCase = true))
+            listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(sellDate, 110.0))
+        }
+
+        assertTrue(requestedTickers.contains("SBER"))
+        assertEquals(2, result.points.size)
+        assertEquals(2.0, result.points[0].quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(200.0, result.points[0].assetValues["SBER"] ?: 0.0, 0.000001)
+        assertEquals(499.0, result.points[0].totalValue, 0.000001)
+        assertEquals(0.0, result.points[1].quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(518.0, result.points[1].cashValue, 0.000001)
+        assertEquals(518.0, result.points[1].totalValue, 0.000001)
+        assertFalse(result.unavailableTickers.contains("SBER"))
+    }
+
+    @Test
+    fun tradeDateAndSettlementDateDoNotDoubleCountCashAndHoldings() = kotlinx.coroutines.runBlocking {
+        val tradeDate = LocalDate.parse("2026-03-02")
+        val settlementDate = LocalDate.parse("2026-03-04")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 3L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0
+            )),
+            operations = listOf(
+                operation(20, "Пополнение", "2026-03-01", 1.0, 1_000.0, ticker = "RUB"),
+                operation(21, "Покупка", "2026-03-02", 1.0, 100.0).copy(
+                    settlementDate = settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                )
+            ),
+            currentCash = 900.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = settlementDate
+        ) { _, _, _, _ ->
+            listOf(
+                MoexDailyClose(tradeDate, 100.0),
+                MoexDailyClose(tradeDate.plusDays(1), 100.0),
+                MoexDailyClose(settlementDate, 100.0)
+            )
+        }
+
+        assertEquals(3, result.points.size)
+        assertEquals(1_000.0, result.points[0].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+        assertEquals(900.0, result.points[2].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[2].totalValue, 0.000001)
     }
 
 }

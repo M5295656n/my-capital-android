@@ -39,6 +39,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -67,6 +68,7 @@ import ru.mycapital.app.data.MoexSecurityHistoryClient
 import ru.mycapital.app.data.MoexDailyClose
 import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
+import ru.mycapital.app.data.PortfolioBackup
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.isIncomePayoutType
@@ -165,6 +167,7 @@ private fun MyCapitalApp() {
     var selectedOperationAccount by remember { mutableStateOf("ALL") }
     var selectedPayoutAccount by remember { mutableStateOf("ALL") }
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
+    val portfolioCompositionSnapshots by dao.observePortfolioCompositionSnapshots().collectAsState(initial = emptyList())
     var payoutToConfirm by remember { mutableStateOf<PayoutEntity?>(null) }
     var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
@@ -174,6 +177,14 @@ private fun MyCapitalApp() {
     var isReconcilingReport by remember { mutableStateOf(false) }
     var isExportingData by remember { mutableStateOf(false) }
     var exportResultMessage by remember { mutableStateOf<String?>(null) }
+    var isCreatingBackup by remember { mutableStateOf(false) }
+    var isRestoringBackup by remember { mutableStateOf(false) }
+    var pendingBackupRestore by remember { mutableStateOf<Uri?>(null) }
+    var pendingBackupCreate by remember { mutableStateOf<Uri?>(null) }
+    var backupCreatePassword by remember { mutableStateOf("") }
+    var backupCreatePasswordConfirm by remember { mutableStateOf("") }
+    var backupRestorePassword by remember { mutableStateOf("") }
+    var backupResultMessage by remember { mutableStateOf<String?>(null) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -217,6 +228,16 @@ private fun MyCapitalApp() {
                 }
             }
         }
+    }
+    val backupCreatePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) {
+            pendingBackupCreate = uri
+            backupCreatePassword = ""
+            backupCreatePasswordConfirm = ""
+        }
+    }
+    val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) pendingBackupRestore = uri
     }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
     // Keep dashboard data at the app level: OverviewScreen is removed from composition
@@ -265,9 +286,10 @@ private fun MyCapitalApp() {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "portfolio_daily_snapshots", ExistingPeriodicWorkPolicy.UPDATE, snapshotPeriodic
         )
-        val firstSnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
+        val todayKey = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")).toString()
+        val todaySnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "portfolio_initial_snapshot", ExistingWorkPolicy.KEEP, firstSnapshot
+            "portfolio_snapshot_$todayKey", ExistingWorkPolicy.KEEP, todaySnapshot
         )
     }
 
@@ -376,13 +398,17 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
                     hasAssets = assets.isNotEmpty(),
                     isParsingReport = isParsingReport,
                     isExportingData = isExportingData,
+                    isCreatingBackup = isCreatingBackup,
+                    isRestoringBackup = isRestoringBackup,
+                    onCreateBackup = { backupCreatePicker.launch("MyCapital-backup.zip") },
+                    onRestoreBackup = { backupRestorePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
                     onExportData = { exportPicker.launch("my-capital-export.zip") },
                     onOpenAccounts = { selected = Screen.Accounts },
@@ -427,6 +453,108 @@ private fun MyCapitalApp() {
                     }
                 }
             }
+        )
+    }
+    if (pendingBackupCreate != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isCreatingBackup) { pendingBackupCreate = null; backupCreatePassword = ""; backupCreatePasswordConfirm = "" } },
+            title = { Text("Защитить резервную копию") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Архив будет зашифрован AES-256. Придумайте пароль длиной не менее 9 символов и сохраните его отдельно. Без пароля восстановить данные будет невозможно. Приложение пароль не сохраняет.")
+                    OutlinedTextField(
+                        value = backupCreatePassword,
+                        onValueChange = { backupCreatePassword = it },
+                        label = { Text("Пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isCreatingBackup
+                    )
+                    OutlinedTextField(
+                        value = backupCreatePasswordConfirm,
+                        onValueChange = { backupCreatePasswordConfirm = it },
+                        label = { Text("Повторите пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isCreatingBackup
+                    )
+                    if (backupCreatePasswordConfirm.isNotEmpty() && backupCreatePassword != backupCreatePasswordConfirm) {
+                        Text("Пароли не совпадают.", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isCreatingBackup && backupCreatePassword.length >= 9 && backupCreatePassword == backupCreatePasswordConfirm,
+                    onClick = {
+                        val uri = pendingBackupCreate ?: return@TextButton
+                        val password = backupCreatePassword
+                        isCreatingBackup = true
+                        pendingBackupCreate = null
+                        backupCreatePassword = ""
+                        backupCreatePasswordConfirm = ""
+                        scope.launch {
+                            try {
+                                val info = withContext(Dispatchers.IO) { PortfolioBackup.export(context, uri, password.toCharArray()) }
+                                backupResultMessage = "Зашифрованная резервная копия AES-256 создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Пароль не сохранён — храните его отдельно."
+                            } catch (error: Exception) {
+                                errorMessage = error.message ?: "Не удалось создать резервную копию."
+                            } finally {
+                                isCreatingBackup = false
+                            }
+                        }
+                    }
+                ) { Text(if (isCreatingBackup) "Создаю…" else "Создать архив") }
+            },
+            dismissButton = { TextButton(enabled = !isCreatingBackup, onClick = { pendingBackupCreate = null; backupCreatePassword = ""; backupCreatePasswordConfirm = "" }) { Text("Отмена") } }
+        )
+    }
+    if (pendingBackupRestore != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isRestoringBackup) { pendingBackupRestore = null; backupRestorePassword = "" } },
+            title = { Text("Восстановить резервную копию?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Введите пароль AES-256. Сначала архив будет расшифрован и проверен; только после успешной проверки текущая база будет заменена. Перед продолжением рекомендуется сохранить свежую копию текущих данных.")
+                    OutlinedTextField(
+                        value = backupRestorePassword,
+                        onValueChange = { backupRestorePassword = it },
+                        label = { Text("Пароль архива") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isRestoringBackup
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !isRestoringBackup && backupRestorePassword.isNotBlank(), onClick = {
+                    val uri = pendingBackupRestore ?: return@TextButton
+                    val password = backupRestorePassword
+                    isRestoringBackup = true
+                    backupRestorePassword = ""
+                    scope.launch {
+                        try {
+                            val info = withContext(Dispatchers.IO) { PortfolioBackup.restore(context, uri, password.toCharArray()) }
+                            pendingBackupRestore = null
+                            backupResultMessage = "База успешно расшифрована, проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
+                            (context as? ComponentActivity)?.recreate()
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "Не удалось восстановить резервную копию. Проверьте пароль и целостность архива."
+                        } finally {
+                            isRestoringBackup = false
+                        }
+                    }
+                }) { Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить") }
+            },
+            dismissButton = { TextButton(enabled = !isRestoringBackup, onClick = { pendingBackupRestore = null; backupRestorePassword = "" }) { Text("Отмена") } }
+        )
+    }
+    if (backupResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { backupResultMessage = null },
+            title = { Text("Резервная копия") },
+            text = { Text(backupResultMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { backupResultMessage = null }) { Text("Готово") } }
         )
     }
     if (exportResultMessage != null) {
@@ -960,6 +1088,10 @@ private fun MoreScreen(
     hasAssets: Boolean,
     isParsingReport: Boolean,
     isExportingData: Boolean,
+    isCreatingBackup: Boolean,
+    isRestoringBackup: Boolean,
+    onCreateBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
     onImportReport: () -> Unit,
     onExportData: () -> Unit,
     onOpenAccounts: () -> Unit,
@@ -1026,10 +1158,21 @@ private fun MoreScreen(
             Spacer(Modifier.width(8.dp))
             Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
         }
+        OutlinedButton(onClick = onCreateBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Backup, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isCreatingBackup) "Создаю полную копию…" else "Создать резервную копию базы")
+        }
+        OutlinedButton(onClick = onRestoreBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Restore, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из резервной копии")
+        }
+        Text("Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.FileDownload, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
+            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать таблицы (CSV ZIP)")
         }
     }
 }
@@ -2628,82 +2771,131 @@ private fun AnalyticsScreen(
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
+    compositionSnapshots: List<ru.mycapital.app.data.PortfolioCompositionSnapshotEntity>,
+    accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
+    accountCash: List<BrokerAccountCashEntity>,
     dao: ru.mycapital.app.data.PortfolioDao,
     modifier: Modifier = Modifier
 ) {
-    val invested = assets.sumOf { it.quantity * it.averagePrice }
-    val unrealized = marketValue - invested
-    val realizedResult = calculateRealizedTradingResult(operations)
-    val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
+    val analyticsAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets
+        else accountAssets.asSequence()
+            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
+            .sortedBy { it.assetType + it.ticker }
+            .toList()
+    }
+    val analyticsCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val analyticsOperations = remember(operations, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
+        else operations.filter { historyAccountId(it.sourceKey) == selectedAccountId }
+    }
+    val analyticsHistoryAssets = remember(assets, analyticsAssets, analyticsOperations, selectedAccountId) {
+        val currentByTicker = analyticsAssets.associateBy { it.ticker.trim().uppercase() }
+        val allByTicker = assets.associateBy { it.ticker.trim().uppercase() }
+        val historicalTickers = analyticsOperations.asSequence()
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .mapNotNull { it.ticker?.trim()?.uppercase()?.takeIf(String::isNotBlank) }
+            .toSet()
+        val tickers = currentByTicker.keys + historicalTickers
+        tickers.mapNotNull { ticker ->
+            currentByTicker[ticker] ?: allByTicker[ticker]?.copy(quantity = 0.0)
+        }.sortedBy { it.ticker }
+    }
+    var analyticsMarketHistory by remember { mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList())) }
+    var analyticsHistoryLoading by remember { mutableStateOf(false) }
+    var analyticsHistoryRefresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(analyticsAssets, analyticsOperations, analyticsCash, selectedAccountId, analyticsHistoryRefresh) {
+        analyticsHistoryLoading = true
+        try {
+            analyticsMarketHistory = withContext(Dispatchers.IO) {
+                buildPortfolioMarketHistory(
+                    assets = analyticsHistoryAssets,
+                    operations = analyticsOperations,
+                    currentCash = analyticsCash,
+                    range = PortfolioHistoryRange.ALL
+                )
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            analyticsMarketHistory = PortfolioMarketHistoryResult(emptyList(), null, emptyList())
+        } finally {
+            analyticsHistoryLoading = false
+        }
+    }
+    val analyticsMarketValue = analyticsAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }
+    val selectedTickers = remember(accountAssets, selectedAccountId) {
+        accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    val analyticsPayouts = remember(payouts, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
+        else payouts.filter { payout ->
+            val payoutAccountId = historyAccountId(payout.sourceKey)
+            if (payoutAccountId != null) payoutAccountId == selectedAccountId
+            else payout.ticker.uppercase() in selectedTickers
+        }
+    }
+    val invested = analyticsAssets.sumOf { it.quantity * it.averagePrice }
+    val unrealized = analyticsMarketValue - invested
+    val realizedResult = calculateRealizedTradingResult(analyticsOperations)
+    val receivedPayouts = analyticsPayouts.filter { it.status == "RECEIVED" }
     val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val payoutIncome = receivedDividends + receivedCoupons
     val totalInvestmentResult = unrealized + realizedResult.profit + payoutIncome
-    val totalValue = marketValue + cashBalance
+    val totalValue = analyticsMarketValue + analyticsCash
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
-    val groups = assets.groupBy { it.assetType.ifBlank { "Прочее" } }
-        .mapValues { (_, items) -> items.sumOf { it.quantity * it.currentPrice } }
-        .toList()
-        .sortedByDescending { it.second }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("Аналитика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Структура и текущий результат портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PortfolioAnalyticsSection(
+                assets = analyticsAssets,
+                cashBalance = analyticsCash,
+                accounts = accounts,
+                selectedAccountId = selectedAccountId,
+                onAccountSelected = { selectedAccountId = it },
+                compositionSnapshots = compositionSnapshots,
+                marketHistory = analyticsMarketHistory,
+                historyLoading = analyticsHistoryLoading,
+                onRefreshHistory = { analyticsHistoryRefresh++ }
+            )
         }
         item {
-            val todayMillis = System.currentTimeMillis()
-            val horizonMillis = todayMillis + TimeUnit.DAYS.toMillis(90)
-            val upcoming = payouts.filter {
-                it.status == "EXPECTED" && it.expectedDate != null &&
-                    it.expectedDate >= todayMillis && it.expectedDate <= horizonMillis
-            }.sortedBy { it.expectedDate }
-            Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (upcoming.isEmpty()) {
-                Text("В ближайшие 90 дней ожидаемых выплат с известной датой нет.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                upcoming.take(8).forEach { payout ->
-                    Card(shape = RoundedCornerShape(16.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val date = java.time.Instant.ofEpochMilli(payout.expectedDate!!)
-                                .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                            Column(Modifier.weight(1f)) {
-                                Text(assets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
-                                    fontWeight = FontWeight.SemiBold)
-                                Text("${date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("ru", "RU")))} · ${payout.payoutType}",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text("≈ ${money(payout.totalAmount)} ₽", fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Стоимость капитала", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${money(totalValue)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     HorizontalDivider()
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Рыночная стоимость активов")
-                        Text("${money(marketValue)} ₽", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Рыночная стоимость активов", modifier = Modifier.weight(1.05f), maxLines = 2)
+                        Text(
+                            "${money(analyticsMarketValue)} ₽",
+                            modifier = Modifier.weight(0.95f),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            fontSize = 14.sp
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Свободные деньги")
-                        Text("${money(cashBalance)} ₽", fontWeight = FontWeight.SemiBold)
+                        Text("${money(analyticsCash)} ₽", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
         }
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Нереализованный результат", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -2718,7 +2910,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Реализованный результат сделок", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -2736,7 +2928,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Полученные дивиденды и купоны", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2759,67 +2951,50 @@ private fun AnalyticsScreen(
                 }
             }
         }
+
+        } else {
+            item {
+                Text(
+                    "Доходность по отдельному счёту пока не рассчитывается: себестоимость позиций хранится на уровне совокупного портфеля, а не каждого брокерского договора.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         item {
-            Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (snapshots.size >= 2) {
-                PortfolioHistoryChart(snapshots)
+            if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
+                Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                if (analyticsMarketHistory.points.size >= 2) {
+                PortfolioHistoryChart(analyticsMarketHistory.points)
                 Text("График показывает условную доходность (база 100) с исключением пополнений и выводов. Денежные потоки учитываются на конец дневного интервала; для точного TWR потребуется точное время каждого потока.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                Text("История только начинается. Приложение сохраняет ежедневную стоимость капитала; график появится после второго дневного снимка.",
+                Text(if (analyticsHistoryLoading) "Восстанавливаю историю операций и загружаю котировки MOEX…" else "Для восстановления динамики пока недостаточно полной истории операций и котировок.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        item {
-            IndexBenchmarkSection(snapshots, dao)
-        }
-        item {
-            Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        }
-        if (totalValue <= 0.0) {
-            item { Text("Добавьте активы или внесите свободные деньги, чтобы увидеть структуру портфеля.") }
-        } else {
-            items(groups) { (type, value) ->
-                val share = (value / totalValue).coerceIn(0.0, 1.0)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(type, fontWeight = FontWeight.Medium)
-                        Text("${money(value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
-                    }
-                    LinearProgressIndicator(
-                        progress = { share.toFloat() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
-            }
-            item {
-                val share = (cashBalance / totalValue).coerceIn(0.0, 1.0)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Денежные средства", fontWeight = FontWeight.Medium)
-                        Text("${money(cashBalance)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
-                    }
-                    LinearProgressIndicator(progress = { share.toFloat() }, modifier = Modifier.fillMaxWidth())
-                }
+            } else {
+                if (analyticsMarketHistory.points.size >= 2) PortfolioHistoryChart(analyticsMarketHistory.points)
+                else Text(if (analyticsHistoryLoading) "Восстанавливаю историю выбранного счёта…" else "Для выбранного счёта пока недостаточно полной истории операций и котировок.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        item {
-            Text(
-                "Доходность рассчитана методом условной стоимости единицы с поправкой на внешние денежные потоки. Это дневное приближение; сравнение с IMOEX и MCFTR будет добавлено отдельно.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        item { IndexBenchmarkSection(analyticsMarketHistory.points, dao) }
     }
 }
 
 
 @Composable
-private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
+private fun PortfolioHistoryChart(history: List<PortfolioMarketHistoryPoint>) {
     var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
     var showReturn by remember { mutableStateOf(false) }
-    val points = remember(snapshots, selectedRange) {
-        calculatePortfolioHistoryPoints(snapshots, selectedRange)
+    val points = remember(history, selectedRange) {
+        val ordered = history.sortedBy { it.dateKey }
+        val latest = ordered.lastOrNull()?.let { java.time.LocalDate.parse(it.dateKey) }
+        val months = selectedRange.months
+        if (months == null || latest == null) ordered else {
+            val from = latest.minusMonths(months)
+            ordered.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(from) }
+        }
     }
     val plottedValues = points.map { if (showReturn) it.nav else it.totalValue }.map { it.toFloat() }
     val minValue = plottedValues.minOrNull() ?: 0f
@@ -2838,6 +3013,18 @@ private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
                 )
             }
         }
+        if (points.isNotEmpty()) {
+            Text(
+                "Доступная история: ${points.first().dateKey} — ${points.last().dateKey}. Если данных пока меньше выбранного периода, график закономерно будет одинаковым.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            "История восстановлена по операциям и историческим котировкам; начало — первая достоверная дата покупки.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = !showReturn,

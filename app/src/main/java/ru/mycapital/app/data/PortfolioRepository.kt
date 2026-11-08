@@ -338,15 +338,24 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     price = trade.price,
                     commission = trade.totalFee,
                     operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    settlementDate = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
                     sourceKey = scopedSourceKey,
                     accountId = report.accountId
                 )
-                if (dao.getOperationBySourceKey(trade.sourceKey) != null) {
+                val settlementTimestamp = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                val legacyDuplicate = dao.getOperationBySourceKey(trade.sourceKey)
+                if (legacyDuplicate != null) {
+                    // Upgrade older imports in place: settlementDate was not stored
+                    // by previous app versions.
+                    dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
-                    if (id == -1L) duplicates++ else imported++
+                    if (id == -1L) {
+                        dao.updateOperationSettlementDate(scopedSourceKey, settlementTimestamp)
+                        duplicates++
+                    } else imported++
                 }
             }
 

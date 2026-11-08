@@ -37,20 +37,56 @@ import ru.mycapital.app.data.PortfolioSnapshotEntity
 import java.util.Locale
 import java.time.LocalDate
 
+private data class IndexBenchmarkCacheEntry(
+    val imoex: List<MoexIndexPoint>,
+    val mcftr: List<MoexIndexPoint>,
+    val error: String?
+)
+
+private object IndexBenchmarkMemoryCache {
+    private val entries = mutableMapOf<String, IndexBenchmarkCacheEntry>()
+
+    @Synchronized
+    fun get(key: String): IndexBenchmarkCacheEntry? = entries[key]
+
+    @Synchronized
+    fun put(key: String, entry: IndexBenchmarkCacheEntry) {
+        entries[key] = entry
+    }
+}
+
 @Composable
-fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: PortfolioDao) {
-    val ordered = remember(snapshots) { snapshots.sortedBy { it.dateKey } }
+internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, dao: PortfolioDao) {
+    val ordered = remember(history) { history.sortedBy { it.dateKey } }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
-    var imoex by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
-    var mcftr by remember { mutableStateOf<List<MoexIndexPoint>>(emptyList()) }
+    val cacheKey = if (from != null && till != null) "$from|$till" else null
+    var imoex by remember(cacheKey) {
+        mutableStateOf(cacheKey?.let { IndexBenchmarkMemoryCache.get(it)?.imoex }.orEmpty())
+    }
+    var mcftr by remember(cacheKey) {
+        mutableStateOf(cacheKey?.let { IndexBenchmarkMemoryCache.get(it)?.mcftr }.orEmpty())
+    }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember(cacheKey) {
+        mutableStateOf(cacheKey?.let { IndexBenchmarkMemoryCache.get(it)?.error })
+    }
     var reloadKey by remember { mutableStateOf(0) }
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(from, till, reloadKey) {
-        if (from != null && till != null && ordered.size >= 2) {
+        val key = cacheKey
+        if (key != null && from != null && till != null && ordered.size >= 2) {
+            if (reloadKey == 0) {
+                val memoryCached = IndexBenchmarkMemoryCache.get(key)
+                if (memoryCached != null) {
+                    imoex = memoryCached.imoex
+                    mcftr = memoryCached.mcftr
+                    error = memoryCached.error
+                    loading = false
+                    return@LaunchedEffect
+                }
+            }
             loading = true
             error = null
             val forceReload = reloadKey > 0
@@ -60,6 +96,10 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
                 }
                 imoex = cached.first.map { MoexIndexPoint(it.dateKey, it.close) }
                 mcftr = cached.second.map { MoexIndexPoint(it.dateKey, it.close) }
+                if (imoex.isNotEmpty() && mcftr.isNotEmpty()) {
+                    IndexBenchmarkMemoryCache.put(key, IndexBenchmarkCacheEntry(imoex, mcftr, null))
+                    loading = false
+                }
                 try {
                     val fresh = withContext(Dispatchers.IO) {
                         val client = MoexIndexHistoryClient()
@@ -88,7 +128,11 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
                     if (fresh.first.isNotEmpty()) imoex = fresh.first
                     if (fresh.second.isNotEmpty()) mcftr = fresh.second
                     if (imoex.isEmpty() || mcftr.isEmpty()) {
-                        error = "MOEX ISS не вернул исторические значения одного или обоих индексов за период."
+                        val missing = buildList {
+                            if (imoex.isEmpty()) add("IMOEX")
+                            if (mcftr.isEmpty()) add("MCFTR")
+                        }
+                        error = "MOEX ISS не вернул исторические значения: ${missing.joinToString()}."
                     }
                 } catch (networkError: Exception) {
                     if (imoex.isEmpty() || mcftr.isEmpty()) throw networkError
@@ -98,6 +142,9 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
             } catch (exception: Exception) {
                 error = exception.message ?: "Не удалось загрузить историю индексов."
             } finally {
+                if (imoex.isNotEmpty() && mcftr.isNotEmpty()) {
+                    IndexBenchmarkMemoryCache.put(key, IndexBenchmarkCacheEntry(imoex, mcftr, error))
+                }
                 loading = false
             }
         }
@@ -107,7 +154,7 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
         Text("Сравнение с индексами Мосбиржи", style = MaterialTheme.typography.titleLarge)
         when {
             ordered.size < 2 -> Text(
-                "Сравнение появится после накопления двух дневных снимков портфеля.",
+                "Сравнение появится после восстановления как минимум двух торговых дней истории операций и котировок.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -143,42 +190,33 @@ fun IndexBenchmarkSection(snapshots: List<PortfolioSnapshotEntity>, dao: Portfol
 
 @Composable
 private fun BenchmarkChart(
-    snapshots: List<PortfolioSnapshotEntity>,
+    history: List<PortfolioMarketHistoryPoint>,
     imoex: List<MoexIndexPoint>,
     mcftr: List<MoexIndexPoint>
 ) {
-    val priceByDate = imoex.associate { it.date to it.value }
-    val totalByDate = mcftr.associate { it.date to it.value }
-    val navByDate = mutableMapOf<String, Double>()
-    var nav = 100.0
-    snapshots.forEachIndexed { index, snapshot ->
-        if (index > 0) {
-            val previous = snapshots[index - 1].totalValue
-            val valueBeforeEndOfDayFlow = snapshot.totalValue - snapshot.externalFlow
-            if (previous > 0.0 && valueBeforeEndOfDayFlow > 0.0) {
-                nav *= valueBeforeEndOfDayFlow / previous
-            }
-        }
-        navByDate[snapshot.dateKey] = nav
+    val priceByDate = java.util.TreeMap(imoex.associate { it.date to it.value })
+    val totalByDate = java.util.TreeMap(mcftr.associate { it.date to it.value })
+    val navByDate = history.associate { it.dateKey to it.nav }
+    val dates = history.map { it.dateKey }.filter {
+        priceByDate.floorEntry(it) != null && totalByDate.floorEntry(it) != null
     }
-    val dates = snapshots.map { it.dateKey }.filter { priceByDate.containsKey(it) && totalByDate.containsKey(it) }
     if (dates.size < 2) {
-        Text("Недостаточно общих торговых дат для корректного сравнения.", style = MaterialTheme.typography.bodySmall)
+        Text("Недостаточно данных индексов для выбранного периода.", style = MaterialTheme.typography.bodySmall)
         return
     }
     val first = dates.first()
     val p0 = navByDate[first] ?: return
-    val i0 = priceByDate[first] ?: return
-    val t0 = totalByDate[first] ?: return
+    val i0 = priceByDate.floorEntry(first)?.value ?: return
+    val t0 = totalByDate.floorEntry(first)?.value ?: return
     val portfolio = dates.map { (navByDate.getValue(it) / p0 * 100.0).toFloat() }
-    val price = dates.map { (priceByDate.getValue(it) / i0 * 100.0).toFloat() }
-    val total = dates.map { (totalByDate.getValue(it) / t0 * 100.0).toFloat() }
+    val price = dates.map { (priceByDate.floorEntry(it)!!.value / i0 * 100.0).toFloat() }
+    val total = dates.map { (totalByDate.floorEntry(it)!!.value / t0 * 100.0).toFloat() }
     val values = portfolio + price + total
     val min = values.minOrNull() ?: 100f
     val max = values.maxOrNull() ?: 100f
     val range = (max - min).takeIf { it > 0.0001f } ?: 1f
     val portfolioColor = MaterialTheme.colorScheme.primary
-    val priceColor = MaterialTheme.colorScheme.tertiary
+    val priceColor = Color(0xFFFFB74D) // Amber: clearly distinct from the blue portfolio series
     val totalColor = MaterialTheme.colorScheme.secondary
     val grid = MaterialTheme.colorScheme.outlineVariant
 
@@ -227,7 +265,7 @@ private fun BenchmarkChart(
             Text(dates.last(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            "Доходность портфеля — дневное приближение TWR: внешние денежные потоки учитываются на конец дня. Для сравнения используется только общая история всех трёх рядов.",
+            "Доходность портфеля рассчитана по восстановленной истории операций; внешние денежные потоки учитываются на конец дня. Все три ряда нормированы на первой общей торговой дате.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

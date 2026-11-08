@@ -21,7 +21,10 @@ internal data class PortfolioMarketHistoryPoint(
     val dateKey: String,
     val totalValue: Double,
     val investedCapital: Double,
-    val nav: Double
+    val nav: Double,
+    val cashValue: Double = 0.0,
+    val quantities: Map<String, Double> = emptyMap(),
+    val assetValues: Map<String, Double> = emptyMap()
 )
 
 internal data class PortfolioMarketHistoryResult(
@@ -62,12 +65,28 @@ internal suspend fun buildPortfolioMarketHistory(
                 currentPrice = rows.first().currentPrice
             )
         }
-    val boughtTickers = operations.asSequence()
-        .filter { it.operationType == "Покупка" && it.quantity > 0.0 }
+    // Historical holdings must include instruments that were fully sold and
+    // therefore no longer exist in the current assets table. Otherwise their
+    // pre-sale market value disappears while the reverse cash ledger also removes
+    // the future sale proceeds, creating an artificial NAV collapse.
+    val tradedTickers = operations.asSequence()
+        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+        .filter { it.quantity > 0.0 }
         .mapNotNull { it.ticker?.trim()?.uppercase()?.takeIf(String::isNotBlank) }
         .toSet()
-    val relevant = (assetsByTicker.keys + boughtTickers).mapNotNull { ticker ->
-        assetsByTicker[ticker]?.let { ticker to it }
+    val relevantTickers = assetsByTicker.keys + tradedTickers
+    val relevant = relevantTickers.map { ticker ->
+        ticker to (assetsByTicker[ticker] ?: AssetEntity(
+            ticker = ticker,
+            name = ticker,
+            // Broker history stores no asset type on operations. MOEX bond tickers
+            // use the SU...RMFS... convention; other supported traded instruments
+            // are quoted by MOEX in the shares market (including exchange funds).
+            assetType = if (ticker.startsWith("SU") && ticker.contains("RMFS")) "Облигация" else "Акция",
+            quantity = 0.0,
+            averagePrice = 0.0,
+            currentPrice = 0.0
+        ))
     }
     val supported = relevant.filter { (_, asset) ->
         val type = asset.assetType.lowercase()
@@ -125,6 +144,8 @@ internal suspend fun buildPortfolioMarketHistory(
     dates.forEach { date ->
         val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         var marketValue = 0.0
+        val quantitiesAtClose = linkedMapOf<String, Double>()
+        val valuesAtClose = linkedMapOf<String, Double>()
 
         supported.forEach { (ticker, asset) ->
             val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
@@ -142,15 +163,31 @@ internal suspend fun buildPortfolioMarketHistory(
             }
             if (quantityAtClose > 0.0000001) {
                 val historicalPrice = pricesByTicker[ticker]?.entries?.lastOrNull { !it.key.isAfter(date) }?.value
-                if (historicalPrice != null) marketValue += quantityAtClose * historicalPrice
+                if (historicalPrice != null) {
+                    val positionValue = quantityAtClose * historicalPrice
+                    marketValue += positionValue
+                    quantitiesAtClose[ticker] = quantityAtClose
+                    valuesAtClose[ticker] = positionValue
+                }
             }
         }
 
+        // Holdings change on trade date, but broker cash changes on settlement
+        // date. For imported trades use T+ settlement; manual/legacy operations
+        // retain operationDate as their cash-effective date.
         val futureCashEffects = orderedOperations.asSequence()
-            .filter { it.operationDate >= endOfDay }
+            .filter { cashEffectiveTimestamp(it) >= endOfDay }
             .sumOf(::portfolioOperationCashEffect)
         val cashAtClose = currentCash - futureCashEffects
-        val totalValue = marketValue + cashAtClose
+        // A trade changes economic ownership on trade date, while broker cash
+        // settles later. Include the unsettled payable/receivable in NAV so the
+        // asset and its cash leg are never double-counted between those dates.
+        val unsettledTradeAdjustment = orderedOperations.asSequence()
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .filter { it.operationDate < endOfDay }
+            .filter { (it.settlementDate ?: it.operationDate) >= endOfDay }
+            .sumOf(::portfolioOperationCashEffect)
+        val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
             .sumOf { operation ->
@@ -179,7 +216,10 @@ internal suspend fun buildPortfolioMarketHistory(
             dateKey = date.toString(),
             totalValue = totalValue,
             investedCapital = externalFlow,
-            nav = nav
+            nav = nav,
+            cashValue = cashAtClose,
+            quantities = quantitiesAtClose.toMap(),
+            assetValues = valuesAtClose.toMap()
         )
         previousValue = totalValue
         previousEndOfDay = endOfDay
@@ -197,6 +237,13 @@ internal suspend fun buildPortfolioMarketHistory(
     return PortfolioMarketHistoryResult(normalized, firstPurchase, unavailableConcurrent.toList().sorted())
 }
 
+private fun cashEffectiveTimestamp(operation: OperationEntity): Long =
+    if (operation.operationType == "Покупка" || operation.operationType == "Продажа") {
+        operation.settlementDate ?: operation.operationDate
+    } else {
+        operation.operationDate
+    }
+
 private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
     val amount = operation.quantity * operation.price
     return when (operation.operationType) {
@@ -204,7 +251,7 @@ private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
         "Вывод" -> -amount
         "Покупка" -> -(amount + operation.commission)
         "Продажа" -> amount - operation.commission
-        "Дивиденд", "Купон" -> amount - operation.commission
+        "Дивиденд", "Купон", "Амортизация", "Погашение" -> amount - operation.commission
         else -> 0.0
     }
 }
