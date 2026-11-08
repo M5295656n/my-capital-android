@@ -222,6 +222,21 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun keepsPlacementStartAndTradingStartAsSeparateCalendarDates() {
+        val details = parsePlacementDetails(
+            "Новый выпуск облигаций",
+            "Дата начала размещения: 19.11.2026. Начало торгов: 23.11.2026."
+        )
+        assertEquals(null, details.applicationDates)
+        assertTrue(details.placementStartDate!!.contains("19.11.2026"))
+        assertTrue(details.tradingStartDate!!.contains("23.11.2026"))
+        assertEquals(
+            Instant.parse("2026-11-18T21:00:00Z").toEpochMilli(),
+            parseExplicitPlacementEventDate(details)
+        )
+    }
+
+    @Test
     fun doesNotGuessYearForPlacementDatesWithoutYear() {
         val details = parsePlacementDetails(
             "Новый выпуск облигаций",
