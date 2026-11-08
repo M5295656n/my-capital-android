@@ -106,7 +106,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
     val volume = capture(Regex("объ[её]м(?: выпуска| размещения)?\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
     val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
     val coupon = capture(Regex("(?:купон(?:ная ставка)?|ставка купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
-    val applicationDates = capture(Regex("((?:сбор заявок|приём заявок|прием заявок|книга заявок)[^.;]{0,120}(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+))", RegexOption.IGNORE_CASE))
+    val applicationDates = capture(Regex("((?:сбор заявок|приём заявок|прием заявок|книга заявок)[^.;]{0,120}(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?))", RegexOption.IGNORE_CASE))
     val tradingDate = capture(Regex("(?:начало торгов|первые торги|торги начнутся)\\s*[:—-]?\\s*(\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)", RegexOption.IGNORE_CASE))
     return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate)
 }
