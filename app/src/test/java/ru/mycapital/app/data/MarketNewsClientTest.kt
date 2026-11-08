@@ -85,6 +85,46 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun findsOnlyExplicitLinksToTrustedDisclosureDocuments() {
+        val html = """
+            <a href="https://example.com/prospectus.pdf">Проспект ценных бумаг</a>
+            <a href="https://e-disclosure.ru/portal/files.aspx?id=123">Документы раскрытия информации</a>
+            <a href="https://e-disclosure.ru.attacker.test/file">Решение о выпуске</a>
+            <a href="http://e-disclosure.ru/file">Проспект</a>
+        """.trimIndent()
+        assertEquals(
+            "https://e-disclosure.ru/portal/files.aspx?id=123",
+            findOfficialPlacementDocumentUrl(html, "https://moex.com/news/123")
+        )
+        assertEquals(
+            null,
+            findOfficialPlacementDocumentUrl(
+                """<a href="https://example.com/file.pdf">Проспект ценных бумаг</a>""",
+                "https://moex.com/news/123"
+            )
+        )
+    }
+
+    @Test
+    fun mergesPlacementDetailsWithoutOverwritingKnownAnnouncementValues() {
+        val announcement = ParsedPlacementDetails(
+            placementVolume = "2 млрд руб",
+            couponRate = "12,5%"
+        )
+        val disclosure = ParsedPlacementDetails(
+            placementVolume = "3 млрд руб",
+            placementPrice = "1000 руб",
+            couponRate = "13%",
+            isin = "RU000A10ABC1"
+        )
+        val merged = mergePlacementDetails(announcement, disclosure)
+        assertEquals("2 млрд руб", merged.placementVolume)
+        assertEquals("12,5%", merged.couponRate)
+        assertEquals("1000 руб", merged.placementPrice)
+        assertEquals("RU000A10ABC1", merged.isin)
+    }
+
+    @Test
     fun extractsOnlyExplicitPlacementTerms() {
         val details = parsePlacementDetails(
             "Новый выпуск облигаций",
