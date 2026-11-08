@@ -60,6 +60,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import ru.mycapital.app.data.QuoteRefreshWorker
 import ru.mycapital.app.data.CorporateEventsWorker
+import ru.mycapital.app.data.MarketNewsWorker
+import ru.mycapital.app.data.MarketCalendarItemEntity
 import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
 import java.time.YearMonth
@@ -119,6 +121,7 @@ private fun MyCapitalApp() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    val marketCalendarItems by dao.observeMarketCalendarItems().collectAsState(initial = emptyList())
     // Portfolio history lives above navigation destinations so tab switches
     // cannot cancel its network requests or reset the chart state.
     var selectedHistoryRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
@@ -266,6 +269,9 @@ private fun MyCapitalApp() {
     val eventWorkInfos by WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("moex_events_refresh_manual")
         .collectAsState(initial = emptyList())
+    val newsWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("market_news_refresh_manual")
+        .collectAsState(initial = emptyList())
     // Show activity only while a worker is actually executing. ENQUEUED/BLOCKED can
     // persist while Android waits for network constraints and must not look like a stuck spinner.
     val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING } ||
@@ -281,6 +287,15 @@ private fun MyCapitalApp() {
             .setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "moex_corporate_events", ExistingPeriodicWorkPolicy.UPDATE, eventsPeriodic
+        )
+        val newsPeriodic = PeriodicWorkRequestBuilder<MarketNewsWorker>(6, TimeUnit.HOURS)
+            .setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "market_news_refresh", ExistingPeriodicWorkPolicy.UPDATE, newsPeriodic
+        )
+        val newsRequest = OneTimeWorkRequestBuilder<MarketNewsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "market_news_refresh_manual", ExistingWorkPolicy.KEEP, newsRequest
         )
         val snapshotPeriodic = PeriodicWorkRequestBuilder<PortfolioSnapshotWorker>(24, TimeUnit.HOURS).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -322,6 +337,26 @@ private fun MyCapitalApp() {
             )
         }
     }
+    val refreshNews: () -> Unit = {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<MarketNewsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "market_news_refresh_manual", ExistingWorkPolicy.REPLACE, request
+        )
+    }
+    val newsSyncMessage = (
+        newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
+            ?: newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
+            ?: newsWorkInfos.firstOrNull { it.state.isFinished }
+        )?.let { info ->
+            info.outputData.getString("summary") ?: info.progress.getString("summary")
+                ?: when (info.state) {
+                    androidx.work.WorkInfo.State.RUNNING -> "Обновление новостей выполняется…"
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Обновление новостей ожидает подключения к сети…"
+                    androidx.work.WorkInfo.State.FAILED -> "Не удалось обновить новости."
+                    else -> null
+                }
+        }
     val eventSyncMessage = (
         eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
             ?: eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
@@ -398,7 +433,7 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, marketCalendarItems, refreshNews, newsSyncMessage, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -2776,6 +2811,9 @@ private fun AnalyticsScreen(
     cashBalance: Double,
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
+    marketCalendarItems: List<MarketCalendarItemEntity>,
+    onRefreshNews: () -> Unit,
+    newsSyncMessage: String?,
     snapshots: List<PortfolioSnapshotEntity>,
     compositionSnapshots: List<ru.mycapital.app.data.PortfolioCompositionSnapshotEntity>,
     accounts: List<BrokerAccountEntity>,
@@ -2873,6 +2911,14 @@ private fun AnalyticsScreen(
                 marketHistory = analyticsMarketHistory,
                 historyLoading = analyticsHistoryLoading,
                 onRefreshHistory = { analyticsHistoryRefresh++ }
+            )
+        }
+        item {
+            MarketCalendarSection(
+                news = marketCalendarItems,
+                payouts = analyticsPayouts,
+                onRefreshNews = onRefreshNews,
+                newsSyncMessage = newsSyncMessage
             )
         }
         item {
