@@ -88,13 +88,15 @@ class MarketNewsClientTest {
     fun extractsOnlyExplicitPlacementTerms() {
         val details = parsePlacementDetails(
             "Новый выпуск облигаций",
-            "Эмитент: ТестФинанс. Объём выпуска: 2 млрд руб. Цена размещения: 1000 руб. Купонная ставка: 12,5%. Сбор заявок: 12 ноября 2026."
+            "Эмитент: ТестФинанс. Объём выпуска: 2 млрд руб. Цена размещения: 1000 руб. Купонная ставка: 12,5%. Размер купона: 100 руб. ISIN: RU000A10ABC1. Сбор заявок: 12 ноября 2026."
         )
         assertEquals("ТестФинанс", details.issuer)
         assertEquals("Облигации", details.instrumentType)
         assertEquals("2 млрд руб", details.placementVolume)
         assertEquals("1000 руб", details.placementPrice)
         assertEquals("12,5%", details.couponRate)
+        assertEquals("100 руб", details.couponAmount)
+        assertEquals("RU000A10ABC1", details.isin)
         assertTrue(details.applicationDates!!.contains("12 ноября 2026"))
         val unknown = parsePlacementDetails("Объявлено размещение", "Подробности будут позднее.")
         assertEquals(null, unknown.placementVolume)
