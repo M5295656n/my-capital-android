@@ -125,6 +125,31 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun discoversPdfBehindDisclosureLandingPage() {
+        val html = """
+            <html><body>
+              <a href="https://e-disclosure.ru/portal/files/file.pdf">Скачать проспект эмиссии</a>
+              <a href="https://example.com/file.pdf">Проспект выпуска</a>
+              <a href="http://e-disclosure.ru/portal/files/terms.pdf">Условия выпуска</a>
+              <a href="https://e-disclosure.ru/portal/other">Главная</a>
+            </body></html>
+        """.trimIndent()
+        val urls = findOfficialPlacementDocumentUrls(html, "https://e-disclosure.ru/portal/disclosure")
+        assertEquals(listOf("https://e-disclosure.ru/portal/files/file.pdf"), urls)
+    }
+
+    @Test
+    fun findsExplicitDocumentPageLinksOnDisclosurePage() {
+        val html = """
+            <a href="/portal/files/decision">Решение о выпуске</a>
+            <a href="/portal/files/terms">Условия размещения</a>
+        """.trimIndent()
+        val urls = findOfficialPlacementDocumentUrls(html, "https://e-disclosure.ru/portal/issuer")
+        assertEquals(2, urls.size)
+        assertTrue(urls.all { it.startsWith("https://e-disclosure.ru/") })
+    }
+
+    @Test
     fun rejectsNonPdfBytesBeforeCallingPdfParser() {
         assertEquals(null, extractPlacementTextFromPdf("not a pdf".toByteArray()))
     }
