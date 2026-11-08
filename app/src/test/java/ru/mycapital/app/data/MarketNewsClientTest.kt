@@ -125,6 +125,11 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun rejectsNonPdfBytesBeforeCallingPdfParser() {
+        assertEquals(null, extractPlacementTextFromPdf("not a pdf".toByteArray()))
+    }
+
+    @Test
     fun extractsPlacementTermsFromExplicitHtmlTableLabels() {
         val html = """
             <table>
