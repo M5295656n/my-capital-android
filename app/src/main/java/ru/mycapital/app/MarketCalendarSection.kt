@@ -98,6 +98,7 @@ internal fun MarketCalendarSection(
                     it.couponAmount?.let { value -> add("Размер купона: $value") }
                     it.isin?.let { value -> add("ISIN: $value") }
                     it.applicationDates?.let { value -> add("Сбор заявок: $value") }
+                    it.placementStartDate?.let { value -> add("Начало размещения: $value") }
                     it.tradingStartDate?.let { value -> add("Начало торгов: $value") }
                 }
             )
