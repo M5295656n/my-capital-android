@@ -56,7 +56,7 @@ private object IndexBenchmarkMemoryCache {
 }
 
 @Composable
-fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, dao: PortfolioDao) {
+internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, dao: PortfolioDao) {
     val ordered = remember(history) { history.sortedBy { it.dateKey } }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
