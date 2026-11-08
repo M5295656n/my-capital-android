@@ -92,6 +92,7 @@ private enum class Screen(val title: String, val icon: androidx.compose.ui.graph
     Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
+    Events("События", Icons.Default.EventNote),
     More("Ещё", Icons.Default.MoreHoriz),
     Accounts("Счета", Icons.Default.AccountBalance),
     Operations("Операции", Icons.Default.SwapHoriz)
@@ -406,7 +407,7 @@ private fun MyCapitalApp() {
                     contentColor = androidx.compose.ui.graphics.Color(0xFFAAB9D0),
                     tonalElevation = 0.dp
                 ) {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
+                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.Events, Screen.More).forEach { screen ->
                         NavigationBarItem(
                             selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
@@ -433,7 +434,8 @@ private fun MyCapitalApp() {
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, marketCalendarItems, refreshNews, newsSyncMessage, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
+                Screen.Events -> EventsScreen(assets, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -2805,15 +2807,107 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
+private fun EventsScreen(
+    assets: List<AssetEntity>,
+    payouts: List<PayoutEntity>,
+    marketCalendarItems: List<MarketCalendarItemEntity>,
+    accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
+    accountCash: List<BrokerAccountCashEntity>,
+    onRefreshNews: () -> Unit,
+    newsSyncMessage: String?,
+    modifier: Modifier = Modifier
+) {
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
+    val selectedAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets
+        else accountAssets.asSequence()
+            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
+            .sortedBy { it.assetType + it.ticker }
+            .toList()
+    }
+    val selectedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
+        selectedAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }.let { total ->
+            // The all-account cash value is derived from the portfolio cash balance below.
+            total
+        }
+    } else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val selectedTickers = remember(accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+        else accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    val selectedPayouts = remember(payouts, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
+        else payouts.filter { payout ->
+            val payoutAccountId = historyAccountId(payout.sourceKey)
+            if (payoutAccountId != null) payoutAccountId == selectedAccountId
+            else payout.ticker.uppercase() in selectedTickers
+        }
+    }
+    val selectedNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) marketCalendarItems
+        else marketCalendarItems.filter { item ->
+            item.category == "ECONOMY" || item.relatedTickers.isBlank() ||
+                item.relatedTickers.split(",").any { it.trim().uppercase() in selectedTickers }
+        }
+    }
+    val selectedAccountLabel = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Все счета"
+        else accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName ?: "Счёт"
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("События и новости", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                if (accounts.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedAccountLabel, onValueChange = {}, readOnly = true,
+                            label = { Text("Брокерский счёт") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Все счета") }, onClick = {
+                                selectedAccountId = ALL_HISTORY_ACCOUNTS
+                                accountMenuExpanded = false
+                            })
+                            accounts.forEach { account ->
+                                DropdownMenuItem(text = { Text(account.displayName) }, onClick = {
+                                    selectedAccountId = account.accountId
+                                    accountMenuExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            MarketCalendarSection(
+                news = selectedNews,
+                payouts = selectedPayouts,
+                onRefreshNews = onRefreshNews,
+                newsSyncMessage = newsSyncMessage,
+                portfolioAssets = selectedAssets,
+                portfolioCash = selectedCash
+            )
+        }
+    }
+}
+
+@Composable
 private fun AnalyticsScreen(
     assets: List<AssetEntity>,
     marketValue: Double,
     cashBalance: Double,
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
-    marketCalendarItems: List<MarketCalendarItemEntity>,
-    onRefreshNews: () -> Unit,
-    newsSyncMessage: String?,
     snapshots: List<PortfolioSnapshotEntity>,
     compositionSnapshots: List<ru.mycapital.app.data.PortfolioCompositionSnapshotEntity>,
     accounts: List<BrokerAccountEntity>,
@@ -2885,13 +2979,6 @@ private fun AnalyticsScreen(
             else payout.ticker.uppercase() in selectedTickers
         }
     }
-    val analyticsNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
-        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) marketCalendarItems
-        else marketCalendarItems.filter { item ->
-            item.category == "ECONOMY" || item.relatedTickers.isBlank() ||
-                item.relatedTickers.split(",").any { it.trim().uppercase() in selectedTickers }
-        }
-    }
     val invested = analyticsAssets.sumOf { it.quantity * it.averagePrice }
     val unrealized = analyticsMarketValue - invested
     val realizedResult = calculateRealizedTradingResult(analyticsOperations)
@@ -2918,16 +3005,6 @@ private fun AnalyticsScreen(
                 marketHistory = analyticsMarketHistory,
                 historyLoading = analyticsHistoryLoading,
                 onRefreshHistory = { analyticsHistoryRefresh++ }
-            )
-        }
-        item {
-            MarketCalendarSection(
-                news = analyticsNews,
-                payouts = analyticsPayouts,
-                onRefreshNews = onRefreshNews,
-                newsSyncMessage = newsSyncMessage,
-                portfolioAssets = analyticsAssets,
-                portfolioCash = analyticsCash
             )
         }
         item {
