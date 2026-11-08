@@ -179,7 +179,15 @@ internal suspend fun buildPortfolioMarketHistory(
             .filter { cashEffectiveTimestamp(it) >= endOfDay }
             .sumOf(::portfolioOperationCashEffect)
         val cashAtClose = currentCash - futureCashEffects
-        val totalValue = marketValue + cashAtClose
+        // A trade changes economic ownership on trade date, while broker cash
+        // settles later. Include the unsettled payable/receivable in NAV so the
+        // asset and its cash leg are never double-counted between those dates.
+        val unsettledTradeAdjustment = orderedOperations.asSequence()
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .filter { it.operationDate < endOfDay }
+            .filter { (it.settlementDate ?: it.operationDate) >= endOfDay }
+            .sumOf(::portfolioOperationCashEffect)
+        val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
             .sumOf { operation ->
