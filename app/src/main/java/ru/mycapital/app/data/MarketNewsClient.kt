@@ -226,7 +226,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val tradingDate = capture(Regex(
-        "(?:дата\\s+начала\\s+торгов|начало\\s+торгов|торги\\s+начнутся|допуск\\s+к\\s+торгам)\\s*[:—-]?\\s*($explicitDate)",
+        "(?:дата\\s+начала\\s+торгов|начало\\s+торгов|дата\\s+допуска\\s+к\\s+торгам|допуск\\s+к\\s+торгам|торги\\s+начнутся)\\s*[:—-]?\\s*($explicitDate)",
         RegexOption.IGNORE_CASE
     ))
     return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, placementStartDate, tradingDate, isin, couponAmount)
