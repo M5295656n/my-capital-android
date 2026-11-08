@@ -2808,7 +2808,8 @@ private fun AnalyticsScreen(
     }
     var analyticsMarketHistory by remember { mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList())) }
     var analyticsHistoryLoading by remember { mutableStateOf(false) }
-    LaunchedEffect(analyticsAssets, analyticsOperations, analyticsCash, selectedAccountId) {
+    var analyticsHistoryRefresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(analyticsAssets, analyticsOperations, analyticsCash, selectedAccountId, analyticsHistoryRefresh) {
         analyticsHistoryLoading = true
         try {
             analyticsMarketHistory = withContext(Dispatchers.IO) {
@@ -2863,7 +2864,8 @@ private fun AnalyticsScreen(
                 onAccountSelected = { selectedAccountId = it },
                 compositionSnapshots = compositionSnapshots,
                 marketHistory = analyticsMarketHistory,
-                historyLoading = analyticsHistoryLoading
+                historyLoading = analyticsHistoryLoading,
+                onRefreshHistory = { analyticsHistoryRefresh++ }
             )
         }
         item {
