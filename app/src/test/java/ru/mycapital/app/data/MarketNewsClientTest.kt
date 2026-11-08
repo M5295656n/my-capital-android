@@ -26,6 +26,24 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun classifiesEquityAndBondPlacementsSeparatelyFromGeneralNews() {
+        val placementCases = listOf(
+            "Компания объявила IPO" to "",
+            "Старт сбора заявок на облигации" to "Новый выпуск биржевых облигаций",
+            "Цена размещения акций определена" to "",
+            "Начало торгов акциями" to "",
+            "Объявлена дополнительная эмиссия" to ""
+        )
+        placementCases.forEach { (title, summary) ->
+            assertEquals("NEW_ISSUES", classifyMarketNews(title, summary, "COMPANIES"))
+        }
+        assertEquals(
+            "COMPANIES",
+            classifyMarketNews("Совет директоров утвердил дивиденды", "", "COMPANIES")
+        )
+    }
+
+    @Test
     fun doesNotMatchTickerInsideAnotherWord() {
         assertTrue(matchPortfolioTickers("SBERBANK and LKOH", setOf("SBER", "LKOH")) == listOf("LKOH"))
     }
