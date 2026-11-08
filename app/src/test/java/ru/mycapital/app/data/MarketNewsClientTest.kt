@@ -291,6 +291,39 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun assessesNewIssuesWithoutInventingPriceDirection() {
+        val result = assessMarketNews("Новое размещение облигаций", "Условия будут опубликованы позднее.", "NEW_ISSUES", emptyList())
+        assertEquals("HIGH", result.importance)
+        assertTrue(result.assessment.contains("не указывает направление цены"))
+        assertTrue(result.assessment.contains("неуказанные условия считаются неизвестными"))
+        assertTrue(result.confidence.contains("LOW"))
+    }
+
+    @Test
+    fun assessesKeyRateEventAsExpectationDependent() {
+        val result = assessMarketNews("Заседание по ключевой ставке", "", "ECONOMY", emptyList())
+        assertEquals("HIGH", result.importance)
+        assertTrue(result.assessment.contains("ожидания"))
+        assertTrue(result.assessment.contains("прогноз направления не делается"))
+    }
+
+    @Test
+    fun linksMaterialCompanyNewsToPortfolioTickerWithCaveat() {
+        val result = assessMarketNews("Сбербанк сообщил финансовые результаты", "", "COMPANIES", listOf("SBER"))
+        assertEquals("HIGH", result.importance)
+        assertTrue(result.assessment.contains("SBER"))
+        assertTrue(result.assessment.contains("не подтверждает изменение справедливой стоимости"))
+    }
+
+    @Test
+    fun doesNotOverstateGenericTickerMention() {
+        val result = assessMarketNews("Компания упомянула SBER в обзоре", "", "COMPANIES", listOf("SBER"))
+        assertEquals("NORMAL", result.importance)
+        assertEquals("LOW", result.confidence)
+        assertTrue(result.assessment.contains("требует проверки контекста"))
+    }
+
+    @Test
     fun doesNotMatchTickerInsideAnotherWord() {
         assertTrue(matchPortfolioTickers("SBERBANK and LKOH", setOf("SBER", "LKOH")) == listOf("LKOH"))
     }
