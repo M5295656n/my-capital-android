@@ -123,22 +123,20 @@ internal fun parseExplicitPlacementEventDate(
         "сентября" to 9, "октября" to 10, "ноября" to 11, "декабря" to 12
     )
     for (candidate in candidates) {
-        val numeric = Regex("""(\\d{1,2})[. ](\\d{1,2})[. ](\\d{4})""").find(candidate)
-        val date = if (numeric != null) {
-            runCatching {
+        val numeric = Regex("""(\d{1,2})[. ](\d{1,2})[. ](\d{4})""").find(candidate)
+        val textual = Regex("""(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})""", RegexOption.IGNORE_CASE).find(candidate)
+        val date = when {
+            numeric != null -> runCatching {
                 LocalDate.of(numeric.groupValues[3].toInt(), numeric.groupValues[2].toInt(), numeric.groupValues[1].toInt())
             }.getOrNull()
-        } else {
-            val textual = Regex("""(\\d{1,2})\\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})""", RegexOption.IGNORE_CASE).find(candidate)
-            textual?.let {
-                runCatching {
-                    LocalDate.of(
-                        it.groupValues[3].toInt(),
-                        monthNumbers.getValue(it.groupValues[2].lowercase(Locale.ROOT)),
-                        it.groupValues[1].toInt()
-                    )
-                }.getOrNull()
-            }
+            textual != null -> runCatching {
+                LocalDate.of(
+                    textual.groupValues[3].toInt(),
+                    monthNumbers.getValue(textual.groupValues[2].lowercase(Locale.ROOT)),
+                    textual.groupValues[1].toInt()
+                )
+            }.getOrNull()
+            else -> null
         }
         if (date != null) return date.atStartOfDay(zone).toInstant().toEpochMilli()
     }
