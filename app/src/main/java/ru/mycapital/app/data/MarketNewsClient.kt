@@ -27,7 +27,14 @@ internal data class ParsedMarketNews(
     val summary: String,
     val sourceName: String,
     val sourceUrl: String,
-    val relatedTickers: List<String>
+    val relatedTickers: List<String>,
+    val issuer: String? = null,
+    val instrumentType: String? = null,
+    val placementVolume: String? = null,
+    val placementPrice: String? = null,
+    val couponRate: String? = null,
+    val applicationDates: String? = null,
+    val tradingStartDate: String? = null
 )
 
 internal val defaultMarketNewsFeeds = listOf(
@@ -71,6 +78,36 @@ internal fun parseCbrKeyRateCalendar(
             sourceUrl = "https://www.cbr.ru/dkp/cal_mp"
         )
     }.distinctBy { it.sourceKey }.sortedBy { it.eventDate }
+}
+
+
+internal data class ParsedPlacementDetails(
+    val issuer: String? = null,
+    val instrumentType: String? = null,
+    val placementVolume: String? = null,
+    val placementPrice: String? = null,
+    val couponRate: String? = null,
+    val applicationDates: String? = null,
+    val tradingStartDate: String? = null
+)
+
+internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacementDetails {
+    val text = "$title $summary".replace(Regex("\\s+"), " ")
+    fun capture(pattern: Regex): String? = pattern.find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+    val issuer = capture(Regex("(?:эмитент|компания)\\s*[:—-]\\s*([^.;,]{2,100})", RegexOption.IGNORE_CASE))
+    val instrumentType = when {
+        Regex("\\bIPO\\b|первичн\\w* размещени\\w* акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (IPO)"
+        Regex("\\bSPO\\b|дополнительн\\w* эмисс", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции (SPO / допэмиссия)"
+        Regex("облигац", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Облигации"
+        Regex("акци", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "Акции"
+        else -> null
+    }
+    val volume = capture(Regex("(?:объ[её]м|объ[её]м выпуска|объ[её]м размещения)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:млн|млрд|тыс)?\\s*(?:₽|руб(?:лей)?|шт\\.?|акций|облигаций)?)", RegexOption.IGNORE_CASE))
+    val price = capture(Regex("(?:цена размещения|цена предложения|ценовой диапазон|цена)\\s*[:—-]?\\s*([0-9][0-9\\s.,]*(?:[-–—][0-9][0-9\\s.,]*)?\\s*(?:₽|руб(?:лей)?))", RegexOption.IGNORE_CASE))
+    val coupon = capture(Regex("(?:купон(?:ная ставка)?|ставка купона)\\s*[:—-]?\\s*([0-9]+(?:[.,][0-9]+)?\\s*%)", RegexOption.IGNORE_CASE))
+    val applicationDates = capture(Regex("((?:сбор заявок|приём заявок|прием заявок|книга заявок)[^.;]{0,120}(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+))", RegexOption.IGNORE_CASE))
+    val tradingDate = capture(Regex("(?:начало торгов|первые торги|торги начнутся)\\s*[:—-]?\\s*(\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{2,4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)", RegexOption.IGNORE_CASE))
+    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, tradingDate)
 }
 
 internal fun classifyMarketNews(title: String, summary: String, fallbackCategory: String): String {
@@ -142,7 +179,14 @@ internal fun parseMarketNewsRss(
             summary = description.take(1200),
             sourceName = sourceName,
             sourceUrl = url,
-            relatedTickers = matchPortfolioTickers("$title $description", portfolioTickers)
+            relatedTickers = matchPortfolioTickers("$title $description", portfolioTickers),
+            issuer = parsePlacementDetails(title, description).issuer,
+            instrumentType = parsePlacementDetails(title, description).instrumentType,
+            placementVolume = parsePlacementDetails(title, description).placementVolume,
+            placementPrice = parsePlacementDetails(title, description).placementPrice,
+            couponRate = parsePlacementDetails(title, description).couponRate,
+            applicationDates = parsePlacementDetails(title, description).applicationDates,
+            tradingStartDate = parsePlacementDetails(title, description).tradingStartDate
         )
     }.distinctBy { it.sourceKey }.sortedByDescending { it.publishedAt }
 }
