@@ -246,4 +246,63 @@ class MarketNewsClientTest {
         """.trimIndent()
         assertTrue(parseMarketNewsRss(xml, "Тест", "ECONOMY", emptySet(), now).isEmpty())
     }
+
+
+    @Test
+    fun recognizesPlacementTermAliasesOnlyWhenExplicitlyLabeled() {
+        val details = parsePlacementDetails(
+            "Новый выпуск облигаций",
+            "Полное наименование эмитента: АО Тест. Общий объём размещения: 3 млрд руб. " +
+                "Цена размещения одной облигации: 1000 руб. " +
+                "Процентная ставка по купону: 13,4%. " +
+                "Размер купонного дохода: 42,50 руб. " +
+                "Дата сбора заявок: 15 ноября 2026. " +
+                "Допуск к торгам: 20 ноября 2026."
+        )
+        assertEquals("АО Тест", details.issuer)
+        assertEquals("3 млрд руб", details.placementVolume)
+        assertEquals("1000 руб", details.placementPrice)
+        assertEquals("13,4%", details.couponRate)
+        assertEquals("42,50 руб", details.couponAmount)
+        assertTrue(details.applicationDates!!.contains("15 ноября 2026"))
+        assertTrue(details.tradingStartDate!!.contains("20 ноября 2026"))
+    }
+
+    @Test
+    fun recognizesHtmlDisclosureLabelAliases() {
+        val html = """
+            <table>
+              <tr><th>Полное наименование эмитента</th><td>ПАО Пример</td></tr>
+              <tr><th>Количество размещаемых ценных бумаг</th><td>1 000 000 шт.</td></tr>
+              <tr><th>Цена предложения</th><td>99,5% от номинала</td></tr>
+              <tr><th>Процентная ставка по купону</th><td>11,8% годовых</td></tr>
+              <tr><th>Сумма выплаты на одну облигацию</th><td>29,45 руб.</td></tr>
+              <tr><th>Период букбилдинга</th><td>16 ноября 2026</td></tr>
+              <tr><th>Дата допуска к торгам</th><td>23 ноября 2026</td></tr>
+            </table>
+        """.trimIndent()
+        val details = parsePlacementDetailsFromHtml(html, "Размещение облигаций")
+        assertEquals("ПАО Пример", details.issuer)
+        assertEquals("1 000 000 шт.", details.placementVolume)
+        assertEquals("99,5% от номинала", details.placementPrice)
+        assertEquals("11,8%", details.couponRate)
+        assertEquals("29,45 руб.", details.couponAmount)
+        assertTrue(details.applicationDates!!.contains("16 ноября 2026"))
+        assertTrue(details.tradingStartDate!!.contains("23 ноября 2026"))
+    }
+
+    @Test
+    fun doesNotInferMissingPlacementValuesOrDatesFromNarrative() {
+        val details = parsePlacementDetails(
+            "Компания готовит размещение облигаций",
+            "Объём выпуска составит значительную сумму. Цена будет объявлена позднее. " +
+                "Купон может быть привлекательным. Сбор заявок ожидается в ноябре."
+        )
+        assertEquals(null, details.placementVolume)
+        assertEquals(null, details.placementPrice)
+        assertEquals(null, details.couponRate)
+        assertEquals(null, details.couponAmount)
+        assertEquals(null, details.applicationDates)
+        assertEquals(null, details.tradingStartDate)
+    }
 }
