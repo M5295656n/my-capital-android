@@ -178,7 +178,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
     val explicitDate = "(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)"
     val applicationDates = capture(Regex(
-        "((?:дата\\s+сбора\\s+заявок|период\\s+букбилдинга|сбор\\s+заявок|при[её]м\\s+заявок|книга\\s+заявок)[^.;]{0,120}?$explicitDate)",
+        "((?:дата\\s+сбора\\s+заявок|период\\s+букбилдинга|дата\\s+начала\\s+размещения|размещение\\s+с|сбор\\s+заявок|при[её]м\\s+заявок|книга\\s+заявок)[^.;]{0,120}?$explicitDate)",
         RegexOption.IGNORE_CASE
     ))
     val tradingDate = capture(Regex(
