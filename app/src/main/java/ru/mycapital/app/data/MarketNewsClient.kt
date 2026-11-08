@@ -260,16 +260,24 @@ internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: P
     )
 }
 
-internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): String? {
+internal fun findOfficialPlacementDocumentUrl(html: String, baseUrl: String): String? =
+    findOfficialPlacementDocumentUrls(html, baseUrl).firstOrNull()
+
+internal fun findOfficialPlacementDocumentUrls(html: String, baseUrl: String): List<String> {
     val document = Jsoup.parse(html, baseUrl)
-    val relevantLinkText = Regex("проспект|решение о выпуске|документарн\\w*|раскрыти\\w* информаци|услови\\w* размещени|эмиссионн\\w* документ", RegexOption.IGNORE_CASE)
-    return document.select("a[href]").firstNotNullOfOrNull { anchor ->
-        if (!relevantLinkText.containsMatchIn(anchor.text())) return@firstNotNullOfOrNull null
-        val url = runCatching { anchor.absUrl("href").takeIf { it.isNotBlank() }?.let { okhttp3.HttpUrl.get(it) } }.getOrNull()
-            ?: return@firstNotNullOfOrNull null
-        val allowedHost = url.host == "e-disclosure.ru" || url.host.endsWith(".e-disclosure.ru")
-        if (url.scheme == "https" && allowedHost) url.toString() else null
-    }
+    val relevantLinkText = Regex(
+        "проспект|решение о выпуске|документарн\\w*|раскрыти\\w* информаци|услови\\w* размещени|эмиссионн\\w* документ|документы выпуска|параметры выпуска|дополнительные материалы|скачать документ",
+        RegexOption.IGNORE_CASE
+    )
+    return document.select("a[href]").mapNotNull { anchor ->
+        val href = anchor.absUrl("href")
+        val url = runCatching { okhttp3.HttpUrl.get(href) }.getOrNull() ?: return@mapNotNull null
+        val hostAllowed = url.host == "e-disclosure.ru" || url.host.endsWith(".e-disclosure.ru")
+        val pathLooksDocument = url.encodedPath.endsWith(".pdf", ignoreCase = true)
+        if (url.scheme == "https" && hostAllowed &&
+            (relevantLinkText.containsMatchIn(anchor.text()) || pathLooksDocument)
+        ) url.toString() else null
+    }.distinct().take(5)
 }
 
 internal fun classifyMarketNews(title: String, summary: String, fallbackCategory: String): String {
@@ -393,7 +401,7 @@ class MarketNewsClient {
         }
     }
 
-    private fun fetchOfficialPlacementDocument(url: String, title: String): ParsedPlacementDetails? {
+    private fun fetchOfficialPlacementDocument(url: String, title: String, allowNestedDocument: Boolean = true): ParsedPlacementDetails? {
         val parsed = runCatching { okhttp3.HttpUrl.get(url) }.getOrNull() ?: return null
         if (parsed.scheme != "https" || !(parsed.host == "e-disclosure.ru" || parsed.host.endsWith(".e-disclosure.ru"))) return null
         return runCatching {
@@ -419,10 +427,16 @@ class MarketNewsClient {
                     val html = String(bytes, Charsets.UTF_8)
                     val document = Jsoup.parse(html, url)
                     val text = document.text().replace(Regex("\\s+"), " ").take(16000)
-                    mergePlacementDetails(
+                    val pageDetails = mergePlacementDetails(
                         parsePlacementDetails(title, text),
                         parsePlacementDetailsFromHtml(html, title)
                     )
+                    if (allowNestedDocument) {
+                        val nestedUrl = findOfficialPlacementDocumentUrls(html, url)
+                            .firstOrNull { it != url }
+                        val nestedDetails = nestedUrl?.let { fetchOfficialPlacementDocument(it, title, false) }
+                        mergePlacementDetails(pageDetails, nestedDetails)
+                    } else pageDetails
                 }
             }
         }.getOrNull()
