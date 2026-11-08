@@ -44,6 +44,7 @@ internal suspend fun buildPortfolioMarketHistory(
     currentCash: Double,
     range: PortfolioHistoryRange,
     throughDate: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow")),
+    includeInternalTransfers: Boolean = false,
     priceLoader: suspend (String, String, LocalDate, LocalDate) -> List<ru.mycapital.app.data.MoexDailyClose> = { ticker, type, from, till ->
         MoexSecurityHistoryClient().getDailyCloses(ticker, type, from, till)
     }
@@ -177,7 +178,7 @@ internal suspend fun buildPortfolioMarketHistory(
         // retain operationDate as their cash-effective date.
         val futureCashEffects = orderedOperations.asSequence()
             .filter { cashEffectiveTimestamp(it) >= endOfDay }
-            .sumOf(::portfolioOperationCashEffect)
+            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers) }
         val cashAtClose = currentCash - futureCashEffects
         // A trade changes economic ownership on trade date, while broker cash
         // settles later. Include the unsettled payable/receivable in NAV so the
@@ -186,7 +187,7 @@ internal suspend fun buildPortfolioMarketHistory(
             .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
             .filter { it.operationDate < endOfDay }
             .filter { (it.settlementDate ?: it.operationDate) >= endOfDay }
-            .sumOf(::portfolioOperationCashEffect)
+            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers) }
         val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
@@ -244,11 +245,16 @@ private fun cashEffectiveTimestamp(operation: OperationEntity): Long =
         operation.operationDate
     }
 
-private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
+private fun portfolioOperationCashEffect(
+    operation: OperationEntity,
+    includeInternalTransfers: Boolean
+): Double {
     val amount = operation.quantity * operation.price
     return when (operation.operationType) {
         "Пополнение" -> amount
         "Вывод" -> -amount
+        "Внутренний перевод входящий" -> if (includeInternalTransfers) amount else 0.0
+        "Внутренний перевод исходящий" -> if (includeInternalTransfers) -amount else 0.0
         "Покупка" -> -(amount + operation.commission)
         "Продажа" -> amount - operation.commission
         "Дивиденд", "Купон", "Амортизация", "Погашение" -> amount - operation.commission
