@@ -54,6 +54,7 @@ private data class CalendarDisplayItem(
     val description: String,
     val source: String,
     val url: String?,
+    val detailsUrl: String?,
     val tickers: String,
     val isPayout: Boolean,
     val placementDetails: List<String> = emptyList()
@@ -83,6 +84,7 @@ internal fun MarketCalendarSection(
                 description = it.summary,
                 source = it.sourceName,
                 url = it.sourceUrl,
+                detailsUrl = it.detailsSourceUrl,
                 tickers = it.relatedTickers,
                 isPayout = false,
                 placementDetails = buildList {
@@ -93,6 +95,8 @@ internal fun MarketCalendarSection(
                         add("Цена размещения: ${it.placementPrice ?: "Не сообщено"}")
                         add("Купон: ${it.couponRate ?: "Не сообщено"}")
                     }
+                    it.couponAmount?.let { value -> add("Размер купона: $value") }
+                    it.isin?.let { value -> add("ISIN: $value") }
                     it.applicationDates?.let { value -> add("Сбор заявок: $value") }
                     it.tradingStartDate?.let { value -> add("Начало торгов: $value") }
                 }
@@ -110,6 +114,7 @@ internal fun MarketCalendarSection(
                 description = "Ожидаемая сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
                 source = payout.sourceName ?: "Портфель",
                 url = null,
+                detailsUrl = null,
                 tickers = payout.ticker,
                 isPayout = true
             )
@@ -236,6 +241,12 @@ internal fun MarketCalendarSection(
                             }
                         }
                         if (!item.isPayout) {
+                            if (!item.detailsUrl.isNullOrBlank() && item.detailsUrl != item.url) {
+                                Row(Modifier.clickable { runCatching { uriHandler.openUri(item.detailsUrl) } }, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Открыть условия выпуска", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.padding(start = 4.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                             Text("Оценка влияния будет добавлена после анализа содержания новости; автоматический прогноз цены не формируется.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
