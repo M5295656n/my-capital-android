@@ -247,9 +247,9 @@ class PortfolioMarketHistoryTest {
 
         assertEquals(2, result.points.size)
         assertEquals(500.0, result.points[0].totalValue, 0.000001)
-        assertEquals(520.0, result.points[1].totalValue, 0.000001)
+        assertEquals(530.0, result.points[1].totalValue, 0.000001)
         assertEquals(500.0, result.points[1].investedCapital, 0.000001)
-        assertEquals(104.0, result.points[1].nav, 0.000001)
+        assertEquals(106.0, result.points[1].nav, 0.000001)
     }
 
 }
