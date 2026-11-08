@@ -60,10 +60,8 @@ private data class CalendarDisplayItem(
     val placementDetails: List<String> = emptyList(),
     val impactAssessment: String = "",
     val impactHorizon: String = "",
-    val confidence: String = "",
     val importance: String = "NORMAL",
     val publishedAt: Long? = null,
-    val updatedAt: Long? = null,
     val portfolioExposure: List<String> = emptyList()
 )
 
@@ -93,8 +91,8 @@ internal fun MarketCalendarSection(
                 key = it.sourceKey,
                 date = java.time.Instant.ofEpochMilli(it.eventDate).atZone(zone).toLocalDate(),
                 category = when (it.category) { "ECONOMY" -> "Экономика"; "NEW_ISSUES" -> "Новые размещения"; else -> "Компании" },
-                title = it.title,
-                description = it.summary,
+                title = org.jsoup.parser.Parser.unescapeEntities(it.title, false),
+                description = org.jsoup.parser.Parser.unescapeEntities(it.summary, false),
                 source = it.sourceName,
                 url = it.sourceUrl,
                 detailsUrl = it.detailsSourceUrl,
@@ -102,10 +100,8 @@ internal fun MarketCalendarSection(
                 isPayout = false,
                 impactAssessment = it.impactAssessment,
                 impactHorizon = it.impactHorizon,
-                confidence = it.confidence,
                 importance = it.importance,
                 publishedAt = it.publishedAt,
-                updatedAt = it.updatedAt,
                 portfolioExposure = it.relatedTickers.split(",").map { ticker -> ticker.trim().uppercase() }
                     .filter { ticker -> ticker.isNotBlank() }
                     .distinct()
@@ -117,16 +113,23 @@ internal fun MarketCalendarSection(
                             (share?.let { " · ${String.format(Locale("ru", "RU"), "%.2f%%", it)} портфеля" } ?: "")
                     },
                 placementDetails = buildList {
-                    it.issuer?.let { value -> add("Эмитент: $value") }
+                    it.issuer?.let { value -> add("Эмитент: ${org.jsoup.parser.Parser.unescapeEntities(value, false)}") }
                     it.instrumentType?.let { value -> add("Инструмент: $value") }
                     if (it.category == "NEW_ISSUES") {
                         add("Объём: ${it.placementVolume ?: "Не сообщено"}")
                         add("Цена размещения: ${it.placementPrice ?: "Не сообщено"}")
+                        val instrument = it.instrumentType.orEmpty()
                         val couponLabel = when {
-                            it.instrumentType?.contains("акци", ignoreCase = true) == true -> "Не применяется"
-                            else -> it.couponRate ?: "Не сообщено"
+                            instrument.contains("акци", ignoreCase = true) -> "Не применяется"
+                            instrument.contains("структурн", ignoreCase = true) && instrument.contains("дисконт", ignoreCase = true) -> "Обычный купон не предусмотрен; доход определяется условиями выпуска"
+                            it.couponRate != null -> it.couponRate
+                            else -> "Не опубликован"
                         }
                         add("Купон: $couponLabel")
+                        if (instrument.contains("облигац", ignoreCase = true)) {
+                            add("Рейтинг выпуска: Нет данных в опубликованных документах")
+                            add("Рейтинг эмитента: Нет данных в карточке события")
+                        }
                     }
                     it.couponAmount?.let { value -> add("Размер купона: $value") }
                     it.isin?.let { value -> add("ISIN: $value") }
@@ -266,9 +269,6 @@ internal fun MarketCalendarSection(
                         item.publishedAt?.let { timestamp ->
                             Text("Опубликовано: ${java.time.Instant.ofEpochMilli(timestamp).atZone(zone).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale("ru", "RU")))} МСК", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        item.updatedAt?.let { timestamp ->
-                            Text("Обновлено в приложении: ${java.time.Instant.ofEpochMilli(timestamp).atZone(zone).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale("ru", "RU")))} МСК", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
                         if (item.tickers.isNotBlank()) Text("Связанные бумаги в новости: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
                         if (item.portfolioExposure.isNotEmpty()) {
                             Text("Совпадающие позиции выбранного портфеля", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
@@ -281,7 +281,6 @@ internal fun MarketCalendarSection(
                             Text("Почему важно", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                             Text(item.impactAssessment, style = MaterialTheme.typography.bodySmall)
                             if (item.impactHorizon.isNotBlank()) Text("Горизонт: ${item.impactHorizon}", style = MaterialTheme.typography.labelSmall)
-                            if (item.confidence.isNotBlank()) Text("Уверенность: ${item.confidence}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         item.placementDetails.forEach { detail ->
                             Text(detail, style = MaterialTheme.typography.bodySmall)
