@@ -5,6 +5,9 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import java.io.IOException
+import java.io.ByteArrayInputStream
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -190,6 +193,20 @@ internal fun parseExplicitPlacementEventDate(
         if (date != null) return date.atStartOfDay(zone).toInstant().toEpochMilli()
     }
     return null
+}
+
+internal fun extractPlacementTextFromPdf(bytes: ByteArray): String? {
+    if (bytes.size < 5 || !bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII))) return null
+    return runCatching {
+        PDDocument.load(ByteArrayInputStream(bytes)).use { document ->
+            if (document.isEncrypted || document.numberOfPages <= 0) return@use ""
+            val stripper = PDFTextStripper().apply {
+                startPage = 1
+                endPage = minOf(document.numberOfPages, 80)
+            }
+            stripper.getText(document).replace(Regex("\\s+"), " ").take(16000)
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() }
 }
 
 internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedPlacementDetails {
@@ -386,18 +403,25 @@ class MarketNewsClient {
                 val host = response.request.url.host
                 if (response.request.url.scheme != "https" || !(host == "e-disclosure.ru" || host.endsWith(".e-disclosure.ru"))) return@use null
                 val contentType = response.header("Content-Type").orEmpty().lowercase(Locale.ROOT)
-                if (!contentType.startsWith("text/html") && !contentType.startsWith("text/plain")) return@use null
+                val isPdfContentType = contentType.startsWith("application/pdf")
+                if (!isPdfContentType && !contentType.startsWith("text/html") && !contentType.startsWith("text/plain")) return@use null
                 val body = response.body ?: return@use null
                 if (body.contentLength() > 512 * 1024L) return@use null
                 val bytes = body.source().readByteArray(512 * 1024L + 1L)
                 if (bytes.size > 512 * 1024) return@use null
-                val html = String(bytes, Charsets.UTF_8)
-                val document = Jsoup.parse(html, url)
-                val text = document.text().replace(Regex("\\s+"), " ").take(16000)
-                mergePlacementDetails(
-                    parsePlacementDetails(title, text),
-                    parsePlacementDetailsFromHtml(html, title)
-                )
+                val isPdf = isPdfContentType || (bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII)))
+                if (isPdf) {
+                    val pdfText = extractPlacementTextFromPdf(bytes) ?: return@use null
+                    parsePlacementDetails(title, pdfText)
+                } else {
+                    val html = String(bytes, Charsets.UTF_8)
+                    val document = Jsoup.parse(html, url)
+                    val text = document.text().replace(Regex("\\s+"), " ").take(16000)
+                    mergePlacementDetails(
+                        parsePlacementDetails(title, text),
+                        parsePlacementDetailsFromHtml(html, title)
+                    )
+                }
             }
         }.getOrNull()
     }
