@@ -35,7 +35,6 @@ import ru.mycapital.app.data.PortfolioDao
 import ru.mycapital.app.data.MoexIndexPoint
 import ru.mycapital.app.data.PortfolioSnapshotEntity
 import java.util.Locale
-import java.time.LocalDate
 
 private data class IndexBenchmarkCacheEntry(
     val imoex: List<MoexIndexPoint>,
@@ -196,9 +195,11 @@ private fun BenchmarkChart(
 ) {
     // Compare only dates present in all three series. Carrying an older index
     // close forward can create misleading flat segments when an index quote is missing.
+    // ISO yyyy-MM-dd dates sort chronologically as strings. Keep all three maps
+    // on the same key type to avoid mixed LocalDate/String inference.
     val priceByDate = imoex.associate { it.date to it.value }
     val totalByDate = mcftr.associate { it.date to it.value }
-    val navByDate = history.associate { LocalDate.parse(it.dateKey) to it.nav }
+    val navByDate = history.associate { it.dateKey to it.nav }
     val dates = navByDate.keys.intersect(priceByDate.keys).intersect(totalByDate.keys).sorted()
     if (dates.size < 2) {
         Text("Недостаточно совпадающих торговых дат для корректного сравнения портфеля и индексов.", style = MaterialTheme.typography.bodySmall)
