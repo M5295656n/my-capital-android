@@ -9,7 +9,7 @@ on:
     branches: [ main, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, feature/sector-details-remove-history-chart ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 
