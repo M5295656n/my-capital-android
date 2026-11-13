@@ -86,6 +86,13 @@ internal fun sectorForAnalyticsTicker(ticker: String): String? = when (ticker.tr
     else -> null
 }
 
+internal fun calculatePortfolioUnallocatedPositions(assets: List<AssetEntity>): List<AssetEntity> =
+    assets.filter { asset ->
+        classifyPortfolioAsset(asset) != PortfolioAssetClass.EQUITIES ||
+            asset.assetType.contains("фонд", ignoreCase = true)
+    }.filter { (it.quantity * it.currentPrice) > 0.0 }
+        .sortedByDescending { it.quantity * it.currentPrice }
+
 internal fun calculatePortfolioSectorSlices(
     assets: List<AssetEntity>,
     totalPortfolioValue: Double

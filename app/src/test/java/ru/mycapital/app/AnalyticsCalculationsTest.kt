@@ -79,6 +79,20 @@ class AnalyticsCalculationsTest {
 
 
     @Test
+    fun unallocatedSectorDetailsIncludeFundsBondsGoldAndExcludeSectorStocks() {
+        val assets = listOf(
+            asset("SBER"),
+            asset("SBMM", "Фонд"),
+            asset("GOLD", "Фонд"),
+            asset("SU26238RMFS4", "Облигация"),
+            asset("EQMX", "Фонд")
+        )
+        val unallocated = calculatePortfolioUnallocatedPositions(assets)
+        assertEquals(setOf("SBMM", "GOLD", "SU26238RMFS4", "EQMX"), unallocated.map { it.ticker }.toSet())
+        assertEquals(4, unallocated.size)
+    }
+
+    @Test
     fun compositionSnapshotsContainClassAndSectorDimensions() {
         val rows = buildPortfolioCompositionSnapshots(
             dateKey = "2026-11-08",

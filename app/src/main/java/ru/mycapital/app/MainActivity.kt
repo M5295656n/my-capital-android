@@ -3158,10 +3158,6 @@ private fun AnalyticsScreen(
                 accounts = accounts,
                 selectedAccountId = selectedAccountId,
                 onAccountSelected = { selectedAccountId = it },
-                compositionSnapshots = compositionSnapshots,
-                marketHistory = analyticsMarketHistory,
-                historyLoading = analyticsHistoryLoading,
-                onRefreshHistory = { analyticsHistoryRefresh++ }
             )
         }
         item {
