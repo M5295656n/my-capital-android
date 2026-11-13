@@ -1848,6 +1848,7 @@ private fun OperationsScreen(
     modifier: Modifier = Modifier
 ) {
     var operationTypeFilter by remember { mutableStateOf("Все") }
+    var operationDateFilter by remember { mutableStateOf(OperationHistoryRange.ALL) }
     var searchQuery by remember { mutableStateOf("") }
     val visibleOperations = operations.filter { operation ->
         val matchesAccount = when (selectedAccountId) {
@@ -1855,6 +1856,7 @@ private fun OperationsScreen(
             UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
             else -> historyAccountId(operation.sourceKey) == selectedAccountId
         }
+        val matchesDate = isOperationWithinHistoryRange(operation.operationDate, operationDateFilter)
         val matchesType = when (operationTypeFilter) {
             "Сделки" -> operation.operationType == "Покупка" || operation.operationType == "Продажа"
             "Деньги" -> operation.operationType == "Пополнение" || operation.operationType == "Вывод"
@@ -1866,7 +1868,7 @@ private fun OperationsScreen(
             operation.ticker.orEmpty().contains(query, ignoreCase = true) ||
             operation.operationType.contains(query, ignoreCase = true) ||
             operation.note.contains(query, ignoreCase = true)
-        matchesAccount && matchesType && matchesQuery
+        matchesAccount && matchesType && matchesQuery && matchesDate
     }
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("Операции", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -1903,6 +1905,16 @@ private fun OperationsScreen(
                     selected = operationTypeFilter == filter,
                     onClick = { operationTypeFilter = filter },
                     label = { Text(filter) }
+                )
+            }
+        }
+        Text("Период", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OperationHistoryRange.entries.forEach { range ->
+                FilterChip(
+                    selected = operationDateFilter == range,
+                    onClick = { operationDateFilter = range },
+                    label = { Text(range.label) }
                 )
             }
         }
