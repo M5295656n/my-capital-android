@@ -54,6 +54,14 @@ class AnalyticsCalculationsTest {
     }
 
     @Test
+    fun issuerSectorsClassifyTechnologyHealthcareAndPharmaSeparately() {
+        assertEquals("Информационные технологии", sectorForAnalyticsTicker("YDEX"))
+        assertEquals("Здравоохранение", sectorForAnalyticsTicker("MDMG"))
+        assertEquals("Фармацевтика", sectorForAnalyticsTicker("OZPH"))
+        assertEquals("Потребительский сектор", sectorForAnalyticsTicker("OZON"))
+    }
+
+    @Test
     fun sectorAggregationAndConcentrationAreSortedByValue() {
         val assets = listOf(
             asset("SBER", quantity = 1.0, price = 100.0),
