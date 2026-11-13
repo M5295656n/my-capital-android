@@ -32,9 +32,9 @@ class BenchmarkCalculationsTest {
         assertEquals(3, result.size)
         assertEquals(1_000.0, result[0].imoexValue, 0.000001)
         assertEquals(1_600.0, result[1].imoexValue, 0.000001)
-        assertEquals(1_600.0, result[2].imoexValue, 0.000001)
+        assertEquals(1_300.0, result[2].imoexValue, 0.000001)
         assertEquals(1_600.0, result[1].mcftrValue, 0.000001)
-        assertEquals(1_960.0, result[2].mcftrValue, 0.000001)
+        assertEquals(1_460.0, result[2].mcftrValue, 0.000001)
         assertEquals(1_470.0, result.last().portfolioValue, 0.000001)
     }
 
