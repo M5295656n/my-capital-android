@@ -248,4 +248,39 @@ class PortfolioMarketHistoryTest {
         assertEquals("403RY0J", historyAccountId("SBER:403RY0J:PAYOUT:dividend-123"))
     }
 
+    @Test
+    fun skipsDateWhenAnyHeldInstrumentHasNoHistoricalQuoteYet() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-06-01")
+        val completeDate = LocalDate.parse("2026-06-02")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(
+                AssetEntity(id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                    quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0),
+                AssetEntity(id = 2L, ticker = "LKOH", name = "Лукойл", assetType = "Акция",
+                    quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0)
+            ),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-05-31", 1.0, 1_000.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-06-01", 1.0, 100.0, ticker = "SBER"),
+                operation(3, "Покупка", "2026-06-01", 1.0, 100.0, ticker = "LKOH")
+            ),
+            currentCash = 800.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = completeDate
+        ) { ticker, _, _, _ ->
+            if (ticker == "SBER") {
+                listOf(MoexDailyClose(firstDate, 100.0), MoexDailyClose(completeDate, 100.0))
+            } else {
+                listOf(MoexDailyClose(completeDate, 100.0))
+            }
+        }
+
+        // The first date has only one of two holdings priced. Including it would
+        // understate NAV by 10%; start only once the complete portfolio is valued.
+        assertEquals(1, result.points.size)
+        assertEquals("2026-06-02", result.points.single().dateKey)
+        assertEquals(1_000.0, result.points.single().totalValue, 0.000001)
+        assertEquals(100.0, result.points.single().nav, 0.000001)
+    }
+
 }
