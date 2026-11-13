@@ -167,7 +167,7 @@ internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, d
             else -> Text(error ?: "Исторические ряды пока недоступны.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            "IMOEX — ценовой индекс без дивидендов. MCFTR — полная доходность «брутто» с учётом дивидендов. Ряды нормированы к 100 на первой общей дате.",
+            "IMOEX — ценовой индекс без дивидендов. MCFTR — полная доходность «брутто» с учётом дивидендов. Индексные линии рассчитаны с учётом тех же пополнений и снятий, что и портфель.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -262,6 +262,59 @@ private fun BenchmarkChart(
             drawSeries(price, priceColor)
             drawSeries(total, totalColor)
         }
+        Text("Отклонение от портфеля", style = MaterialTheme.typography.titleSmall)
+        val imoexDeviation = points.map {
+            if (it.portfolioValue > 0.0) ((it.imoexValue / it.portfolioValue) - 1.0).toFloat() * 100f else 0f
+        }
+        val mcftrDeviation = points.map {
+            if (it.portfolioValue > 0.0) ((it.mcftrValue / it.portfolioValue) - 1.0).toFloat() * 100f else 0f
+        }
+        val maxDeviation = (imoexDeviation + mcftrDeviation)
+            .maxOfOrNull { kotlin.math.abs(it) }
+            ?.coerceAtLeast(0.1f) ?: 0.1f
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                "IMOEX  ${String.format(Locale("ru", "RU"), "%+.2f", imoexDeviation.last())}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = priceColor
+            )
+            Text(
+                "MCFTR  ${String.format(Locale("ru", "RU"), "%+.2f", mcftrDeviation.last())}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = totalColor
+            )
+        }
+        Canvas(Modifier.fillMaxWidth().height(116.dp)) {
+            val left = 8f
+            val right = size.width - 8f
+            val top = 6f
+            val bottom = size.height - 6f
+            val centerY = (top + bottom) / 2f
+            drawLine(grid, androidx.compose.ui.geometry.Offset(left, centerY), androidx.compose.ui.geometry.Offset(right, centerY), 1.5f)
+            for (i in 0..4) {
+                val y = top + (bottom - top) * i / 4f
+                if (i != 2) {
+                    drawLine(grid.copy(alpha = 0.45f), androidx.compose.ui.geometry.Offset(left, y), androidx.compose.ui.geometry.Offset(right, y), 1f)
+                }
+            }
+            fun drawDeviation(series: List<Float>, color: Color) {
+                if (series.size < 2) return
+                val path = Path()
+                series.forEachIndexed { index, value ->
+                    val x = left + (right - left) * index / (series.size - 1).toFloat()
+                    val y = centerY - (value / maxDeviation) * ((bottom - top) / 2f)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, color, style = Stroke(width = 3.5f))
+            }
+            drawDeviation(imoexDeviation, priceColor)
+            drawDeviation(mcftrDeviation, totalColor)
+        }
+        Text(
+            "Выше нуля — индекс обгоняет портфель; ниже нуля — портфель впереди. Масштаб этого графика независим от рублёвого графика выше.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(points.first().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(last.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

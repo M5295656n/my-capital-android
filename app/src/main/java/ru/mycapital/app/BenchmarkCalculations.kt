@@ -22,14 +22,22 @@ internal fun buildCashFlowAdjustedBenchmarkSeries(
     val portfolioByDate = history.associateBy { it.dateKey }
     val imoexByDate = imoex.associate { it.date to it.value }
     val mcftrByDate = mcftr.associate { it.date to it.value }
-    val dates = portfolioByDate.keys.intersect(imoexByDate.keys)
-        .intersect(mcftrByDate.keys).sorted()
+    val imoexHistory = java.util.TreeMap(imoexByDate)
+    val mcftrHistory = java.util.TreeMap(mcftrByDate)
+    // Keep every portfolio valuation date. If an index has no observation on
+    // that date (for example, its ISS series is published later), use its most
+    // recent known close rather than truncating the entire comparison to the
+    // intersection of all three calendars.
+    val dates = portfolioByDate.keys.sorted()
     if (dates.size < 2) return emptyList()
+
+    fun indexCloseOnOrBefore(history: java.util.NavigableMap<String, Double>, date: String): Double? =
+        history.floorEntry(date)?.value
 
     val first = dates.first()
     val firstPortfolio = portfolioByDate[first] ?: return emptyList()
-    val firstImoex = imoexByDate[first] ?: return emptyList()
-    val firstMcftr = mcftrByDate[first] ?: return emptyList()
+    val firstImoex = indexCloseOnOrBefore(imoexHistory, first) ?: return emptyList()
+    val firstMcftr = indexCloseOnOrBefore(mcftrHistory, first) ?: return emptyList()
     if (firstImoex <= 0.0 || firstMcftr <= 0.0) return emptyList()
 
     var imoexValue = firstPortfolio.totalValue
@@ -43,8 +51,8 @@ internal fun buildCashFlowAdjustedBenchmarkSeries(
     )
     dates.drop(1).forEach { date ->
         val portfolioPoint = portfolioByDate[date] ?: return@forEach
-        val indexPrice = imoexByDate[date] ?: return@forEach
-        val totalReturnIndex = mcftrByDate[date] ?: return@forEach
+        val indexPrice = indexCloseOnOrBefore(imoexHistory, date) ?: return@forEach
+        val totalReturnIndex = indexCloseOnOrBefore(mcftrHistory, date) ?: return@forEach
         if (previousImoex <= 0.0 || previousMcftr <= 0.0 ||
             indexPrice <= 0.0 || totalReturnIndex <= 0.0) return@forEach
 
