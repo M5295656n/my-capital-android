@@ -194,23 +194,23 @@ private fun BenchmarkChart(
     imoex: List<MoexIndexPoint>,
     mcftr: List<MoexIndexPoint>
 ) {
-    val priceByDate = java.util.TreeMap(imoex.associate { it.date to it.value })
-    val totalByDate = java.util.TreeMap(mcftr.associate { it.date to it.value })
-    val navByDate = history.associate { it.dateKey to it.nav }
-    val dates = history.map { it.dateKey }.filter {
-        priceByDate.floorEntry(it) != null && totalByDate.floorEntry(it) != null
-    }
+    // Compare only dates present in all three series. Carrying an older index
+    // close forward can create misleading flat segments when an index quote is missing.
+    val priceByDate = imoex.associate { it.date to it.value }
+    val totalByDate = mcftr.associate { it.date to it.value }
+    val navByDate = history.associate { LocalDate.parse(it.dateKey) to it.nav }
+    val dates = navByDate.keys.intersect(priceByDate.keys).intersect(totalByDate.keys).sorted()
     if (dates.size < 2) {
-        Text("Недостаточно данных индексов для выбранного периода.", style = MaterialTheme.typography.bodySmall)
+        Text("Недостаточно совпадающих торговых дат для корректного сравнения портфеля и индексов.", style = MaterialTheme.typography.bodySmall)
         return
     }
     val first = dates.first()
     val p0 = navByDate[first] ?: return
-    val i0 = priceByDate.floorEntry(first)?.value ?: return
-    val t0 = totalByDate.floorEntry(first)?.value ?: return
+    val i0 = priceByDate[first] ?: return
+    val t0 = totalByDate[first] ?: return
     val portfolio = dates.map { (navByDate.getValue(it) / p0 * 100.0).toFloat() }
-    val price = dates.map { (priceByDate.floorEntry(it)!!.value / i0 * 100.0).toFloat() }
-    val total = dates.map { (totalByDate.floorEntry(it)!!.value / t0 * 100.0).toFloat() }
+    val price = dates.map { (priceByDate.getValue(it) / i0 * 100.0).toFloat() }
+    val total = dates.map { (totalByDate.getValue(it) / t0 * 100.0).toFloat() }
     val values = portfolio + price + total
     val min = values.minOrNull() ?: 100f
     val max = values.maxOrNull() ?: 100f
@@ -222,7 +222,7 @@ private fun BenchmarkChart(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
-            Triple("Портфель", portfolio.last(), portfolioColor),
+            Triple("Весь портфель", portfolio.last(), portfolioColor),
             Triple("IMOEX · цена", price.last(), priceColor),
             Triple("MCFTR · с дивидендами", total.last(), totalColor)
         ).forEach { (label, value, color) ->
@@ -265,7 +265,7 @@ private fun BenchmarkChart(
             Text(dates.last(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            "Доходность портфеля рассчитана по восстановленной истории операций; внешние денежные потоки учитываются на конец дня. Все три ряда нормированы на первой общей торговой дате.",
+            "«Весь портфель» включает акции, фонды, облигации, золото и денежный остаток. Его доходность — оценка TWR по восстановленным операциям; пополнения и выводы учитываются на конец дня. Для сравнения взяты только даты, присутствующие во всех трёх рядах; каждый ряд нормирован к 100 на первой общей дате.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

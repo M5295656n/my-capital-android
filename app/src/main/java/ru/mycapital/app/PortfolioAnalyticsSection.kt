@@ -186,7 +186,6 @@ internal fun PortfolioAnalyticsSection(
                             if (expanded) {
                                 sector.positions.forEach { asset ->
                                     val positionValue = (asset.quantity * asset.currentPrice).coerceAtLeast(0.0)
-                                    val shareOfSector = if (sector.value > 0.0) positionValue / sector.value else 0.0
                                     val shareOfPortfolio = if (portfolioValue > 0.0) positionValue / portfolioValue else 0.0
                                     Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Column(Modifier.weight(1f)) {
@@ -195,19 +194,18 @@ internal fun PortfolioAnalyticsSection(
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text("${moneyAnalytics(positionValue)} ₽", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                                            Text("${percentAnalytics(shareOfSector)} сектора · ${percentAnalytics(shareOfPortfolio)} портфеля",
+                                            Text("${percentAnalytics(shareOfPortfolio)} портфеля",
                                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
                                 if (sector.sector == "Вне отраслевого состава" && cashBalance > 0.0) {
-                                    val cashShareOfSector = cashBalance / sector.value
                                     val cashShareOfPortfolio = cashBalance / portfolioValue
                                     Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Text("Свободные деньги", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text("${moneyAnalytics(cashBalance)} ₽", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                                            Text("${percentAnalytics(cashShareOfSector)} состава · ${percentAnalytics(cashShareOfPortfolio)} портфеля",
+                                            Text("${percentAnalytics(cashShareOfPortfolio)} портфеля",
                                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
