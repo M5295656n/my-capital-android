@@ -1273,7 +1273,7 @@ private fun AssetsScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
-    var accountMenuExpanded by remember { mutableStateOf(false) }
+    var selectedSoldYear by remember { mutableStateOf<Int?>(java.time.LocalDate.now().year) }
     val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.uppercase() } }
     val displayedAssets = remember(assets, accountAssets, selectedAccountId) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
@@ -1288,8 +1288,45 @@ private fun AssetsScreen(
                 .toList()
         }
     }
-    val selectedAccountName = accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName
-        ?: "Все счета"
+    val saleYears = remember(operations) {
+        (operations.filter { it.operationType == "Продажа" }
+            .map { java.time.Instant.ofEpochMilli(it.operationDate).atZone(java.time.ZoneId.systemDefault()).year } +
+            java.time.LocalDate.now().year)
+            .distinct()
+            .sortedDescending()
+    }
+    val soldAssets = remember(operations, selectedAccountId, selectedSoldYear, assets) {
+        operations.asSequence()
+            .filter { it.operationType == "Продажа" }
+            .filter { operation ->
+                val accountMatches = selectedAccountId == ALL_HISTORY_ACCOUNTS ||
+                    historyAccountId(operation.sourceKey) == selectedAccountId
+                val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                accountMatches && (selectedSoldYear == null || operationDate.year == selectedSoldYear)
+            }
+            .mapNotNull { operation ->
+                val ticker = operation.ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+                    ?: assets.firstOrNull { it.id == operation.assetId }?.ticker?.trim()?.uppercase()
+                ticker?.let { it to operation }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (ticker, sales) ->
+                val gross = sales.sumOf { (it.quantity * it.price).coerceAtLeast(0.0) }
+                val fees = sales.sumOf { it.commission.coerceAtLeast(0.0) }
+                SoldAssetSummary(
+                    ticker = ticker,
+                    name = assets.firstOrNull { it.ticker.equals(ticker, true) }?.name ?: ticker,
+                    quantity = sales.sumOf { it.quantity.coerceAtLeast(0.0) },
+                    saleCount = sales.size,
+                    grossAmount = gross,
+                    netAmount = (gross - fees).coerceAtLeast(0.0)
+                )
+            }
+            .sortedByDescending { it.grossAmount }
+    }
+    val totalSaleAmount = soldAssets.sumOf { it.grossAmount }
+    val totalSaleNetAmount = soldAssets.sumOf { it.netAmount }
 
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
@@ -1305,19 +1342,22 @@ private fun AssetsScreen(
                 )
             }
         }
-        if (displayedAssets.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
-                    else "В последнем импортированном отчёте этого счёта нет открытых позиций.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
-            ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
+        ) {
+            if (displayedAssets.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 100.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
+                            else "В последнем импортированном отчёте этого счёта нет открытых позиций.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
                 items(displayedAssets, key = { if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "all:${it.id}" else "${selectedAccountId}:${it.ticker}" }) { asset ->
                     Card(
                         Modifier.fillMaxWidth().clickable { onOpenAsset(asset) },
@@ -1350,6 +1390,65 @@ private fun AssetsScreen(
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
                                 Text("Средняя ${money(asset.averagePrice)} ₽", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Spacer(Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Проданные активы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = selectedSoldYear == null,
+                                    onClick = { selectedSoldYear = null },
+                                    label = { Text("Все время") }
+                                )
+                            }
+                            items(saleYears) { year ->
+                                FilterChip(
+                                    selected = selectedSoldYear == year,
+                                    onClick = { selectedSoldYear = year },
+                                    label = { Text(year.toString()) }
+                                )
+                            }
+                        }
+                        if (soldAssets.isEmpty()) {
+                            Text("За выбранный период продаж не было.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text("Всего продано на ${money(totalSaleAmount)} ₽", fontWeight = FontWeight.Bold)
+                            Text(
+                                "После комиссий: ${money(totalSaleNetAmount)} ₽",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            soldAssets.forEachIndexed { index, sold ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(sold.ticker, fontWeight = FontWeight.SemiBold)
+                                        Text(sold.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                        Text(
+                                            "${quantity(sold.quantity)} шт. · ${sold.saleCount} ${if (sold.saleCount == 1) "сделка" else "сделок"}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text("${money(sold.grossAmount)} ₽", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        Text("После комиссии ${money(sold.netAmount)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                if (index != soldAssets.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                     }
@@ -2187,7 +2286,9 @@ private data class SoldAssetSummary(
     val ticker: String,
     val name: String,
     val quantity: Double,
-    val saleCount: Int
+    val saleCount: Int,
+    val grossAmount: Double,
+    val netAmount: Double
 )
 
 @Composable
@@ -2277,35 +2378,6 @@ private fun PayoutsScreen(
     fun payoutAmount(p: PayoutEntity): Double =
         if (p.status == "RECEIVED") (p.reportedNetAmount ?: (p.totalAmount - p.taxAmount)).coerceAtLeast(0.0)
         else p.totalAmount.coerceAtLeast(0.0)
-    val soldAssets = remember(operations, selectedAccountId, periodDates, assets) {
-        operations.asSequence()
-            .filter { it.operationType == "Продажа" }
-            .filter { operation ->
-                val accountMatches = when (selectedAccountId) {
-                    ALL_HISTORY_ACCOUNTS -> true
-                    UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
-                    else -> historyAccountId(operation.sourceKey) == selectedAccountId
-                }
-                val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
-                    .atZone(zone).toLocalDate()
-                accountMatches && !operationDate.isBefore(periodDates.first) && !operationDate.isAfter(periodDates.second)
-            }
-            .mapNotNull { operation ->
-                val ticker = operation.ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
-                    ?: assets.firstOrNull { it.id == operation.assetId }?.ticker?.trim()?.uppercase()
-                ticker?.let { it to operation }
-            }
-            .groupBy({ it.first }, { it.second })
-            .map { (ticker, sales) ->
-                SoldAssetSummary(
-                    ticker = ticker,
-                    name = assets.firstOrNull { it.ticker.equals(ticker, true) }?.name ?: ticker,
-                    quantity = sales.sumOf { it.quantity.coerceAtLeast(0.0) },
-                    saleCount = sales.size
-                )
-            }
-            .sortedByDescending { it.quantity }
-    }
     // Principal returned at bond amortization/maturity is capital, not income.
     // Keep redemption rows visible below, but exclude them from income metrics.
     val totalAmount = filtered.filter { isIncomePayoutType(it.payoutType) }.sumOf(::payoutAmount)
@@ -2421,65 +2493,6 @@ private fun PayoutsScreen(
                 androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(listOf("Все", "Дивиденды", "Купоны", "Погашения")) { filter ->
                         FilterChip(selected = typeFilter == filter, onClick = { typeFilter = filter }, label = { Text(filter) })
-                    }
-                }
-            }
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            "Проданные активы за ${selectedPeriod.substringAfter("year:")}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            "Суммарное количество по сделкам продажи за выбранный год",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (soldAssets.isEmpty()) {
-                            Text(
-                                "За этот период продаж не было.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            soldAssets.forEach { sold ->
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text(sold.ticker, fontWeight = FontWeight.SemiBold)
-                                        Text(
-                                            sold.name,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            "${sold.saleCount} ${if (sold.saleCount == 1) "сделка" else "сделок"}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Text(
-                                        "${quantity(sold.quantity)} шт.",
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                if (sold != soldAssets.last()) {
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                }
-                            }
-                        }
                     }
                 }
             }
