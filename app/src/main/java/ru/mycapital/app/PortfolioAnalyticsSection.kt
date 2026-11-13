@@ -22,7 +22,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -43,7 +42,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.BrokerAccountEntity
-import ru.mycapital.app.data.PortfolioCompositionSnapshotEntity
 import java.util.Locale
 
 private const val ANALYTICS_ALL_ACCOUNTS = "ALL"
@@ -56,17 +54,14 @@ internal fun PortfolioAnalyticsSection(
     accounts: List<BrokerAccountEntity>,
     selectedAccountId: String,
     onAccountSelected: (String) -> Unit,
-    compositionSnapshots: List<PortfolioCompositionSnapshotEntity>,
-    marketHistory: PortfolioMarketHistoryResult,
-    historyLoading: Boolean,
-    onRefreshHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var accountMenuExpanded by remember { mutableStateOf(false) }
     val portfolioValue = assets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } + cashBalance.coerceAtLeast(0.0)
     val classSlices = remember(assets, cashBalance) { calculatePortfolioClassSlices(assets, cashBalance) }
     val sectorSlices = remember(assets, portfolioValue) { calculatePortfolioSectorSlices(assets, portfolioValue) }
-    val sectorSlicesWithRemainder = remember(sectorSlices, portfolioValue) {
+    val unallocatedPositions = remember(assets) { calculatePortfolioUnallocatedPositions(assets) }
+    val sectorSlicesWithRemainder = remember(sectorSlices, portfolioValue, unallocatedPositions) {
         val representedValue = sectorSlices.sumOf { it.value }
         val remainder = (portfolioValue - representedValue).coerceAtLeast(0.0)
         if (portfolioValue > 0.0 && remainder > 0.01) {
@@ -74,7 +69,7 @@ internal fun PortfolioAnalyticsSection(
                 sector = "Вне отраслевого состава",
                 value = remainder,
                 shareOfPortfolio = remainder / portfolioValue,
-                positions = emptyList()
+                positions = unallocatedPositions
             )
         } else sectorSlices
     }
@@ -190,13 +185,36 @@ internal fun PortfolioAnalyticsSection(
                             }
                             if (expanded) {
                                 sector.positions.forEach { asset ->
-                                    Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 3.dp, bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    val positionValue = (asset.quantity * asset.currentPrice).coerceAtLeast(0.0)
+                                    val shareOfSector = if (sector.value > 0.0) positionValue / sector.value else 0.0
+                                    val shareOfPortfolio = if (portfolioValue > 0.0) positionValue / portfolioValue else 0.0
+                                    Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Column(Modifier.weight(1f)) {
                                             Text(asset.ticker, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                                             Text(asset.name, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
                                         }
-                                        Text("${moneyAnalytics(asset.quantity * asset.currentPrice)} ₽", style = MaterialTheme.typography.labelMedium)
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("${moneyAnalytics(positionValue)} ₽", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            Text("${percentAnalytics(shareOfSector)} сектора · ${percentAnalytics(shareOfPortfolio)} портфеля",
+                                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
+                                }
+                                if (sector.sector == "Вне отраслевого состава" && cashBalance > 0.0) {
+                                    val cashShareOfSector = cashBalance / sector.value
+                                    val cashShareOfPortfolio = cashBalance / portfolioValue
+                                    Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Свободные деньги", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("${moneyAnalytics(cashBalance)} ₽", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            Text("${percentAnalytics(cashShareOfSector)} состава · ${percentAnalytics(cashShareOfPortfolio)} портфеля",
+                                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                                if (sector.positions.isEmpty() && !(sector.sector == "Вне отраслевого состава" && cashBalance > 0.0)) {
+                                    Text("Нет отдельных позиций для отображения.", modifier = Modifier.padding(start = 10.dp),
+                                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -240,12 +258,6 @@ internal fun PortfolioAnalyticsSection(
             }
         }
 
-        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Историческая структура", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                PortfolioCompositionHistoryChart(marketHistory, assets, historyLoading)
-            }
-        }
     }
 }
 
@@ -403,95 +415,3 @@ private fun moneyAnalytics(value: Double): String =
 
 private fun percentAnalytics(value: Double): String =
     String.format(Locale("ru", "RU"), "%.1f%%", value * 100.0)
-
-@Composable
-private fun PortfolioCompositionHistoryChart(
-    history: PortfolioMarketHistoryResult,
-    assets: List<AssetEntity>,
-    loading: Boolean
-) {
-    // By default, composition history must cover the full available period,
-    // starting with the first purchase just like the capital and benchmark charts.
-    var selectedMonths by remember { mutableStateOf<Int?>(null) }
-    val points = remember(history, assets, selectedMonths) {
-        val ordered = history.points.sortedBy { it.dateKey }
-        val latest = ordered.lastOrNull()?.let { java.time.LocalDate.parse(it.dateKey) }
-        val cutoff = selectedMonths?.let { months -> latest?.minusMonths(months.toLong()) }
-        ordered.asSequence()
-            .filter { point -> cutoff == null || !java.time.LocalDate.parse(point.dateKey).isBefore(cutoff) }
-            .mapNotNull { point ->
-                val values = PortfolioAssetClass.entries.associateWith { 0.0 }.toMutableMap()
-                assets.forEach { asset ->
-                    val value = point.assetValues[asset.ticker.trim().uppercase()] ?: 0.0
-                    if (value > 0.0) {
-                        val assetClass = classifyPortfolioAsset(asset)
-                        values[assetClass] = (values[assetClass] ?: 0.0) + value
-                    }
-                }
-                values[PortfolioAssetClass.CASH] = (values[PortfolioAssetClass.CASH] ?: 0.0) + point.cashValue.coerceAtLeast(0.0)
-                // Keep the composition timeline aligned with the capital history.
-                // Any valued part not assigned to a known class remains visible as OTHER.
-                val represented = values.values.sum()
-                val unclassified = (point.totalValue - represented).coerceAtLeast(0.0)
-                values[PortfolioAssetClass.OTHER] = unclassified
-                val total = point.totalValue
-                if (total <= 0.0) null else point.dateKey to values.mapValues { it.value / total }
-            }.toList()
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        FilterChip(selected = selectedMonths == null, onClick = { selectedMonths = null },
-            label = { Text("Всё время") })
-        listOf(1, 3, 6, 12).forEach { months ->
-            FilterChip(selected = selectedMonths == months, onClick = { selectedMonths = months },
-                label = { Text(if (months == 12) "1Г" else "${months}М") })
-        }
-    }
-    if (points.size < 2) {
-        Text(
-            if (loading) "Восстанавливаю исторический состав по операциям и котировкам MOEX…"
-            else if (points.isEmpty()) "Исторический состав пока нельзя рассчитать: проверьте полноту истории операций и доступность котировок."
-            else "Доступен один торговый день истории состава: ${points.first().first}.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    } else {
-        val plotted = if (points.size > 60) points.filterIndexed { index, _ -> index % ((points.size / 30).coerceAtLeast(1)) == 0 }.takeLast(60) else points
-        val tracked = listOf(PortfolioAssetClass.EQUITIES, PortfolioAssetClass.FIXED_INCOME, PortfolioAssetClass.GOLD, PortfolioAssetClass.CASH, PortfolioAssetClass.OTHER)
-        val colors = tracked.map { classColor(it) }
-        val gridColor = MaterialTheme.colorScheme.outlineVariant
-        Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-            val left = 5f; val right = size.width - 5f; val top = 8f; val bottom = size.height - 8f
-            for (i in 0..4) {
-                val y = top + (bottom - top) * i / 4f
-                drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
-            }
-            tracked.forEachIndexed { seriesIndex, assetClass ->
-                val path = androidx.compose.ui.graphics.Path()
-                plotted.forEachIndexed { index, point ->
-                    val x = left + (right - left) * index / (plotted.size - 1).toFloat()
-                    val share = point.second[assetClass] ?: 0.0
-                    val y = bottom - share.toFloat().coerceIn(0f, 1f) * (bottom - top)
-                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                drawPath(path, colors[seriesIndex], style = Stroke(width = 3f, cap = StrokeCap.Round))
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(points.first().first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(points.last().first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            tracked.forEach { assetClass ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(classColor(assetClass)))
-                    Text(when (assetClass) {
-                        PortfolioAssetClass.EQUITIES -> "Акции"
-                        PortfolioAssetClass.FIXED_INCOME -> "Облигации"
-                        PortfolioAssetClass.GOLD -> "Золото"
-                        PortfolioAssetClass.CASH -> "Кэш"
-                        PortfolioAssetClass.OTHER -> "Прочее"
-                    }, style = MaterialTheme.typography.labelSmall)
-                }
-            }
-        }
-    }
-}
