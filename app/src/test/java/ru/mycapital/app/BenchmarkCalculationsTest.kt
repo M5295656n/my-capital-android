@@ -58,7 +58,31 @@ class BenchmarkCalculationsTest {
     }
 
     @Test
-    fun onlyCommonDatesAreUsedAndAtLeastTwoAreRequired() {
+    fun portfolioDateIsPreservedWhenOneIndexHasNoCloseForThatDate() {
+        val history = listOf(
+            point("2026-01-01", 100.0, 0.0),
+            point("2026-01-02", 110.0, 0.0),
+            point("2026-01-03", 115.0, 0.0)
+        )
+        val imoex = listOf(
+            MoexIndexPoint("2026-01-01", 100.0),
+            MoexIndexPoint("2026-01-02", 110.0)
+        )
+        val mcftr = listOf(
+            MoexIndexPoint("2026-01-01", 200.0),
+            MoexIndexPoint("2026-01-02", 220.0),
+            MoexIndexPoint("2026-01-03", 242.0)
+        )
+
+        val result = buildCashFlowAdjustedBenchmarkSeries(history, imoex, mcftr)
+
+        assertEquals(listOf("2026-01-01", "2026-01-02", "2026-01-03"), result.map { it.dateKey })
+        assertEquals(110.0, result.last().imoexValue, 0.000001)
+        assertEquals(242.0, result.last().mcftrValue, 0.000001)
+    }
+
+    @Test
+    fun onlyDatesWithKnownIndexHistoryAreUsedAndAtLeastTwoAreRequired() {
         val history = listOf(
             point("2026-01-01", 100.0, 0.0),
             point("2026-01-02", 110.0, 0.0),
@@ -71,7 +95,7 @@ class BenchmarkCalculationsTest {
 
         val result = buildCashFlowAdjustedBenchmarkSeries(history, index, index)
 
-        assertEquals(listOf("2026-01-01", "2026-01-03"), result.map { it.dateKey })
+        assertEquals(listOf("2026-01-01", "2026-01-02", "2026-01-03"), result.map { it.dateKey })
         assertTrue(buildCashFlowAdjustedBenchmarkSeries(history.take(1), index, index).isEmpty())
     }
 }
