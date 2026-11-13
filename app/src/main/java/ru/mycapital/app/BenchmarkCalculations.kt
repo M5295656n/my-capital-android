@@ -22,8 +22,8 @@ internal fun buildCashFlowAdjustedBenchmarkSeries(
     val portfolioByDate = history.associateBy { it.dateKey }
     val imoexByDate = imoex.associate { it.date to it.value }
     val mcftrByDate = mcftr.associate { it.date to it.value }
-    val imoexHistory = imoexByDate.toSortedMap()
-    val mcftrHistory = mcftrByDate.toSortedMap()
+    val imoexHistory = java.util.TreeMap(imoexByDate)
+    val mcftrHistory = java.util.TreeMap(mcftrByDate)
     // Keep every portfolio valuation date. If an index has no observation on
     // that date (for example, its ISS series is published later), use its most
     // recent known close rather than truncating the entire comparison to the
