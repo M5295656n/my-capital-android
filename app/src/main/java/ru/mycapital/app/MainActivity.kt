@@ -1134,7 +1134,10 @@ val annualizedReturn = remember(history) {
 private fun sectorForTicker(ticker: String): String = when (ticker.uppercase()) {
     "SBER", "SBERP", "T", "VTBR", "MOEX", "BSPB", "CBOM" -> "Финансы"
     "LKOH", "ROSN", "TATN", "GAZP", "NVTK", "SNGS", "SNGSP", "BANE", "TRNFP" -> "Нефть и газ"
-    "YDEX", "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
+    "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
+    "YDEX" -> "Информационные технологии"
+    "MDMG", "GEMC" -> "Здравоохранение"
+    "OZPH" -> "Фармацевтика"
     "GMKN", "NLMK", "CHMF", "MAGN", "RUAL", "ALRS" -> "Металлы и добыча"
     "MTSS", "RTKM", "VEON" -> "Телеком"
     "AFLT", "FLOT" -> "Транспорт"
@@ -2559,7 +2562,8 @@ private fun PayoutsScreen(
                                                         when (payout.status) {
                                                             "RECEIVED" -> "Получено"
                                                             "ANNOUNCED" -> "Объявлено"
-                                                            "RECOMMENDED", "FORECAST", "EXPECTED" -> "Прогноз"
+                                                            "RECOMMENDED" -> "Рекомендовано советом директоров"
+                                                            "FORECAST", "EXPECTED" -> "Прогноз"
                                                             else -> "Прогноз"
                                                         },
                                                         color = Color(0xFF69AFFF),
