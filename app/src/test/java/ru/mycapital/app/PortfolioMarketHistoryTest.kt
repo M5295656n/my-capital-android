@@ -182,4 +182,74 @@ class PortfolioMarketHistoryTest {
         assertEquals(1_000.0, result.points[2].totalValue, 0.000001)
     }
 
+
+    @Test
+    fun timeWeightedReturnNeutralizesDepositsAndWithdrawals() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-05-04")
+        val depositDate = LocalDate.parse("2026-05-05")
+        val withdrawalDate = LocalDate.parse("2026-05-06")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 4L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 5.0, averagePrice = 100.0, currentPrice = 120.0
+            )),
+            operations = listOf(
+                operation(30, "Пополнение", "2026-05-03", 1.0, 1_000.0, ticker = "RUB"),
+                operation(31, "Покупка", "2026-05-04", 5.0, 100.0),
+                operation(32, "Пополнение", "2026-05-05", 1.0, 500.0, ticker = "RUB"),
+                operation(33, "Вывод", "2026-05-06", 1.0, 200.0, ticker = "RUB")
+            ),
+            currentCash = 800.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = withdrawalDate
+        ) { _, _, _, _ ->
+            listOf(
+                MoexDailyClose(firstDate, 100.0),
+                MoexDailyClose(depositDate, 110.0),
+                MoexDailyClose(withdrawalDate, 120.0)
+            )
+        }
+
+        assertEquals(3, result.points.size)
+        assertEquals(1_000.0, result.points[0].totalValue, 0.000001)
+        assertEquals(100.0, result.points[0].nav, 0.000001)
+        assertEquals(1_500.0, result.points[1].investedCapital, 0.000001)
+        assertEquals(1_550.0, result.points[1].totalValue, 0.000001)
+        assertEquals(105.0, result.points[1].nav, 0.000001)
+        assertEquals(1_300.0, result.points[2].investedCapital, 0.000001)
+        assertEquals(1_400.0, result.points[2].totalValue, 0.000001)
+        assertEquals(105.0 * 1_600.0 / 1_550.0, result.points[2].nav, 0.000001)
+    }
+
+    @Test
+    fun dividendsIncreaseNavAsInvestmentIncomeNotExternalContribution() = kotlinx.coroutines.runBlocking {
+        val purchaseDate = LocalDate.parse("2026-06-01")
+        val dividendDate = LocalDate.parse("2026-06-02")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 5L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 2.0, averagePrice = 100.0, currentPrice = 105.0
+            )),
+            operations = listOf(
+                operation(40, "Пополнение", "2026-05-31", 1.0, 500.0, ticker = "RUB"),
+                operation(41, "Покупка", "2026-06-01", 2.0, 100.0),
+                operation(42, "Дивиденд", "2026-06-02", 1.0, 20.0)
+            ),
+            currentCash = 320.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = dividendDate
+        ) { _, _, _, _ ->
+            listOf(
+                MoexDailyClose(purchaseDate, 100.0),
+                MoexDailyClose(dividendDate, 105.0)
+            )
+        }
+
+        assertEquals(2, result.points.size)
+        assertEquals(500.0, result.points[0].totalValue, 0.000001)
+        assertEquals(530.0, result.points[1].totalValue, 0.000001)
+        assertEquals(500.0, result.points[1].investedCapital, 0.000001)
+        assertEquals(106.0, result.points[1].nav, 0.000001)
+    }
+
 }
