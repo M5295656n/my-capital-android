@@ -31,7 +31,7 @@ internal fun buildCashFlowAdjustedBenchmarkSeries(
     val dates = portfolioByDate.keys.sorted()
     if (dates.size < 2) return emptyList()
 
-    fun indexCloseOnOrBefore(history: Map<String, Double>, date: String): Double? =
+    fun indexCloseOnOrBefore(history: java.util.NavigableMap<String, Double>, date: String): Double? =
         history.floorEntry(date)?.value
 
     val first = dates.first()
