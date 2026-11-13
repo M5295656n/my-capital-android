@@ -78,7 +78,9 @@ class BenchmarkCalculationsTest {
 
         assertEquals(listOf("2026-01-01", "2026-01-02", "2026-01-03"), result.map { it.dateKey })
         assertEquals(110.0, result.last().imoexValue, 0.000001)
-        assertEquals(242.0, result.last().mcftrValue, 0.000001)
+        // MCFTR rose by 10% on each interval; its portfolio-equivalent value
+        // therefore compounds from 100 to 110 to 121, not to the raw index level.
+        assertEquals(121.0, result.last().mcftrValue, 0.000001)
     }
 
     @Test
