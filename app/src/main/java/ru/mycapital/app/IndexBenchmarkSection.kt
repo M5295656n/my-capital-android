@@ -195,49 +195,48 @@ private fun BenchmarkChart(
     imoex: List<MoexIndexPoint>,
     mcftr: List<MoexIndexPoint>
 ) {
-    // Compare only dates present in all three series. Carrying an older index
-    // close forward can create misleading flat segments when an index quote is missing.
-    // ISO yyyy-MM-dd dates sort chronologically as strings. Keep all three maps
-    // on the same key type to avoid mixed LocalDate/String inference.
-    val priceByDate = imoex.associate { it.date to it.value }
-    val totalByDate = mcftr.associate { it.date to it.value }
-    val navByDate = history.associate { it.dateKey to it.nav }
-    val dates = navByDate.keys.intersect(priceByDate.keys).intersect(totalByDate.keys).sorted()
-    if (dates.size < 2) {
+    val points = remember(history, imoex, mcftr) {
+        buildCashFlowAdjustedBenchmarkSeries(history, imoex, mcftr)
+    }
+    if (points.size < 2) {
         Text("Недостаточно совпадающих торговых дат для корректного сравнения портфеля и индексов.", style = MaterialTheme.typography.bodySmall)
         return
     }
-    val first = dates.first()
-    val p0 = navByDate[first] ?: return
-    val i0 = priceByDate[first] ?: return
-    val t0 = totalByDate[first] ?: return
-    val portfolio = dates.map { (navByDate.getValue(it) / p0 * 100.0).toFloat() }
-    val price = dates.map { (priceByDate.getValue(it) / i0 * 100.0).toFloat() }
-    val total = dates.map { (totalByDate.getValue(it) / t0 * 100.0).toFloat() }
+    val portfolio = points.map { it.portfolioValue.toFloat() }
+    val price = points.map { it.imoexValue.toFloat() }
+    val total = points.map { it.mcftrValue.toFloat() }
     val values = portfolio + price + total
-    val min = values.minOrNull() ?: 100f
-    val max = values.maxOrNull() ?: 100f
+    val min = values.minOrNull() ?: 0f
+    val max = values.maxOrNull() ?: 0f
     val range = (max - min).takeIf { it > 0.0001f } ?: 1f
     val portfolioColor = MaterialTheme.colorScheme.primary
-    val priceColor = Color(0xFFFFB74D) // Amber: clearly distinct from the blue portfolio series
+    val priceColor = Color(0xFFFFB74D)
     val totalColor = MaterialTheme.colorScheme.secondary
     val grid = MaterialTheme.colorScheme.outlineVariant
-
+    val last = points.last()
+    fun money(value: Double): String = String.format(Locale("ru", "RU"), "%,.2f ₽", value)
+    fun comparisonText(label: String, benchmark: Double): String {
+        val difference = benchmark - last.portfolioValue
+        val percent = if (benchmark > 0.0) kotlin.math.abs(difference) / benchmark * 100.0 else 0.0
+        val relation = if (difference > 0.005) "отстаёт от" else if (difference < -0.005) "опережает" else "идёт вровень с"
+        return "Портфель $relation $label на ${money(kotlin.math.abs(difference))} (${String.format(Locale("ru", "RU"), "%.2f", percent)}%)"
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(comparisonText("IMOEX", last.imoexValue), style = MaterialTheme.typography.bodyMedium)
+            Text(comparisonText("MCFTR", last.mcftrValue), style = MaterialTheme.typography.bodyMedium)
+        }
         listOf(
-            Triple("Весь портфель", portfolio.last(), portfolioColor),
-            Triple("IMOEX · цена", price.last(), priceColor),
-            Triple("MCFTR · с дивидендами", total.last(), totalColor)
+            Triple("Весь портфель", last.portfolioValue, portfolioColor),
+            Triple("IMOEX · цена", last.imoexValue, priceColor),
+            Triple("MCFTR · полная доходность", last.mcftrValue, totalColor)
         ).forEach { (label, value, color) ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(9.dp).background(color, CircleShape))
                     Text(label, style = MaterialTheme.typography.labelMedium)
                 }
-                Text(
-                    String.format(Locale("ru", "RU"), "%+.2f%%", value - 100f),
-                    style = MaterialTheme.typography.labelMedium
-                )
+                Text(money(value), style = MaterialTheme.typography.labelMedium)
             }
         }
         Canvas(Modifier.fillMaxWidth().height(180.dp)) {
@@ -249,11 +248,11 @@ private fun BenchmarkChart(
                 val y = top + (bottom - top) * i / 4f
                 drawLine(grid, androidx.compose.ui.geometry.Offset(left, y), androidx.compose.ui.geometry.Offset(right, y), 1f)
             }
-            fun drawSeries(values: List<Float>, color: Color) {
-                if (values.size < 2) return
+            fun drawSeries(series: List<Float>, color: Color) {
+                if (series.size < 2) return
                 val path = Path()
-                values.forEachIndexed { index, value ->
-                    val x = left + (right - left) * index / (values.size - 1).toFloat()
+                series.forEachIndexed { index, value ->
+                    val x = left + (right - left) * index / (series.size - 1).toFloat()
                     val y = bottom - ((value - min) / range) * (bottom - top)
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
@@ -264,11 +263,11 @@ private fun BenchmarkChart(
             drawSeries(total, totalColor)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(dates.last(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(points.first().dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(last.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            "«Весь портфель» включает акции, фонды, облигации, золото и денежный остаток. Его доходность — оценка TWR по восстановленным операциям; пополнения и выводы учитываются на конец дня. Для сравнения взяты только даты, присутствующие во всех трёх рядах; каждый ряд нормирован к 100 на первой общей дате.",
+            "Индексные линии показывают условную стоимость портфеля, если бы стартовый капитал и каждое последующее пополнение/снятие инвестировались в соответствующий индекс в те же даты. Денежные потоки применяются в конце дня. Весь портфель включает акции, фонды, облигации, золото и свободные деньги.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
