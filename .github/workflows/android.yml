@@ -6,10 +6,10 @@ concurrency:
 
 on:
   push:
-    branches: [ main, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation ]
+    branches: [ main, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison ]
+    branches: [ main, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 

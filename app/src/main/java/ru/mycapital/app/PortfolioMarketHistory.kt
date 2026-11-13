@@ -147,6 +147,7 @@ internal suspend fun buildPortfolioMarketHistory(
         var marketValue = 0.0
         val quantitiesAtClose = linkedMapOf<String, Double>()
         val valuesAtClose = linkedMapOf<String, Double>()
+        var hasUnpricedHolding = false
 
         supported.forEach { (ticker, asset) ->
             val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
@@ -164,7 +165,11 @@ internal suspend fun buildPortfolioMarketHistory(
             }
             if (quantityAtClose > 0.0000001) {
                 val historicalPrice = pricesByTicker[ticker]?.entries?.lastOrNull { !it.key.isAfter(date) }?.value
-                if (historicalPrice != null) {
+                if (historicalPrice == null) {
+                    // Never value only part of the portfolio: a missing first quote
+                    // for one held instrument would otherwise create a false NAV dip.
+                    hasUnpricedHolding = true
+                } else {
                     val positionValue = quantityAtClose * historicalPrice
                     marketValue += positionValue
                     quantitiesAtClose[ticker] = quantityAtClose
@@ -172,6 +177,7 @@ internal suspend fun buildPortfolioMarketHistory(
                 }
             }
         }
+        if (hasUnpricedHolding) return@forEach
 
         // Holdings change on trade date, but broker cash changes on settlement
         // date. For imported trades use T+ settlement; manual/legacy operations
