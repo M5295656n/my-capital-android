@@ -93,6 +93,26 @@ class RealizedTradingCalculationsTest {
     }
 
     @Test
+    fun overflowingSaleDoesNotPartiallyConsumeEarlierFifoLots() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 1.0, 0.0, date = 1L),
+                trade("Продажа", 1.0, Double.MAX_VALUE / 2.0, date = 2L),
+                trade("Покупка", 1.0, 0.0, date = 3L),
+                trade("Покупка", 1.0, Double.MAX_VALUE / 4.0, date = 4L),
+                trade("Продажа", 2.0, Double.MAX_VALUE / 2.0, date = 5L),
+                // This must still match the first lot, proving the overflowing
+                // two-unit sale did not consume any part of its FIFO allocation.
+                trade("Продажа", 1.0, 0.0, date = 6L)
+            )
+        )
+
+        assertEquals(Double.MAX_VALUE / 2.0, result.profit, 0.0)
+        assertEquals(2.0, result.unmatchedQuantity, 0.000001)
+        assertTrue(result.profit.isFinite())
+    }
+
+    @Test
     fun unmatchedQuantitySaturatesInsteadOfOverflowing() {
         val result = calculateRealizedTradingResult(
             listOf(
