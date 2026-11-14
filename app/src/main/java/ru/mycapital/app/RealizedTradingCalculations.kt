@@ -80,7 +80,12 @@ internal fun tradeBookAccountKey(operation: OperationEntity): String? {
     brokerAccountIdFromTradeSourceKey(operation.sourceKey)?.let { return it }
     val sourceKey = operation.sourceKey.orEmpty()
     if (sourceKey.startsWith("SBER:TRADE:", ignoreCase = true)) {
-        return "LEGACY_UNKNOWN:" + operation.id
+        // Persisted rows have stable positive IDs. Unsaved/test rows may still
+        // carry Room's default id=0, so use their unscoped source key instead.
+        val identity = operation.id.takeIf { it > 0L }?.toString()
+            ?: sourceKey.takeIf { it.isNotBlank() }
+            ?: "UNIDENTIFIED"
+        return "LEGACY_UNKNOWN:$identity"
     }
     return null
 }
