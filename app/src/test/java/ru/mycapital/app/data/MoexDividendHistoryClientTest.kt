@@ -80,6 +80,34 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun adjustsPreSplitDividendAmountsToCurrentShareUnitsBeforeForecasting() {
+        val history = listOf(
+            dividend("2025-05-16", 32.0).copy(secid = "T"),
+            dividend("2026-05-25", 4.5).copy(secid = "T")
+        )
+        val splits = listOf(
+            HistoricalSplit(
+                secid = "T",
+                tradedate = LocalDate.of(2026, 4, 17),
+                before = 1.0,
+                after = 10.0
+            )
+        )
+
+        val adjusted = adjustHistoricalDividendsForSplits(history, splits)
+        assertEquals(3.2, adjusted[0].amountPerShare, 0.000001)
+        assertEquals(4.5, adjusted[1].amountPerShare, 0.000001)
+
+        val forecast = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = adjusted,
+            today = LocalDate.of(2026, 11, 14)
+        ).single()
+        assertEquals(LocalDate.of(2027, 5, 21), forecast.recordDate)
+        assertEquals(3.85, forecast.amountPerShare, 0.000001)
+    }
+
+    @Test
     fun ignoresOldAndNonRubleHistoryWhenEstimatingRecurringPayments() {
         val history = listOf(
             dividend("2020-05-20", 100.0).copy(secid = "T"),
