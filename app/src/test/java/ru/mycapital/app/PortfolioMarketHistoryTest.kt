@@ -55,7 +55,12 @@ class PortfolioMarketHistoryTest {
         assertEquals("2026-01-02", result.points.first().dateKey)
         assertEquals(999.0, result.points.first().totalValue, 0.000001)
         assertEquals(1_000.0, result.points.first().investedCapital, 0.000001)
+        assertEquals(899.0, result.points.first().cashValue, 0.000001)
+        assertEquals(1.0, result.points.first().quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(100.0, result.points.first().assetValues["SBER"] ?: 0.0, 0.000001)
         assertEquals(1_009.0, result.points.last().totalValue, 0.000001)
+        assertEquals(1.0, result.points.last().quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(110.0, result.points.last().assetValues["SBER"] ?: 0.0, 0.000001)
         assertTrue(result.unavailableTickers.isEmpty())
     }
 
@@ -108,6 +113,258 @@ class PortfolioMarketHistoryTest {
         assertEquals(1, result.points.size)
         assertEquals(1_017.0, result.points.single().totalValue, 0.000001)
         assertTrue(result.unavailableTickers.isEmpty())
+    }
+
+    @Test
+    fun fullySoldInstrumentRemainsInHistoricalNavWithoutCurrentAssetRow() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-02-02")
+        val sellDate = LocalDate.parse("2026-02-03")
+        val requestedTickers = mutableListOf<String>()
+        val result = buildPortfolioMarketHistory(
+            // A fully sold instrument is correctly absent from the current assets table.
+            assets = emptyList(),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-02-01", 1.0, 500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-02-02", 2.0, 100.0, 1.0),
+                operation(3, "Продажа", "2026-02-03", 2.0, 110.0, 1.0)
+            ),
+            currentCash = 518.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = sellDate
+        ) { ticker, type, _, _ ->
+            requestedTickers += ticker
+            assertFalse(type.contains("облиг", ignoreCase = true))
+            listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(sellDate, 110.0))
+        }
+
+        assertTrue(requestedTickers.contains("SBER"))
+        assertEquals(2, result.points.size)
+        assertEquals(2.0, result.points[0].quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(200.0, result.points[0].assetValues["SBER"] ?: 0.0, 0.000001)
+        assertEquals(499.0, result.points[0].totalValue, 0.000001)
+        assertEquals(0.0, result.points[1].quantities["SBER"] ?: 0.0, 0.000001)
+        assertEquals(518.0, result.points[1].cashValue, 0.000001)
+        assertEquals(518.0, result.points[1].totalValue, 0.000001)
+        assertFalse(result.unavailableTickers.contains("SBER"))
+    }
+
+    @Test
+    fun tradeDateAndSettlementDateDoNotDoubleCountCashAndHoldings() = kotlinx.coroutines.runBlocking {
+        val tradeDate = LocalDate.parse("2026-03-02")
+        val settlementDate = LocalDate.parse("2026-03-04")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 3L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0
+            )),
+            operations = listOf(
+                operation(20, "Пополнение", "2026-03-01", 1.0, 1_000.0, ticker = "RUB"),
+                operation(21, "Покупка", "2026-03-02", 1.0, 100.0).copy(
+                    settlementDate = settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                )
+            ),
+            currentCash = 900.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = settlementDate
+        ) { _, _, _, _ ->
+            listOf(
+                MoexDailyClose(tradeDate, 100.0),
+                MoexDailyClose(tradeDate.plusDays(1), 100.0),
+                MoexDailyClose(settlementDate, 100.0)
+            )
+        }
+
+        assertEquals(3, result.points.size)
+        assertEquals(1_000.0, result.points[0].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+        assertEquals(900.0, result.points[2].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[2].totalValue, 0.000001)
+    }
+
+    @Test
+    fun internalTransfersAffectIndividualAccountCashButNotCombinedPortfolio() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-05-03")
+        val transferDate = LocalDate.parse("2026-05-04")
+        val buy = operation(29, "Покупка", "2026-05-03", 1.0, 100.0)
+        val outgoing = operation(
+            id = 30,
+            type = "Внутренний перевод исходящий",
+            date = "2026-05-04",
+            quantity = 1.0,
+            price = 800.0,
+            ticker = "RUB"
+        )
+        val incoming = outgoing.copy(
+            id = 31,
+            operationType = "Внутренний перевод входящий",
+            sourceKey = "SBER:S25F9ZU:CASH:transfer-800",
+            accountId = "S25F9ZU"
+        )
+        val accountAsset = AssetEntity(
+            id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+            quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0
+        )
+
+        val individual = buildPortfolioMarketHistory(
+            assets = listOf(accountAsset),
+            operations = listOf(buy, outgoing),
+            currentCash = 200.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = transferDate,
+            includeInternalTransfers = true
+        ) { _, _, _, _ -> listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(transferDate, 100.0)) }
+
+        val combined = buildPortfolioMarketHistory(
+            assets = listOf(accountAsset),
+            operations = listOf(buy, outgoing, incoming),
+            currentCash = 1_000.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = transferDate,
+            includeInternalTransfers = false
+        ) { _, _, _, _ -> listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(transferDate, 100.0)) }
+
+        assertEquals(2, individual.points.size)
+        assertEquals(1_000.0, individual.points.first().cashValue, 0.000001)
+        assertEquals(200.0, individual.points.last().cashValue, 0.000001)
+        assertEquals(individual.points.first().nav, individual.points.last().nav, 0.000001)
+        assertEquals(1_000.0, combined.points.first().cashValue, 0.000001)
+        assertEquals(1_000.0, combined.points.last().cashValue, 0.000001)
+    }
+
+    @Test
+    fun legacyUnscopedSourceKeysAreNotMistakenForBrokerAccountIds() {
+        assertEquals(null, historyAccountId(null))
+        assertEquals(null, historyAccountId("MANUAL:TRADE:123"))
+        assertEquals(null, historyAccountId("SBER:TRADE:123"))
+        assertEquals(null, historyAccountId("SBER:CASH:deposit-123"))
+        assertEquals(null, historyAccountId("SBER:PAYOUT:dividend-123"))
+    }
+
+    @Test
+    fun scopedSourceKeysResolveTheBrokerAccountId() {
+        assertEquals("403RY0J", historyAccountId("SBER:403RY0J:TRADE:deal-123"))
+        assertEquals("S25F9ZU", historyAccountId("SBER:S25F9ZU:CASH:deposit-123"))
+        assertEquals("403RY0J", historyAccountId("SBER:403RY0J:PAYOUT:dividend-123"))
+    }
+
+    @Test
+    fun skipsDateWhenAnyHeldInstrumentHasNoHistoricalQuoteYet() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-06-01")
+        val completeDate = LocalDate.parse("2026-06-02")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(
+                AssetEntity(id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                    quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0),
+                AssetEntity(id = 2L, ticker = "LKOH", name = "Лукойл", assetType = "Акция",
+                    quantity = 1.0, averagePrice = 100.0, currentPrice = 100.0)
+            ),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-05-31", 1.0, 1_000.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-06-01", 1.0, 100.0, ticker = "SBER"),
+                operation(3, "Покупка", "2026-06-01", 1.0, 100.0, ticker = "LKOH")
+            ),
+            currentCash = 800.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = completeDate
+        ) { ticker, _, _, _ ->
+            if (ticker == "SBER") {
+                listOf(MoexDailyClose(firstDate, 100.0), MoexDailyClose(completeDate, 100.0))
+            } else {
+                listOf(MoexDailyClose(completeDate, 100.0))
+            }
+        }
+
+        // The first date has only one of two holdings priced. Including it would
+        // understate NAV by 10%; start only once the complete portfolio is valued.
+        assertEquals(1, result.points.size)
+        assertEquals("2026-06-02", result.points.single().dateKey)
+        assertEquals(1_000.0, result.points.single().totalValue, 0.000001)
+        assertEquals(100.0, result.points.single().nav, 0.000001)
+    }
+
+
+    @Test
+    fun twrUsesCumulativeExternalFlowDeltaLikeBenchmarkComparison() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-07-01")
+        val secondDate = LocalDate.parse("2026-07-02")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 2.0, averagePrice = 100.0, currentPrice = 110.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-07-01", 1.0, 1_000.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-07-01", 2.0, 100.0, ticker = "SBER"),
+                operation(3, "Пополнение", "2026-07-02", 1.0, 500.0, ticker = "RUB")
+            ),
+            currentCash = 1_300.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = secondDate
+        ) { _, _, _, _ ->
+            listOf(MoexDailyClose(firstDate, 100.0), MoexDailyClose(secondDate, 110.0))
+        }
+        assertEquals(2, result.points.size)
+        assertEquals(1_000.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_520.0, result.points[1].totalValue, 0.000001)
+        assertEquals(102.0, result.points[1].nav, 0.000001)
+    }
+
+
+    @Test
+    fun transferToAccountOutsideConsolidatedPortfolioIsAnExternalWithdrawal() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-08-03")
+        val secondDate = LocalDate.parse("2026-08-04")
+        val transfer = operation(3, "Внутренний перевод исходящий", "2026-08-04", 1.0, 500.0, ticker = "RUB")
+            .copy(accountId = "403RY0J", note = "Импорт: Перевод ДС с договора 403RY0J на договора S25F9ZU")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 500.0, currentPrice = 500.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-08-03", 1.0, 1_500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-08-03", 1.0, 500.0),
+                transfer
+            ),
+            currentCash = 500.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = secondDate,
+            includedBrokerAccountIds = setOf("403RY0J")
+        ) { _, _, _, _ -> listOf(MoexDailyClose(firstDate, 500.0), MoexDailyClose(secondDate, 500.0)) }
+
+        assertEquals(1_500.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+        assertEquals(100.0, result.points[1].nav, 0.000001)
+    }
+
+    @Test
+    fun transferBetweenTwoIncludedAccountsDoesNotChangeConsolidatedNav() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-08-03")
+        val secondDate = LocalDate.parse("2026-08-04")
+        val outgoing = operation(3, "Внутренний перевод исходящий", "2026-08-04", 1.0, 500.0, ticker = "RUB")
+            .copy(accountId = "403RY0J", note = "Перевод ДС с договора 403RY0J на договора S25F9ZU")
+        val incoming = operation(4, "Внутренний перевод входящий", "2026-08-04", 1.0, 500.0, ticker = "RUB")
+            .copy(accountId = "S25F9ZU", note = "Перевод ДС с договора 403RY0J на договора S25F9ZU")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 500.0, currentPrice = 500.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-08-03", 1.0, 1_500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-08-03", 1.0, 500.0),
+                outgoing, incoming
+            ),
+            currentCash = 1_000.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = secondDate,
+            includedBrokerAccountIds = setOf("403RY0J", "S25F9ZU")
+        ) { _, _, _, _ -> listOf(MoexDailyClose(firstDate, 500.0), MoexDailyClose(secondDate, 500.0)) }
+
+        assertEquals(1_500.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_500.0, result.points[1].totalValue, 0.000001)
+        assertEquals(100.0, result.points[1].nav, 0.000001)
     }
 
 }
