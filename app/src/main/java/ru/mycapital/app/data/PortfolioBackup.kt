@@ -33,15 +33,19 @@ object PortfolioBackup {
 
     fun export(context: Context, destination: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
-        val database = PortfolioDatabase.getInstance(context)
-        val tempDb = File.createTempFile("mycapital-backup-", ".db", context.cacheDir)
-        val tempArchive = File.createTempFile("mycapital-backup-", ".zip", context.cacheDir)
+        var tempDb: File? = null
+        var tempArchive: File? = null
         try {
+            val database = PortfolioDatabase.getInstance(context)
+            val snapshotFile = File.createTempFile("mycapital-backup-", ".db", context.cacheDir)
+            tempDb = snapshotFile
+            val archiveFile = File.createTempFile("mycapital-backup-", ".zip", context.cacheDir)
+            tempArchive = archiveFile
             // VACUUM INTO creates a transactionally consistent snapshot while keeping
             // the live Room instance open. Closing the singleton here would invalidate
             // DAO/Flow instances already remembered by the Compose application.
-            val version = createConsistentSnapshot(database, tempDb)
-            val zip = ZipFile(tempArchive, password)
+            val version = createConsistentSnapshot(database, snapshotFile)
+            val zip = ZipFile(archiveFile, password)
             val manifest = File.createTempFile("mycapital-manifest-", ".txt", context.cacheDir)
             try {
                 manifest.writeText(
@@ -55,31 +59,35 @@ object PortfolioBackup {
                     compressionMethod = CompressionMethod.DEFLATE
                 }
                 zip.addFile(manifest, parameters.apply { fileNameInZip = MANIFEST_ENTRY })
-                zip.addFile(tempDb, parameters.apply { fileNameInZip = BACKUP_ENTRY })
+                zip.addFile(snapshotFile, parameters.apply { fileNameInZip = BACKUP_ENTRY })
             } finally {
                 manifest.delete()
             }
             context.contentResolver.openOutputStream(destination, "w")?.use { output ->
-                tempArchive.inputStream().use { it.copyTo(output) }
+                archiveFile.inputStream().use { it.copyTo(output) }
             } ?: error("Не удалось записать файл резервной копии.")
-            return BackupInfo(version, tempDb.length())
+            return BackupInfo(version, snapshotFile.length())
         } finally {
             password.fill('\u0000')
-            tempDb.delete()
-            tempArchive.delete()
+            tempDb?.delete()
+            tempArchive?.delete()
         }
     }
 
     fun restore(context: Context, sourceUri: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
-        val archive = File.createTempFile("mycapital-restore-", ".zip", context.cacheDir)
-        val extractDir = File.createTempFile("mycapital-restore-", ".dir", context.cacheDir).apply {
-            check(delete() && mkdirs()) { "Не удалось подготовить временную папку восстановления." }
-        }
-        val tempDb = File(extractDir, BACKUP_ENTRY)
+        var archive: File? = null
+        var extractDir: File? = null
         try {
+            val archiveFile = File.createTempFile("mycapital-restore-", ".zip", context.cacheDir)
+            archive = archiveFile
+            val extractionDirectory = File.createTempFile("mycapital-restore-", ".dir", context.cacheDir).apply {
+                check(delete() && mkdirs()) { "Не удалось подготовить временную папку восстановления." }
+            }
+            extractDir = extractionDirectory
+            val tempDb = File(extractionDirectory, BACKUP_ENTRY)
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                archive.outputStream().use { output ->
+                archiveFile.outputStream().use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     var total = 0L
                     while (true) {
@@ -91,9 +99,8 @@ object PortfolioBackup {
                     }
                 }
             } ?: error("Не удалось открыть архив.")
-            check(archive.length() in 1..MAX_ARCHIVE_BYTES) { "Размер архива недопустим." }
-            extractDir.mkdirs()
-            val zip = ZipFile(archive, password)
+            check(archiveFile.length() in 1..MAX_ARCHIVE_BYTES) { "Размер архива недопустим." }
+            val zip = ZipFile(archiveFile, password)
             val headers = zip.fileHeaders
             check(headers.size == 2 && headers.all { it.isEncrypted } &&
                 headers.map { it.fileName }.toSet() == setOf(MANIFEST_ENTRY, BACKUP_ENTRY)) {
@@ -106,13 +113,13 @@ object PortfolioBackup {
                 "Размер распакованных данных недопустим."
             }
             // Extract only the two expected entries; never unpack arbitrary archive paths.
-            zip.extractFile(MANIFEST_ENTRY, extractDir.absolutePath)
-            zip.extractFile(BACKUP_ENTRY, extractDir.absolutePath)
-            check(File(extractDir, MANIFEST_ENTRY).length() in 1..MAX_MANIFEST_BYTES &&
+            zip.extractFile(MANIFEST_ENTRY, extractionDirectory.absolutePath)
+            zip.extractFile(BACKUP_ENTRY, extractionDirectory.absolutePath)
+            check(File(extractionDirectory, MANIFEST_ENTRY).length() in 1..MAX_MANIFEST_BYTES &&
                 tempDb.length() in 1..MAX_DATABASE_ENTRY_BYTES) {
                 "Фактический размер распакованных данных превышает допустимый предел."
             }
-            val manifest = File(extractDir, MANIFEST_ENTRY).readText(Charsets.UTF_8)
+            val manifest = File(extractionDirectory, MANIFEST_ENTRY).readText(Charsets.UTF_8)
             check(manifest.startsWith("MyCapital backup") && manifest.contains("format=2") &&
                 manifest.contains("encryption=AES-256")) {
                 "Файл не является зашифрованной резервной копией MyCapital."
@@ -186,8 +193,8 @@ object PortfolioBackup {
             return BackupInfo(version, tempDb.length())
         } finally {
             password.fill('\u0000')
-            archive.delete()
-            extractDir.deleteRecursively()
+            archive?.delete()
+            extractDir?.deleteRecursively()
         }
     }
 
