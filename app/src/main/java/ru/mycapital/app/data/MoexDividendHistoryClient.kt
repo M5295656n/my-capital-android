@@ -262,7 +262,7 @@ internal class MoexDividendHistoryClient {
     private fun requestJson(url: String): JSONObject {
         val request = Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", "MyCapital-Android/0.3.25")
+            .header("User-Agent", "MyCapital-Android/0.3.91")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
