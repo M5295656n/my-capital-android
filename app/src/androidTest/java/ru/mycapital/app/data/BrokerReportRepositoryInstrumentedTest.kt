@@ -244,7 +244,12 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(4.0, updated.quantity, 0.000001)
         assertEquals(12.0, updated.currentPrice, 0.000001)
         assertEquals(10.0, updated.averagePrice, 0.000001)
-        assertEquals(null, dao.getAssetByTicker("XYZ"))
+        val created = dao.getAssetByTicker("XYZ")
+        assertNotNull(created)
+        assertEquals(1.0, created!!.quantity, 0.000001)
+        assertEquals(5.0, created.currentPrice, 0.000001)
+        assertEquals(0.0, created.averagePrice, 0.000001)
+        assertEquals(null, dao.getAssetByTicker("OLD"))
     }
 
     @Test
