@@ -392,14 +392,15 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         commission: Double = 0.0,
         note: String = ""
     ) {
-        require(quantity > 0.0) { "Количество должно быть больше нуля" }
-        require(price >= 0.0) { "Цена не может быть отрицательной" }
-        require(commission >= 0.0) { "Комиссия не может быть отрицательной" }
+        require(quantity.isFinite() && quantity > 0.0) { "Количество должно быть конечным и больше нуля" }
+        require(price.isFinite() && price >= 0.0) { "Цена должна быть конечной и неотрицательной" }
+        require(commission.isFinite() && commission >= 0.0) { "Комиссия должна быть конечной и неотрицательной" }
 
         database.withTransaction {
             dao.ensureCashBalance(CashBalanceEntity())
             val cash = dao.getCashBalance() ?: 0.0
             val grossAmount = quantity * price
+            require(grossAmount.isFinite()) { "Сумма операции слишком велика" }
 
             val nextCash = if (isBuy) {
                 val totalCost = grossAmount + commission
@@ -415,6 +416,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
 
             val asset = requireNotNull(dao.getAsset(assetId)) { "Актив не найден" }
             val nextQuantity = if (isBuy) asset.quantity + quantity else asset.quantity - quantity
+            require(nextQuantity.isFinite()) { "Итоговое количество бумаг недопустимо" }
             require(nextQuantity >= -0.0000001) { "Недостаточно бумаг для продажи" }
 
             val nextAverage = when {
@@ -422,6 +424,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 isBuy -> ((asset.quantity * asset.averagePrice) + grossAmount + commission) / nextQuantity
                 else -> asset.averagePrice
             }
+            require(nextCash.isFinite() && nextAverage.isFinite()) { "Результат операции выходит за допустимый диапазон" }
 
             dao.updateCashBalance(nextCash)
             dao.updateAsset(
@@ -447,11 +450,12 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
     }
 
     suspend fun recordCashFlow(isDeposit: Boolean, amount: Double, note: String = "") {
-        require(amount > 0.0) { "Сумма должна быть больше нуля" }
+        require(amount.isFinite() && amount > 0.0) { "Сумма должна быть конечной и больше нуля" }
         database.withTransaction {
             dao.ensureCashBalance(CashBalanceEntity())
             val current = dao.getCashBalance() ?: 0.0
             val next = if (isDeposit) current + amount else current - amount
+            require(next.isFinite()) { "Итоговый денежный остаток недопустим" }
             require(next >= -0.0000001) { "Недостаточно свободных денег" }
             dao.updateCashBalance(next.coerceAtLeast(0.0))
             dao.insertOperation(
@@ -514,10 +518,12 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
     ) {
         require(ticker.isNotBlank()) { "Укажите тикер" }
         require(payoutType == "Дивиденд" || payoutType == "Купон") { "Неизвестный тип выплаты" }
-        require(amountPerUnit > 0.0) { "Сумма на единицу должна быть больше нуля" }
-        require(quantity > 0.0) { "Количество должно быть больше нуля" }
+        require(amountPerUnit.isFinite() && amountPerUnit > 0.0) { "Сумма на единицу должна быть конечной и больше нуля" }
+        require(quantity.isFinite() && quantity > 0.0) { "Количество должно быть конечным и больше нуля" }
+        require(taxAmount.isFinite() && taxAmount >= 0.0) { "Налог должен быть конечным и неотрицательным" }
         val gross = amountPerUnit * quantity
-        require(taxAmount >= 0.0 && taxAmount <= gross) { "Налог должен быть от нуля до суммы выплаты" }
+        require(gross.isFinite()) { "Сумма выплаты слишком велика" }
+        require(taxAmount <= gross) { "Налог должен быть от нуля до суммы выплаты" }
         if (!isReceived) require(expectedDate != null) { "Укажите дату ожидаемой выплаты" }
         val now = System.currentTimeMillis()
 
