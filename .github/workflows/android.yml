@@ -91,6 +91,13 @@ jobs:
           name: unit-test-results
           path: app/build/test-results/testDebugUnitTest/
           if-no-files-found: warn
+      - name: Upload Room schema export
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schema-export
+          path: app/schemas/
+          if-no-files-found: error
       - name: Upload signed release APK
         if: success()
         uses: actions/upload-artifact@v4
