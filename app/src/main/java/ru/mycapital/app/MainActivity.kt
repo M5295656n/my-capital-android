@@ -2240,8 +2240,8 @@ private fun OperationsScreen(
     val visibleOperations = operations.filter { operation ->
         val matchesAccount = when (selectedAccountId) {
             ALL_HISTORY_ACCOUNTS -> true
-            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
-            else -> historyAccountId(operation.sourceKey) == selectedAccountId
+            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation) == null
+            else -> historyAccountId(operation) == selectedAccountId
         }
         val matchesType = when (operationTypeFilter) {
             "Сделки" -> operation.operationType == "Покупка" || operation.operationType == "Продажа"
@@ -2401,9 +2401,10 @@ private fun PayoutsScreen(
                     if (payoutAccountId != null) {
                         payoutAccountId == selectedAccountId
                     } else {
-                        // Portfolio-level forecasts/manual events are shown only when their
-                        // ticker is actually held on the selected broker account.
-                        payout.ticker.uppercase() in selectedTickers
+                        // Without an explicit account link, keep the payout unassigned;
+                        // ticker membership is ambiguous when the same security is held
+                        // in more than one brokerage account.
+                        false
                     }
                 }
             }
@@ -3054,8 +3055,7 @@ private fun EventsScreen(
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
         else payouts.filter { payout ->
             val payoutAccountId = historyAccountId(payout.sourceKey)
-            if (payoutAccountId != null) payoutAccountId == selectedAccountId
-            else payout.ticker.uppercase() in selectedTickers
+            payoutAccountId != null && payoutAccountId == selectedAccountId
         }
     }
     val selectedNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
