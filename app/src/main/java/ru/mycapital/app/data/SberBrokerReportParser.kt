@@ -217,7 +217,7 @@ object SberBrokerReportParser {
         val currencyIndex = flowHeader.indexOf("Валюта")
         val creditIndex = flowHeader.indexOf("Сумма зачисления")
         val debitIndex = flowHeader.indexOf("Сумма списания")
-        val occurrences = mutableMapOf<String, Int>()
+        val cashFlowOccurrences = mutableMapOf<String, Int>()
         val cashFlows = flowRows.drop(flowsTable.second + 1).mapNotNull { row ->
             val dateText = row.getOrNull(dateIndex).orEmpty()
             if (!datePattern.matches(dateText)) return@mapNotNull null
@@ -229,8 +229,8 @@ object SberBrokerReportParser {
             if (credit == 0.0 && debit == 0.0) return@mapNotNull null
             val date = LocalDate.parse(dateText, dateFormat)
             val canonical = "${date}:$description:$credit:$debit"
-            val occurrence = occurrences.getOrDefault(canonical, 0)
-            occurrences[canonical] = occurrence + 1
+            val occurrence = cashFlowOccurrences.getOrDefault(canonical, 0)
+            cashFlowOccurrences[canonical] = occurrence + 1
             BrokerReportCashFlow(
                 date = date,
                 description = description,
@@ -371,12 +371,12 @@ object SberBrokerReportParser {
         // Identical rows without a broker deal number are legitimate in some exports.
         // Assign deterministic occurrence suffixes so the unique DB key keeps every row
         // while remaining stable when the same report is imported again.
-        val occurrences = mutableMapOf<String, Int>()
+        val tradeOccurrences = mutableMapOf<String, Int>()
         val trades = parsedTrades.map { trade ->
             if (trade.dealNumber.isNotBlank()) trade
             else {
-                val occurrence = occurrences.getOrDefault(trade.sourceKey, 0)
-                occurrences[trade.sourceKey] = occurrence + 1
+                val occurrence = tradeOccurrences.getOrDefault(trade.sourceKey, 0)
+                tradeOccurrences[trade.sourceKey] = occurrence + 1
                 trade.copy(sourceKeyOccurrence = occurrence)
             }
         }
