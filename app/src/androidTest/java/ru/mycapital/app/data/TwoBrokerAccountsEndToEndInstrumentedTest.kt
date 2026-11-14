@@ -153,7 +153,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         val iisFirst = repository.importBrokerReportHistory(iisReport)
         assertEquals(96, mainFirst.imported) // 43 deposits + 3 dividends + 48 concluded trades + 2 account-side internal transfers
         assertEquals(3, mainFirst.payoutsImported)
-        assertEquals(0, mainFirst.unsettledSkipped)
+        assertEquals(1, mainFirst.unsettledSkipped) // the rejected trade is deliberately skipped
         assertEquals(13, iisFirst.imported) // 4 deposits + 1 coupon + 6 executed trades + 2 account-side internal transfers
         assertEquals(1, iisFirst.payoutsImported)
         assertEquals(0, iisFirst.unsettledSkipped)
@@ -171,7 +171,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         assertEquals(0, mainSecond.imported)
         assertEquals(96, mainSecond.duplicates)
         assertEquals(0, mainSecond.payoutsImported)
-        assertEquals(0, mainSecond.unsettledSkipped)
+        assertEquals(1, mainSecond.unsettledSkipped) // rejected rows are reported on every import
         assertEquals(0, iisSecond.imported)
         assertEquals(13, iisSecond.duplicates)
         assertEquals(0, iisSecond.payoutsImported)
@@ -190,6 +190,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         val finalOperations = dao.observeOperations().first()
         assertEquals(54, finalOperations.count { it.operationType == "Покупка" })
         assertFalse(finalOperations.any { it.note.contains("MAIN-DEAL-REJECTED") })
+        assertFalse(finalOperations.any { it.operationType == "Покупка" && it.ticker == "MAIN02" })
     }
 
     private fun flow(
