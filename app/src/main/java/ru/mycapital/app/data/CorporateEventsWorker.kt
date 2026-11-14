@@ -43,13 +43,11 @@ class CorporateEventsWorker(
             feedEvents = events.size
             setProgress(Data.Builder().putString("summary", "Long/Short: получено событий $feedEvents; проверяю совпадения с тикерами портфеля…").build())
             val byTicker = equities.associateBy { normalizeDividendTicker(it.ticker) }
-            val forecastLimit = today.plusYears(1)
-            // Dividend forecasts are limited to the next 12 months. If no payment date
-            // is supplied, use the record date as the calendar event date.
+            // Keep provider forecasts for the next two years so the next calendar
+            // year's expected dividends (not only the current year's) remain visible.
             val matched = events.filter { event ->
-                val eventDate = event.paymentDate ?: event.recordDate
-                val date = eventDate?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.of("UTC")).toLocalDate() }
-                normalizeDividendTicker(event.ticker) in byTicker && date != null && !date.isBefore(today) && !date.isAfter(forecastLimit)
+                normalizeDividendTicker(event.ticker) in byTicker &&
+                    isWithinDividendForecastHorizon(event, today)
             }
             matchedDividends = matched.size
             // Never erase the cache when the feed is valid but does not contain any
