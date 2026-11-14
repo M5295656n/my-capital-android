@@ -100,7 +100,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
             },
             trades = buildList {
                 repeat(47) { index -> add(trade("MAIN-DEAL-$index", "ЗИ", "MAIN01")) }
-                add(trade("MAIN-DEAL-REJECTED", "ЗО", "MAIN02"))
+                add(trade("MAIN-DEAL-REJECTED", "ОТКЛОНЕНА", "MAIN02"))
             }
         )
         val iisReport = report(
@@ -151,10 +151,10 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         // Import history from both accounts. Cash and positions must remain untouched.
         val mainFirst = repository.importBrokerReportHistory(mainReport)
         val iisFirst = repository.importBrokerReportHistory(iisReport)
-        assertEquals(93, mainFirst.imported) // 43 deposits + 3 dividends + 47 executed trades
+        assertEquals(96, mainFirst.imported) // 43 deposits + 3 dividends + 47 trades + 3 account-side internal transfers
         assertEquals(3, mainFirst.payoutsImported)
         assertEquals(1, mainFirst.unsettledSkipped)
-        assertEquals(11, iisFirst.imported) // 4 deposits + 1 coupon + 6 executed trades
+        assertEquals(14, iisFirst.imported) // 4 deposits + 1 coupon + 6 trades + 3 account-side internal transfers
         assertEquals(1, iisFirst.payoutsImported)
         assertEquals(0, iisFirst.unsettledSkipped)
 
@@ -169,23 +169,24 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         repository.reconcileBrokerReportSnapshot(mainReport)
 
         assertEquals(0, mainSecond.imported)
-        assertEquals(93, mainSecond.duplicates)
+        assertEquals(96, mainSecond.duplicates)
         assertEquals(0, mainSecond.payoutsImported)
         assertEquals(1, mainSecond.unsettledSkipped)
         assertEquals(0, iisSecond.imported)
-        assertEquals(11, iisSecond.duplicates)
+        assertEquals(14, iisSecond.duplicates)
         assertEquals(0, iisSecond.payoutsImported)
 
         assertEquals(cashAfterFirstImport, dao.getCashBalance()!!, 0.000001)
         assertEquals(quantitiesAfterFirstImport, dao.getAssets().associate { it.ticker to it.quantity })
-        assertEquals(104, dao.observeOperations().first().size)
+        assertEquals(110, dao.observeOperations().first().size)
         assertEquals(4, dao.observePayouts().first().size)
         assertEquals(4, dao.observePayouts().first().count { it.status == "RECEIVED" })
         assertEquals(
             setOf(1.10, 2.20, 3.30, 4.40),
             dao.observePayouts().first().map { it.reportedNetAmount!! }.toSet()
         )
-        assertFalse(dao.observeOperations().first().any { it.operationType.contains("Перевод") })
+        assertEquals(6, dao.observeOperations().first().count { it.operationType.startsWith("Внутренний перевод") })
+        assertTrue(dao.observeOperations().first().filter { it.operationType.startsWith("Внутренний перевод") }.all { it.accountId != null })
         val finalOperations = dao.observeOperations().first()
         assertEquals(53, finalOperations.count { it.operationType == "Покупка" })
         assertFalse(finalOperations.any { it.note.contains("MAIN-DEAL-REJECTED") })
