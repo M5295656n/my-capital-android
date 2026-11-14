@@ -179,8 +179,9 @@ internal data class ParsedPlacementDetails(
     val placementStartDate: String? = null,
     val tradingStartDate: String? = null,
     val isin: String? = null,
-    val couponAmount: String? = null
-)
+    val couponAmount: String? = null,
+    val issueRating: String? = null,
+    val issuerRating: String? = null)
 
 internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacementDetails {
     val text = "$title $summary".replace(Regex("\\s+"), " ")
@@ -217,6 +218,9 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
+    val ratingValue = "([^.;]{1,60})"
+    val issueRating = capture(Regex("(?:кредитный\\\\s+)?рейтинг\\\\s+(?:выпуска|эмиссии)\\\\s*[:—-]\\\\s*$ratingValue", RegexOption.IGNORE_CASE))
+    val issuerRating = capture(Regex("(?:кредитный\\\\s+)?рейтинг\\\\s+эмитента\\\\s*[:—-]\\\\s*$ratingValue", RegexOption.IGNORE_CASE))
     val explicitDate = "(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)"
     val applicationDates = capture(Regex(
         "((?:дата\\s+сбора\\s+заявок|период\\s+букбилдинга|сбор\\s+заявок|при[её]м\\s+заявок|книга\\s+заявок)[^.;]{0,120}?$explicitDate)",
@@ -230,7 +234,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         "(?:дата\\s+начала\\s+торгов|начало\\s+торгов|дата\\s+допуска\\s+к\\s+торгам|допуск\\s+к\\s+торгам|торги\\s+начнутся)\\s*[:—-]?\\s*($explicitDate)",
         RegexOption.IGNORE_CASE
     ))
-    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, placementStartDate, tradingDate, isin, couponAmount)
+    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, placementStartDate, tradingDate, isin, couponAmount, issueRating, issuerRating)
 }
 
 internal fun parseExplicitPlacementEventDate(
@@ -297,6 +301,8 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
         Regex("цена размещения|цена предложения|ценовой диапазон|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
         Regex("купонная ставка|ставка купона|процентная ставка по купону|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
         Regex("размер купона|размер купонного дохода|сумма купона|сумма выплаты на одну облигацию|денежный размер купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
+        Regex("(?:кредитный )?рейтинг выпуска|(?:кредитный )?рейтинг эмиссии", RegexOption.IGNORE_CASE) to "Рейтинг выпуска",
+        Regex("(?:кредитный )?рейтинг эмитента", RegexOption.IGNORE_CASE) to "Рейтинг эмитента",
         Regex("\\bisin\\b", RegexOption.IGNORE_CASE) to "ISIN",
         Regex("дата сбора заявок|период букбилдинга|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
         Regex("дата начала размещения|размещение с", RegexOption.IGNORE_CASE) to "Начало размещения",
@@ -356,7 +362,9 @@ internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: P
         placementStartDate = primary.placementStartDate ?: secondary.placementStartDate,
         tradingStartDate = primary.tradingStartDate ?: secondary.tradingStartDate,
         isin = primary.isin ?: secondary.isin,
-        couponAmount = primary.couponAmount ?: secondary.couponAmount
+        couponAmount = primary.couponAmount ?: secondary.couponAmount,
+        issueRating = primary.issueRating ?: secondary.issueRating,
+        issuerRating = primary.issuerRating ?: secondary.issuerRating
     )
 }
 
@@ -367,7 +375,7 @@ internal data class OfficialPlacementDocumentResult(
 
 private fun ParsedPlacementDetails.hasAnyKnownValue(): Boolean = listOf(
     issuer, instrumentType, placementVolume, placementPrice, couponRate,
-    applicationDates, placementStartDate, tradingStartDate, isin, couponAmount
+    applicationDates, placementStartDate, tradingStartDate, isin, couponAmount, issueRating, issuerRating
 ).any { !it.isNullOrBlank() }
 
 internal fun selectPlacementDocumentSourceUrl(
@@ -605,6 +613,11 @@ class MarketNewsClient {
                     eventDate = parseExplicitPlacementEventDate(bestDetails) ?: item.eventDate,
                     isin = item.isin ?: bestDetails.isin,
                     couponAmount = item.couponAmount ?: bestDetails.couponAmount,
+                    summary = buildString {
+                        append(item.summary)
+                        bestDetails.issueRating?.let { append(" Рейтинг выпуска: ").append(it.trim()) }
+                        bestDetails.issuerRating?.let { append(" Рейтинг эмитента: ").append(it.trim()) }
+                    },
                     detailsSourceUrl = documentResult?.sourceUrl ?: item.sourceUrl
                 )
             }
