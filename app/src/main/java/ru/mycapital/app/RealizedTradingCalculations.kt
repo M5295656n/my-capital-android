@@ -13,6 +13,9 @@ internal data class RealizedTradingResult(
  * Imported trades are matched within their brokerage agreement. Manually entered
  * trades have no agreement metadata and are therefore kept in a separate book.
  * Unmatched sales are surfaced rather than assigned an invented cost basis.
+ *
+ * Persisted historical rows are treated as untrusted input: non-finite values and
+ * arithmetic overflow must never contaminate the portfolio's realized-profit total.
  */
 internal fun calculateRealizedTradingResult(
     operations: List<OperationEntity>
@@ -29,7 +32,19 @@ internal fun calculateRealizedTradingResult(
         .sortedBy { it.operationDate }
         .forEach { operation ->
             val ticker = operation.ticker?.trim()?.uppercase().orEmpty()
-            if (ticker.isBlank() || operation.quantity <= 0.0) return@forEach
+            if (ticker.isBlank()) return@forEach
+
+            val quantity = operation.quantity
+            if (!quantity.isFinite() || quantity <= 0.0) {
+                return@forEach
+            }
+
+            val price = operation.price
+            val commission = operation.commission
+            if (!price.isFinite() || !commission.isFinite() || price < 0.0 || commission < 0.0) {
+                if (operation.operationType == "Продажа") unmatched += quantity
+                return@forEach
+            }
 
             val key = TradeBookKey(
                 accountId = brokerAccountIdFromTradeSourceKey(operation.sourceKey),
@@ -38,18 +53,35 @@ internal fun calculateRealizedTradingResult(
             val lots = lotsByBook.getOrPut(key) { ArrayDeque() }
 
             if (operation.operationType == "Покупка") {
-                val unitCost =
-                    (operation.quantity * operation.price + operation.commission) / operation.quantity
-                lots.addLast(Lot(operation.quantity, unitCost))
+                val grossCost = quantity * price
+                val totalCost = grossCost + commission
+                val unitCost = totalCost / quantity
+                if (!grossCost.isFinite() || !totalCost.isFinite() || !unitCost.isFinite()) {
+                    return@forEach
+                }
+                lots.addLast(Lot(quantity, unitCost))
             } else {
-                var remaining = operation.quantity
-                val netSalePerUnit =
-                    (operation.quantity * operation.price - operation.commission) / operation.quantity
+                val grossProceeds = quantity * price
+                val netProceeds = grossProceeds - commission
+                val netSalePerUnit = netProceeds / quantity
+                if (!grossProceeds.isFinite() || !netProceeds.isFinite() ||
+                    netProceeds < 0.0 || !netSalePerUnit.isFinite()
+                ) {
+                    unmatched += quantity
+                    return@forEach
+                }
 
+                var remaining = quantity
                 while (remaining > 0.0000001 && lots.isNotEmpty()) {
                     val lot = lots.first()
                     val matched = minOf(remaining, lot.quantity)
-                    profit += matched * (netSalePerUnit - lot.unitCost)
+                    val increment = matched * (netSalePerUnit - lot.unitCost)
+                    val nextProfit = profit + increment
+                    if (!increment.isFinite() || !nextProfit.isFinite()) {
+                        unmatched += remaining
+                        return@forEach
+                    }
+                    profit = nextProfit
                     remaining -= matched
                     lot.quantity -= matched
                     if (lot.quantity <= 0.0000001) lots.removeFirst()
