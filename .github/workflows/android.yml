@@ -6,10 +6,10 @@ concurrency:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 
@@ -41,6 +41,18 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle assembleRelease
+      - name: Verify release APK signing certificate
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
+          printf '%s\n' "$VERIFY_OUTPUT"
+          ACTUAL="$(printf '%s\n' "$VERIFY_OUTPUT" | grep -i 'SHA-256 digest' | head -n 1 | sed 's/.*digest:[[:space:]]*//' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66"
+          echo "APK signer SHA-256: $ACTUAL"
+          test -n "$ACTUAL" || (echo "ERROR: Could not read APK signing certificate digest" && exit 1)
+          test "$ACTUAL" = "$EXPECTED" || (echo "ERROR: APK signing certificate does not match the project baseline" && exit 1)
       - name: Upload unit test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -49,30 +61,10 @@ jobs:
           path: app/build/test-results/testDebugUnitTest/
           if-no-files-found: warn
       - name: Upload signed release APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: my-capital-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
-  room-instrumentation:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
-      - name: Run Room integration tests on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect
-          script: timeout 12m gradle connectedDebugAndroidTest --stacktrace

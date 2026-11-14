@@ -42,6 +42,9 @@ interface PortfolioDao {
     @Query("SELECT * FROM broker_account_assets ORDER BY accountId, ticker")
     fun observeAllBrokerAccountAssets(): Flow<List<BrokerAccountAssetEntity>>
 
+    @Query("SELECT * FROM broker_account_assets ORDER BY accountId, ticker")
+    suspend fun getAllBrokerAccountAssets(): List<BrokerAccountAssetEntity>
+
     @Query("SELECT * FROM broker_accounts WHERE accountId = :accountId LIMIT 1")
     suspend fun getBrokerAccount(accountId: String): BrokerAccountEntity?
 
@@ -90,8 +93,20 @@ interface PortfolioDao {
     @Query("SELECT * FROM operations WHERE sourceKey = :sourceKey LIMIT 1")
     suspend fun getOperationBySourceKey(sourceKey: String): OperationEntity?
 
+    @Query("UPDATE operations SET settlementDate = :settlementDate WHERE sourceKey = :sourceKey")
+    suspend fun updateOperationSettlementDate(sourceKey: String, settlementDate: Long)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertImportedOperation(operation: OperationEntity): Long
+
+    @Query("SELECT * FROM market_calendar_items ORDER BY eventDate ASC, publishedAt DESC")
+    fun observeMarketCalendarItems(): Flow<List<MarketCalendarItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMarketCalendarItems(items: List<MarketCalendarItemEntity>)
+
+    @Query("DELETE FROM market_calendar_items WHERE updatedAt < :cutoff")
+    suspend fun deleteStaleMarketCalendarItems(cutoff: Long)
 
     @Query("SELECT * FROM payouts ORDER BY COALESCE(expectedDate, actualDate) ASC")
     fun observePayouts(): Flow<List<PayoutEntity>>
@@ -128,6 +143,12 @@ interface PortfolioDao {
 
     @Query("SELECT * FROM portfolio_snapshots ORDER BY dateKey ASC")
     fun observePortfolioSnapshots(): Flow<List<PortfolioSnapshotEntity>>
+
+    @Query("SELECT * FROM portfolio_composition_snapshots ORDER BY dateKey ASC, accountId, dimension, category")
+    fun observePortfolioCompositionSnapshots(): Flow<List<PortfolioCompositionSnapshotEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPortfolioCompositionSnapshots(snapshots: List<PortfolioCompositionSnapshotEntity>)
 
     @Query("SELECT * FROM portfolio_snapshots ORDER BY dateKey DESC LIMIT 1")
     suspend fun getLatestPortfolioSnapshot(): PortfolioSnapshotEntity?

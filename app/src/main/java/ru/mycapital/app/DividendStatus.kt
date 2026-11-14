@@ -16,7 +16,7 @@ internal fun isUpcomingDividendStatus(status: String): Boolean =
 
 internal fun dividendStatusLabel(status: String): String = when (status.uppercase(Locale.ROOT)) {
     "ANNOUNCED" -> "Объявлено"
-    "RECOMMENDED" -> "Рекомендовано СД"
+    "RECOMMENDED" -> "Рекомендовано советом директоров"
     "FORECAST" -> "Прогноз"
     "EXPECTED" -> "Ожидается"
     "RECEIVED" -> "Получено"
