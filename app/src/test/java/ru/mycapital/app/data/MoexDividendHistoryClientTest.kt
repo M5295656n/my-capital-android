@@ -80,6 +80,25 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun ignoresOldAndNonRubleHistoryWhenEstimatingRecurringPayments() {
+        val history = listOf(
+            dividend("2020-05-20", 100.0).copy(secid = "T"),
+            dividend("2023-05-20", 4.0).copy(secid = "T"),
+            dividend("2024-05-20", 5.0).copy(secid = "T"),
+            dividend("2025-05-20", 100.0).copy(secid = "T", currency = "USD")
+        )
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 14)
+        )
+
+        assertEquals(1, forecasts.size)
+        assertEquals(4.5, forecasts.single().amountPerShare, 0.000001)
+    }
+
+    @Test
     fun doesNotForecastMonthWithOnlyOneHistoricalOccurrence() {
         val forecasts = calculateHistoricalDividendForecasts(
             ticker = "T",
