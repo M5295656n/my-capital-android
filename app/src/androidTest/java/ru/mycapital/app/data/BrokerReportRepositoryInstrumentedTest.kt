@@ -72,6 +72,37 @@ class BrokerReportRepositoryInstrumentedTest {
 
 
     @Test
+    fun legacyUnscopedTradeDuplicateIsNotAssignedToTheImportingAccount() = runBlocking {
+        val legacyId = dao.insertOperation(
+            OperationEntity(
+                assetId = null,
+                operationType = "Покупка",
+                ticker = "ABC",
+                quantity = 1.0,
+                price = 10.0,
+                operationDate = LocalDate.parse("2026-10-30").atStartOfDay()
+                    .toInstant(java.time.ZoneOffset.UTC).toEpochMilli(),
+                sourceKey = "SBER:TRADE:101",
+                accountId = null
+            )
+        )
+        val report = report(accountId = "403RY0J", trades = listOf(trade("101", "И")))
+
+        val first = repository.importBrokerReportHistory(report)
+        val second = repository.importBrokerReportHistory(report)
+
+        val legacy = dao.getOperationBySourceKey("SBER:TRADE:101")
+        assertEquals(0, first.imported)
+        assertEquals(1, first.duplicates)
+        assertEquals(0, second.imported)
+        assertEquals(1, second.duplicates)
+        assertEquals(legacyId, legacy!!.id)
+        assertEquals(null, legacy.accountId)
+        assertEquals(null, dao.getOperationBySourceKey("SBER:403RY0J:TRADE:101"))
+        assertEquals(1, dao.observeOperations().first().size)
+    }
+
+    @Test
     fun unsettledBuyUsesPlannedSnapshotAndIsNotCountedAgainAfterSettlement() = runBlocking {
         val pendingTrade = trade("18024861254", "ЗО").copy(
             tradeDate = LocalDate.parse("2026-11-03"),
