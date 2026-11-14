@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class, PortfolioCompositionSnapshotEntity::class, MarketCalendarItemEntity::class],
     version = 19,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class PortfolioDatabase : RoomDatabase() {
     abstract fun portfolioDao(): PortfolioDao
