@@ -81,10 +81,12 @@ internal suspend fun buildPortfolioMarketHistory(
         ticker to (assetsByTicker[ticker] ?: AssetEntity(
             ticker = ticker,
             name = ticker,
-            // Broker history stores no asset type on operations. MOEX bond tickers
-            // use the SU...RMFS... convention; other supported traded instruments
-            // are quoted by MOEX in the shares market (including exchange funds).
-            assetType = if (ticker.startsWith("SU") && ticker.contains("RMFS")) "Облигация" else "Акция",
+            // OperationEntity does not persist the instrument type. Do not guess
+            // from ticker prefixes: corporate bonds and other instruments may not
+            // follow one naming convention. Until a reliable MOEX metadata lookup
+            // is available, expose this ticker as unavailable instead of querying
+            // the shares market and silently building a false history.
+            assetType = "Неизвестно",
             quantity = 0.0,
             averagePrice = 0.0,
             currentPrice = 0.0
@@ -151,16 +153,37 @@ internal suspend fun buildPortfolioMarketHistory(
         var hasUnpricedHolding = false
 
         supported.forEach { (ticker, asset) ->
-            val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
+            // Rewind the position ledger from today's quantity to this historical
+            // close. Full redemptions close the position; their quantity is stored
+            // as a cash-flow convention (1), so restore the actual outstanding
+            // quantity calculated from trades since the preceding redemption.
+            val tickerOperations = operationsByTicker[ticker].orEmpty()
+            val redemptionQuantities = mutableMapOf<Long, Double>()
+            var outstandingBeforeRedemption = 0.0
+            tickerOperations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
+                .forEach { operation ->
+                    when (operation.operationType) {
+                        "Покупка" -> outstandingBeforeRedemption += operation.quantity
+                        "Продажа" -> outstandingBeforeRedemption =
+                            (outstandingBeforeRedemption - operation.quantity).coerceAtLeast(0.0)
+                        "Погашение" -> {
+                            redemptionQuantities[operation.id] = outstandingBeforeRedemption
+                            outstandingBeforeRedemption = 0.0
+                        }
+                    }
+                }
+            val futurePositionAdjustment = tickerOperations.asSequence()
                 .filter { it.operationDate >= endOfDay }
+                .sortedByDescending { it.operationDate }
                 .sumOf { operation ->
                     when (operation.operationType) {
-                        "Покупка" -> operation.quantity
-                        "Продажа" -> -operation.quantity
+                        "Покупка" -> -operation.quantity
+                        "Продажа" -> operation.quantity
+                        "Погашение" -> redemptionQuantities[operation.id] ?: 0.0
                         else -> 0.0
                     }
                 }
-            val quantityAtClose = asset.quantity - futureTradeDelta
+            val quantityAtClose = asset.quantity + futurePositionAdjustment
             if (quantityAtClose < -0.0000001) {
                 unavailableConcurrent.add(ticker)
             }
