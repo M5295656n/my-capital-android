@@ -21,7 +21,10 @@ internal data class PortfolioMarketHistoryPoint(
     val dateKey: String,
     val totalValue: Double,
     val investedCapital: Double,
-    val nav: Double
+    val nav: Double,
+    val cashValue: Double = 0.0,
+    val quantities: Map<String, Double> = emptyMap(),
+    val assetValues: Map<String, Double> = emptyMap()
 )
 
 internal data class PortfolioMarketHistoryResult(
@@ -41,6 +44,8 @@ internal suspend fun buildPortfolioMarketHistory(
     currentCash: Double,
     range: PortfolioHistoryRange,
     throughDate: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow")),
+    includeInternalTransfers: Boolean = false,
+    includedBrokerAccountIds: Set<String> = emptySet(),
     priceLoader: suspend (String, String, LocalDate, LocalDate) -> List<ru.mycapital.app.data.MoexDailyClose> = { ticker, type, from, till ->
         MoexSecurityHistoryClient().getDailyCloses(ticker, type, from, till)
     }
@@ -62,12 +67,28 @@ internal suspend fun buildPortfolioMarketHistory(
                 currentPrice = rows.first().currentPrice
             )
         }
-    val boughtTickers = operations.asSequence()
-        .filter { it.operationType == "Покупка" && it.quantity > 0.0 }
+    // Historical holdings must include instruments that were fully sold and
+    // therefore no longer exist in the current assets table. Otherwise their
+    // pre-sale market value disappears while the reverse cash ledger also removes
+    // the future sale proceeds, creating an artificial NAV collapse.
+    val tradedTickers = operations.asSequence()
+        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+        .filter { it.quantity > 0.0 }
         .mapNotNull { it.ticker?.trim()?.uppercase()?.takeIf(String::isNotBlank) }
         .toSet()
-    val relevant = (assetsByTicker.keys + boughtTickers).mapNotNull { ticker ->
-        assetsByTicker[ticker]?.let { ticker to it }
+    val relevantTickers = assetsByTicker.keys + tradedTickers
+    val relevant = relevantTickers.map { ticker ->
+        ticker to (assetsByTicker[ticker] ?: AssetEntity(
+            ticker = ticker,
+            name = ticker,
+            // Broker history stores no asset type on operations. MOEX bond tickers
+            // use the SU...RMFS... convention; other supported traded instruments
+            // are quoted by MOEX in the shares market (including exchange funds).
+            assetType = if (ticker.startsWith("SU") && ticker.contains("RMFS")) "Облигация" else "Акция",
+            quantity = 0.0,
+            averagePrice = 0.0,
+            currentPrice = 0.0
+        ))
     }
     val supported = relevant.filter { (_, asset) ->
         val type = asset.assetType.lowercase()
@@ -120,11 +141,14 @@ internal suspend fun buildPortfolioMarketHistory(
     val points = mutableListOf<PortfolioMarketHistoryPoint>()
     var nav = 100.0
     var previousValue: Double? = null
-    var previousEndOfDay: Long? = null
+    var previousInvestedCapital: Double? = null
 
     dates.forEach { date ->
         val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         var marketValue = 0.0
+        val quantitiesAtClose = linkedMapOf<String, Double>()
+        val valuesAtClose = linkedMapOf<String, Double>()
+        var hasUnpricedHolding = false
 
         supported.forEach { (ticker, asset) ->
             val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
@@ -142,36 +166,48 @@ internal suspend fun buildPortfolioMarketHistory(
             }
             if (quantityAtClose > 0.0000001) {
                 val historicalPrice = pricesByTicker[ticker]?.entries?.lastOrNull { !it.key.isAfter(date) }?.value
-                if (historicalPrice != null) marketValue += quantityAtClose * historicalPrice
+                if (historicalPrice == null) {
+                    // Never value only part of the portfolio: a missing first quote
+                    // for one held instrument would otherwise create a false NAV dip.
+                    hasUnpricedHolding = true
+                } else {
+                    val positionValue = quantityAtClose * historicalPrice
+                    marketValue += positionValue
+                    quantitiesAtClose[ticker] = quantityAtClose
+                    valuesAtClose[ticker] = positionValue
+                }
             }
         }
+        if (hasUnpricedHolding) return@forEach
 
+        // Holdings change on trade date, but broker cash changes on settlement
+        // date. For imported trades use T+ settlement; manual/legacy operations
+        // retain operationDate as their cash-effective date.
         val futureCashEffects = orderedOperations.asSequence()
-            .filter { it.operationDate >= endOfDay }
-            .sumOf(::portfolioOperationCashEffect)
+            .filter { cashEffectiveTimestamp(it) >= endOfDay }
+            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers, includedBrokerAccountIds) }
         val cashAtClose = currentCash - futureCashEffects
-        val totalValue = marketValue + cashAtClose
+        // A trade changes economic ownership on trade date, while broker cash
+        // settles later. Include the unsettled payable/receivable in NAV so the
+        // asset and its cash leg are never double-counted between those dates.
+        val unsettledTradeAdjustment = orderedOperations.asSequence()
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .filter { it.operationDate < endOfDay }
+            .filter { (it.settlementDate ?: it.operationDate) >= endOfDay }
+            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers, includedBrokerAccountIds) }
+        val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
-            .sumOf { operation ->
-                when (operation.operationType) {
-                    "Пополнение" -> operation.quantity * operation.price
-                    "Вывод" -> -operation.quantity * operation.price
-                    else -> 0.0
-                }
-            }
+            .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers, includedBrokerAccountIds) }
 
         val priorValue = previousValue
-        if (priorValue != null && priorValue > 0.0) {
-            val periodFlow = orderedOperations.asSequence()
-                .filter { it.operationDate >= (previousEndOfDay ?: Long.MIN_VALUE) && it.operationDate < endOfDay }
-                .sumOf {
-                    when (it.operationType) {
-                        "Пополнение" -> it.quantity * it.price
-                        "Вывод" -> -it.quantity * it.price
-                        else -> 0.0
-                    }
-                }
+        val priorInvestedCapital = previousInvestedCapital
+        if (priorValue != null && priorValue > 0.0 && priorInvestedCapital != null) {
+            // Match the benchmark series convention exactly: calculate the
+            // external cash flow as the change in cumulative invested capital.
+            // This avoids a second, timestamp-window-based flow calculation
+            // drifting from the portfolio's daily cumulative flow ledger.
+            val periodFlow = externalFlow - priorInvestedCapital
             val valueBeforeFlow = totalValue - periodFlow
             if (valueBeforeFlow > 0.0) nav *= valueBeforeFlow / priorValue
         }
@@ -179,10 +215,13 @@ internal suspend fun buildPortfolioMarketHistory(
             dateKey = date.toString(),
             totalValue = totalValue,
             investedCapital = externalFlow,
-            nav = nav
+            nav = nav,
+            cashValue = cashAtClose,
+            quantities = quantitiesAtClose.toMap(),
+            assetValues = valuesAtClose.toMap()
         )
         previousValue = totalValue
-        previousEndOfDay = endOfDay
+        previousInvestedCapital = externalFlow
     }
 
     val latestDate = points.lastOrNull()?.let { LocalDate.parse(it.dateKey) }
@@ -197,14 +236,58 @@ internal suspend fun buildPortfolioMarketHistory(
     return PortfolioMarketHistoryResult(normalized, firstPurchase, unavailableConcurrent.toList().sorted())
 }
 
-private fun portfolioOperationCashEffect(operation: OperationEntity): Double {
+private fun cashEffectiveTimestamp(operation: OperationEntity): Long =
+    if (operation.operationType == "Покупка" || operation.operationType == "Продажа") {
+        operation.settlementDate ?: operation.operationDate
+    } else {
+        operation.operationDate
+    }
+
+private fun portfolioExternalFlowEffect(
+    operation: OperationEntity,
+    includeInternalTransfers: Boolean,
+    includedBrokerAccountIds: Set<String>
+): Double {
+    val amount = operation.quantity * operation.price
+    return when (operation.operationType) {
+        "Пополнение" -> amount
+        "Внутренний перевод входящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) amount else 0.0
+        "Вывод" -> -amount
+        "Внутренний перевод исходящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) -amount else 0.0
+        else -> 0.0
+    }
+}
+
+private fun portfolioOperationCashEffect(
+    operation: OperationEntity,
+    includeInternalTransfers: Boolean,
+    includedBrokerAccountIds: Set<String>
+): Double {
     val amount = operation.quantity * operation.price
     return when (operation.operationType) {
         "Пополнение" -> amount
         "Вывод" -> -amount
+        "Внутренний перевод входящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) amount else 0.0
+        "Внутренний перевод исходящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) -amount else 0.0
         "Покупка" -> -(amount + operation.commission)
         "Продажа" -> amount - operation.commission
-        "Дивиденд", "Купон" -> amount - operation.commission
+        "Дивиденд", "Купон", "Амортизация", "Погашение" -> amount - operation.commission
         else -> 0.0
     }
+}
+
+private fun isTransferBetweenIncludedAccounts(
+    operation: OperationEntity,
+    includedBrokerAccountIds: Set<String>
+): Boolean {
+    if (includedBrokerAccountIds.isEmpty()) return false
+    val match = Regex("(?iu)с\\s+договора?\\s+([A-Z0-9-]+).*?на\\s+договора?\\s+([A-Z0-9-]+)")
+        .find(operation.note) ?: return false
+    val from = match.groupValues[1].uppercase()
+    val to = match.groupValues[2].uppercase()
+    return from in includedBrokerAccountIds && to in includedBrokerAccountIds
 }

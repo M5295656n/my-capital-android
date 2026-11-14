@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class],
-    version = 13,
+    entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class, PortfolioCompositionSnapshotEntity::class, MarketCalendarItemEntity::class],
+    version = 19,
     exportSchema = false
 )
 abstract class PortfolioDatabase : RoomDatabase() {
@@ -93,7 +93,72 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS portfolio_composition_snapshots (" +
+                        "dateKey TEXT NOT NULL, accountId TEXT NOT NULL, dimension TEXT NOT NULL, " +
+                        "category TEXT NOT NULL, value REAL NOT NULL, " +
+                        "PRIMARY KEY(dateKey, accountId, dimension, category))"
+                )
+            }
+        }
+
+        internal val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE operations ADD COLUMN settlementDate INTEGER")
+            }
+        }
+
+
+        internal val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS market_calendar_items (" +
+                        "sourceKey TEXT NOT NULL PRIMARY KEY, itemType TEXT NOT NULL, category TEXT NOT NULL, " +
+                        "eventDate INTEGER NOT NULL, publishedAt INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, " +
+                        "sourceName TEXT NOT NULL, sourceUrl TEXT NOT NULL, relatedTickers TEXT NOT NULL, " +
+                        "importance TEXT NOT NULL, impactAssessment TEXT NOT NULL, impactHorizon TEXT NOT NULL, " +
+                        "confidence TEXT NOT NULL, updatedAt INTEGER NOT NULL)"
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_market_calendar_items_eventDate ON market_calendar_items(eventDate)")
+            }
+        }
+
+
+        internal val MIGRATION_16_17 = object : androidx.room.migration.Migration(16, 17) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN issuer TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN instrumentType TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN placementVolume TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN placementPrice TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN couponRate TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN applicationDates TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN tradingStartDate TEXT")
+            }
+        }
+
+        internal val MIGRATION_17_18 = object : androidx.room.migration.Migration(17, 18) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN isin TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN couponAmount TEXT")
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN detailsSourceUrl TEXT")
+            }
+        }
+
+        internal val MIGRATION_18_19 = object : androidx.room.migration.Migration(18, 19) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE market_calendar_items ADD COLUMN placementStartDate TEXT")
+            }
+        }
+
         @Volatile private var INSTANCE: PortfolioDatabase? = null
+
+        @Synchronized
+        fun closeForRestore() {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
 
         fun getInstance(context: Context): PortfolioDatabase =
             INSTANCE ?: synchronized(this) {
@@ -101,7 +166,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     context.applicationContext,
                     PortfolioDatabase::class.java,
                     "my_capital.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19).build().also { INSTANCE = it }
             }
     }
 }

@@ -39,6 +39,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -59,6 +60,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import ru.mycapital.app.data.QuoteRefreshWorker
 import ru.mycapital.app.data.CorporateEventsWorker
+import ru.mycapital.app.data.MarketNewsWorker
+import ru.mycapital.app.data.MarketCalendarItemEntity
 import ru.mycapital.app.data.PortfolioSnapshotWorker
 import java.util.concurrent.TimeUnit
 import java.time.YearMonth
@@ -67,6 +70,7 @@ import ru.mycapital.app.data.MoexSecurityHistoryClient
 import ru.mycapital.app.data.MoexDailyClose
 import ru.mycapital.app.calculatePortfolioAllocation
 import ru.mycapital.app.data.PortfolioDatabase
+import ru.mycapital.app.data.PortfolioBackup
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.isIncomePayoutType
@@ -88,9 +92,46 @@ private enum class Screen(val title: String, val icon: androidx.compose.ui.graph
     Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
+    Events("События", Icons.Default.EventNote),
     More("Ещё", Icons.Default.MoreHoriz),
     Accounts("Счета", Icons.Default.AccountBalance),
     Operations("Операции", Icons.Default.SwapHoriz)
+}
+
+@Composable
+private fun AnalyticsNavigationIcon() {
+    val tint = LocalContentColor.current
+    Canvas(Modifier.size(24.dp)) {
+        val barColor = tint.copy(alpha = 0.48f)
+        val barWidth = size.width * 0.13f
+        val bottom = size.height * 0.94f
+        val bars = listOf(
+            0.12f to 0.20f,
+            0.34f to 0.34f,
+            0.56f to 0.48f,
+            0.78f to 0.29f
+        )
+        bars.forEach { (xFraction, heightFraction) ->
+            val barHeight = size.height * heightFraction
+            drawRoundRect(
+                color = barColor,
+                topLeft = Offset(size.width * xFraction, bottom - barHeight),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.035f)
+            )
+        }
+        val trend = Path().apply {
+            moveTo(size.width * 0.08f, size.height * 0.43f)
+            lineTo(size.width * 0.34f, size.height * 0.27f)
+            lineTo(size.width * 0.59f, size.height * 0.35f)
+            lineTo(size.width * 0.91f, size.height * 0.10f)
+        }
+        drawPath(
+            path = trend,
+            color = tint,
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        )
+    }
 }
 
 @Composable
@@ -117,6 +158,7 @@ private fun MyCapitalApp() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val operations by dao.observeOperations().collectAsState(initial = emptyList())
     val payouts by dao.observePayouts().collectAsState(initial = emptyList())
+    val marketCalendarItems by dao.observeMarketCalendarItems().collectAsState(initial = emptyList())
     // Portfolio history lives above navigation destinations so tab switches
     // cannot cancel its network requests or reset the chart state.
     var selectedHistoryRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
@@ -127,7 +169,7 @@ private fun MyCapitalApp() {
     val historyAssetsKey = remember(assets) {
         assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
     }
-    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedHistoryRange, historyRefresh) {
+    LaunchedEffect(historyAssetsKey, operations, cashBalance, brokerAccounts, selectedHistoryRange, historyRefresh) {
         historyLoading = true
         historyLoadError = null
         var latestSuccessful: PortfolioMarketHistoryResult? = null
@@ -136,7 +178,7 @@ private fun MyCapitalApp() {
             try {
                 val loaded = kotlinx.coroutines.withTimeout(90_000L) {
                     withContext(Dispatchers.IO) {
-                        buildPortfolioMarketHistory(assets, operations, cashBalance ?: 0.0, selectedHistoryRange)
+                        buildPortfolioMarketHistory(assets, operations, cashBalance ?: 0.0, selectedHistoryRange, includedBrokerAccountIds = brokerAccounts.map { it.accountId }.toSet())
                     }
                 }
                 latestSuccessful = loaded
@@ -165,6 +207,7 @@ private fun MyCapitalApp() {
     var selectedOperationAccount by remember { mutableStateOf("ALL") }
     var selectedPayoutAccount by remember { mutableStateOf("ALL") }
     val portfolioSnapshots by dao.observePortfolioSnapshots().collectAsState(initial = emptyList())
+    val portfolioCompositionSnapshots by dao.observePortfolioCompositionSnapshots().collectAsState(initial = emptyList())
     var payoutToConfirm by remember { mutableStateOf<PayoutEntity?>(null) }
     var importedReport by remember { mutableStateOf<SberBrokerReport?>(null) }
     var importError by remember { mutableStateOf<String?>(null) }
@@ -174,6 +217,14 @@ private fun MyCapitalApp() {
     var isReconcilingReport by remember { mutableStateOf(false) }
     var isExportingData by remember { mutableStateOf(false) }
     var exportResultMessage by remember { mutableStateOf<String?>(null) }
+    var isCreatingBackup by remember { mutableStateOf(false) }
+    var isRestoringBackup by remember { mutableStateOf(false) }
+    var pendingBackupRestore by remember { mutableStateOf<Uri?>(null) }
+    var pendingBackupCreate by remember { mutableStateOf<Uri?>(null) }
+    var backupCreatePassword by remember { mutableStateOf("") }
+    var backupCreatePasswordConfirm by remember { mutableStateOf("") }
+    var backupRestorePassword by remember { mutableStateOf("") }
+    var backupResultMessage by remember { mutableStateOf<String?>(null) }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -218,6 +269,16 @@ private fun MyCapitalApp() {
             }
         }
     }
+    val backupCreatePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) {
+            pendingBackupCreate = uri
+            backupCreatePassword = ""
+            backupCreatePasswordConfirm = ""
+        }
+    }
+    val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) pendingBackupRestore = uri
+    }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
     // Keep dashboard data at the app level: OverviewScreen is removed from composition
     // when another tab is opened. A screen-scoped coroutine used to be cancelled on tab
@@ -245,6 +306,9 @@ private fun MyCapitalApp() {
     val eventWorkInfos by WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("moex_events_refresh_manual")
         .collectAsState(initial = emptyList())
+    val newsWorkInfos by WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("market_news_refresh_manual")
+        .collectAsState(initial = emptyList())
     // Show activity only while a worker is actually executing. ENQUEUED/BLOCKED can
     // persist while Android waits for network constraints and must not look like a stuck spinner.
     val isRefreshingMarketData = quoteWorkInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING } ||
@@ -261,13 +325,23 @@ private fun MyCapitalApp() {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "moex_corporate_events", ExistingPeriodicWorkPolicy.UPDATE, eventsPeriodic
         )
+        val newsPeriodic = PeriodicWorkRequestBuilder<MarketNewsWorker>(6, TimeUnit.HOURS)
+            .setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "market_news_refresh", ExistingPeriodicWorkPolicy.UPDATE, newsPeriodic
+        )
+        val newsRequest = OneTimeWorkRequestBuilder<MarketNewsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "market_news_refresh_manual", ExistingWorkPolicy.KEEP, newsRequest
+        )
         val snapshotPeriodic = PeriodicWorkRequestBuilder<PortfolioSnapshotWorker>(24, TimeUnit.HOURS).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "portfolio_daily_snapshots", ExistingPeriodicWorkPolicy.UPDATE, snapshotPeriodic
         )
-        val firstSnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
+        val todayKey = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")).toString()
+        val todaySnapshot = OneTimeWorkRequestBuilder<PortfolioSnapshotWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "portfolio_initial_snapshot", ExistingWorkPolicy.KEEP, firstSnapshot
+            "portfolio_snapshot_$todayKey", ExistingWorkPolicy.KEEP, todaySnapshot
         )
     }
 
@@ -300,6 +374,26 @@ private fun MyCapitalApp() {
             )
         }
     }
+    val refreshNews: () -> Unit = {
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<MarketNewsWorker>().setConstraints(constraints).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "market_news_refresh_manual", ExistingWorkPolicy.REPLACE, request
+        )
+    }
+    val newsSyncMessage = (
+        newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
+            ?: newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
+            ?: newsWorkInfos.firstOrNull { it.state.isFinished }
+        )?.let { info ->
+            info.outputData.getString("summary") ?: info.progress.getString("summary")
+                ?: when (info.state) {
+                    androidx.work.WorkInfo.State.RUNNING -> "Обновление новостей выполняется…"
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Обновление новостей ожидает подключения к сети…"
+                    androidx.work.WorkInfo.State.FAILED -> "Не удалось обновить новости."
+                    else -> null
+                }
+        }
     val eventSyncMessage = (
         eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
             ?: eventWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
@@ -349,12 +443,22 @@ private fun MyCapitalApp() {
                     contentColor = androidx.compose.ui.graphics.Color(0xFFAAB9D0),
                     tonalElevation = 0.dp
                 ) {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.More).forEach { screen ->
+                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.Events, Screen.More).forEach { screen ->
                         NavigationBarItem(
                             selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
-                            label = { Text(screen.title, fontSize = 10.sp) },
+                            icon = {
+                                if (screen == Screen.Analytics) AnalyticsNavigationIcon()
+                                else Icon(screen.icon, contentDescription = screen.title)
+                            },
+                            label = {
+                                Text(
+                                    screen.title,
+                                    fontSize = if (screen == Screen.Analytics) 8.5.sp else 9.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = androidx.compose.ui.graphics.Color(0xFF4B9BFF),
                                 selectedTextColor = androidx.compose.ui.graphics.Color(0xFF69AFFF),
@@ -372,17 +476,22 @@ private fun MyCapitalApp() {
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, { selectedHistoryRange = it }, historyResult, historyLoading, historyLoadError, { historyRefresh++ }, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, cashBalance ?: 0.0, brokerAccountCash, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
-                Screen.Payouts -> PayoutsScreen(payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
-                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, dao, Modifier.padding(padding))
+                Screen.Payouts -> PayoutsScreen(operations, payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
+                Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
+                Screen.Events -> EventsScreen(assets, cashBalance ?: 0.0, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
                     hasAssets = assets.isNotEmpty(),
                     isParsingReport = isParsingReport,
                     isExportingData = isExportingData,
+                    isCreatingBackup = isCreatingBackup,
+                    isRestoringBackup = isRestoringBackup,
+                    onCreateBackup = { backupCreatePicker.launch("MyCapital-backup.zip") },
+                    onRestoreBackup = { backupRestorePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
                     onExportData = { exportPicker.launch("my-capital-export.zip") },
                     onOpenAccounts = { selected = Screen.Accounts },
@@ -427,6 +536,108 @@ private fun MyCapitalApp() {
                     }
                 }
             }
+        )
+    }
+    if (pendingBackupCreate != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isCreatingBackup) { pendingBackupCreate = null; backupCreatePassword = ""; backupCreatePasswordConfirm = "" } },
+            title = { Text("Защитить резервную копию") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Архив будет зашифрован AES-256. Придумайте пароль длиной не менее 9 символов и сохраните его отдельно. Без пароля восстановить данные будет невозможно. Приложение пароль не сохраняет.")
+                    OutlinedTextField(
+                        value = backupCreatePassword,
+                        onValueChange = { backupCreatePassword = it },
+                        label = { Text("Пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isCreatingBackup
+                    )
+                    OutlinedTextField(
+                        value = backupCreatePasswordConfirm,
+                        onValueChange = { backupCreatePasswordConfirm = it },
+                        label = { Text("Повторите пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isCreatingBackup
+                    )
+                    if (backupCreatePasswordConfirm.isNotEmpty() && backupCreatePassword != backupCreatePasswordConfirm) {
+                        Text("Пароли не совпадают.", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isCreatingBackup && backupCreatePassword.length >= 9 && backupCreatePassword == backupCreatePasswordConfirm,
+                    onClick = {
+                        val uri = pendingBackupCreate ?: return@TextButton
+                        val password = backupCreatePassword
+                        isCreatingBackup = true
+                        pendingBackupCreate = null
+                        backupCreatePassword = ""
+                        backupCreatePasswordConfirm = ""
+                        scope.launch {
+                            try {
+                                val info = withContext(Dispatchers.IO) { PortfolioBackup.export(context, uri, password.toCharArray()) }
+                                backupResultMessage = "Зашифрованная резервная копия AES-256 создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Пароль не сохранён — храните его отдельно."
+                            } catch (error: Exception) {
+                                errorMessage = error.message ?: "Не удалось создать резервную копию."
+                            } finally {
+                                isCreatingBackup = false
+                            }
+                        }
+                    }
+                ) { Text(if (isCreatingBackup) "Создаю…" else "Создать архив") }
+            },
+            dismissButton = { TextButton(enabled = !isCreatingBackup, onClick = { pendingBackupCreate = null; backupCreatePassword = ""; backupCreatePasswordConfirm = "" }) { Text("Отмена") } }
+        )
+    }
+    if (pendingBackupRestore != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isRestoringBackup) { pendingBackupRestore = null; backupRestorePassword = "" } },
+            title = { Text("Восстановить резервную копию?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Введите пароль AES-256. Сначала архив будет расшифрован и проверен; только после успешной проверки текущая база будет заменена. Перед продолжением рекомендуется сохранить свежую копию текущих данных.")
+                    OutlinedTextField(
+                        value = backupRestorePassword,
+                        onValueChange = { backupRestorePassword = it },
+                        label = { Text("Пароль архива") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isRestoringBackup
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !isRestoringBackup && backupRestorePassword.isNotBlank(), onClick = {
+                    val uri = pendingBackupRestore ?: return@TextButton
+                    val password = backupRestorePassword
+                    isRestoringBackup = true
+                    backupRestorePassword = ""
+                    scope.launch {
+                        try {
+                            val info = withContext(Dispatchers.IO) { PortfolioBackup.restore(context, uri, password.toCharArray()) }
+                            pendingBackupRestore = null
+                            backupResultMessage = "База успешно расшифрована, проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
+                            (context as? ComponentActivity)?.recreate()
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "Не удалось восстановить резервную копию. Проверьте пароль и целостность архива."
+                        } finally {
+                            isRestoringBackup = false
+                        }
+                    }
+                }) { Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить") }
+            },
+            dismissButton = { TextButton(enabled = !isRestoringBackup, onClick = { pendingBackupRestore = null; backupRestorePassword = "" }) { Text("Отмена") } }
+        )
+    }
+    if (backupResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { backupResultMessage = null },
+            title = { Text("Резервная копия") },
+            text = { Text(backupResultMessage.orEmpty()) },
+            confirmButton = { TextButton(onClick = { backupResultMessage = null }) { Text("Готово") } }
         )
     }
     if (exportResultMessage != null) {
@@ -923,7 +1134,10 @@ val annualizedReturn = remember(history) {
 private fun sectorForTicker(ticker: String): String = when (ticker.uppercase()) {
     "SBER", "SBERP", "T", "VTBR", "MOEX", "BSPB", "CBOM" -> "Финансы"
     "LKOH", "ROSN", "TATN", "GAZP", "NVTK", "SNGS", "SNGSP", "BANE", "TRNFP" -> "Нефть и газ"
-    "YDEX", "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
+    "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
+    "YDEX" -> "Информационные технологии"
+    "MDMG", "GEMC" -> "Здравоохранение"
+    "OZPH" -> "Фармацевтика"
     "GMKN", "NLMK", "CHMF", "MAGN", "RUAL", "ALRS" -> "Металлы и добыча"
     "MTSS", "RTKM", "VEON" -> "Телеком"
     "AFLT", "FLOT" -> "Транспорт"
@@ -960,6 +1174,10 @@ private fun MoreScreen(
     hasAssets: Boolean,
     isParsingReport: Boolean,
     isExportingData: Boolean,
+    isCreatingBackup: Boolean,
+    isRestoringBackup: Boolean,
+    onCreateBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
     onImportReport: () -> Unit,
     onExportData: () -> Unit,
     onOpenAccounts: () -> Unit,
@@ -1026,10 +1244,21 @@ private fun MoreScreen(
             Spacer(Modifier.width(8.dp))
             Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
         }
+        OutlinedButton(onClick = onCreateBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Backup, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isCreatingBackup) "Создаю полную копию…" else "Создать резервную копию базы")
+        }
+        OutlinedButton(onClick = onRestoreBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Restore, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из резервной копии")
+        }
+        Text("Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.FileDownload, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать данные (ZIP)")
+            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать таблицы (CSV ZIP)")
         }
     }
 }
@@ -1041,13 +1270,15 @@ private fun AssetsScreen(
     payouts: List<PayoutEntity>,
     accounts: List<BrokerAccountEntity>,
     accountAssets: List<BrokerAccountAssetEntity>,
+    cashBalance: Double,
+    accountCash: List<BrokerAccountCashEntity>,
     onOpenAsset: (AssetEntity) -> Unit,
     onEditAsset: (AssetEntity) -> Unit,
     onDeleteAsset: (AssetEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
-    var accountMenuExpanded by remember { mutableStateOf(false) }
+    var selectedSoldYear by remember { mutableStateOf<Int?>(java.time.LocalDate.now().year) }
     val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.uppercase() } }
     val displayedAssets = remember(assets, accountAssets, selectedAccountId) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
@@ -1062,8 +1293,47 @@ private fun AssetsScreen(
                 .toList()
         }
     }
-    val selectedAccountName = accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName
-        ?: "Все счета"
+    val saleYears = remember(operations) {
+        (operations.filter { it.operationType == "Продажа" }
+            .map { java.time.Instant.ofEpochMilli(it.operationDate).atZone(java.time.ZoneId.systemDefault()).year } +
+            java.time.LocalDate.now().year)
+            .distinct()
+            .sortedDescending()
+    }
+    val soldAssets = remember(operations, selectedAccountId, selectedSoldYear, assets) {
+        operations.asSequence()
+            .filter { it.operationType == "Продажа" }
+            .filter { operation ->
+                val accountMatches = selectedAccountId == ALL_HISTORY_ACCOUNTS ||
+                    historyAccountId(operation.sourceKey) == selectedAccountId
+                val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                accountMatches && (selectedSoldYear == null || operationDate.year == selectedSoldYear)
+            }
+            .mapNotNull { operation ->
+                val ticker = operation.ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+                    ?: assets.firstOrNull { it.id == operation.assetId }?.ticker?.trim()?.uppercase()
+                ticker?.let { it to operation }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (ticker, sales) ->
+                val gross = sales.sumOf { (it.quantity * it.price).coerceAtLeast(0.0) }
+                val fees = sales.sumOf { it.commission.coerceAtLeast(0.0) }
+                SoldAssetSummary(
+                    ticker = ticker,
+                    name = assets.firstOrNull { it.ticker.equals(ticker, true) }?.name ?: ticker,
+                    quantity = sales.sumOf { it.quantity.coerceAtLeast(0.0) },
+                    saleCount = sales.size,
+                    grossAmount = gross,
+                    netAmount = (gross - fees).coerceAtLeast(0.0)
+                )
+            }
+            .sortedByDescending { it.grossAmount }
+    }
+    val totalSaleAmount = soldAssets.sumOf { it.grossAmount }
+    val totalSaleNetAmount = soldAssets.sumOf { it.netAmount }
+    val displayedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
 
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
@@ -1079,19 +1349,69 @@ private fun AssetsScreen(
                 )
             }
         }
-        if (displayedAssets.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
-                    else "В последнем импортированном отчёте этого счёта нет открытых позиций.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
+        ) {
+            if (displayedCash > 0.0) {
+                item(key = "portfolio-cash") {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Canvas(Modifier.size(width = 58.dp, height = 48.dp)) {
+                                val w = size.width
+                                val h = size.height
+                                drawRoundRect(
+                                    color = Color(0xFFB58A32),
+                                    topLeft = Offset(w * 0.18f, h * 0.25f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.72f, h * 0.62f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx())
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFF2E8B63),
+                                    topLeft = Offset(w * 0.08f, h * 0.12f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.66f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx())
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFF49A879),
+                                    topLeft = Offset(w * 0.08f, h * 0.12f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.66f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx()),
+                                    style = Stroke(width = 1.4.dp.toPx())
+                                )
+                                drawCircle(Color(0xFFFFE6A3), radius = h * 0.17f, center = Offset(w * 0.46f, h * 0.45f))
+                                drawCircle(Color(0xFF2E8B63), radius = h * 0.12f, center = Offset(w * 0.46f, h * 0.45f), style = Stroke(width = 1.2.dp.toPx()))
+                                drawLine(Color(0xFFFFE6A3), Offset(w * 0.17f, h * 0.24f), Offset(w * 0.27f, h * 0.24f), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                                drawLine(Color(0xFFFFE6A3), Offset(w * 0.65f, h * 0.66f), Offset(w * 0.76f, h * 0.66f), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Кэш", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                Text("Денежные средства", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text("${money(displayedCash)} ₽", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
-            ) {
+            if (displayedAssets.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 100.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Пока нет активов. Добавьте первый актив во вкладке «Ещё»."
+                            else "В последнем импортированном отчёте этого счёта нет открытых позиций.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
                 items(displayedAssets, key = { if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "all:${it.id}" else "${selectedAccountId}:${it.ticker}" }) { asset ->
                     Card(
                         Modifier.fillMaxWidth().clickable { onOpenAsset(asset) },
@@ -1124,6 +1444,65 @@ private fun AssetsScreen(
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("${money(asset.quantity * asset.currentPrice)} ₽", fontWeight = FontWeight.Bold)
                                 Text("Средняя ${money(asset.averagePrice)} ₽", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Spacer(Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Проданные активы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = selectedSoldYear == null,
+                                    onClick = { selectedSoldYear = null },
+                                    label = { Text("Все время") }
+                                )
+                            }
+                            items(saleYears) { year ->
+                                FilterChip(
+                                    selected = selectedSoldYear == year,
+                                    onClick = { selectedSoldYear = year },
+                                    label = { Text(year.toString()) }
+                                )
+                            }
+                        }
+                        if (soldAssets.isEmpty()) {
+                            Text("За выбранный период продаж не было.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text("Всего продано на ${money(totalSaleAmount)} ₽", fontWeight = FontWeight.Bold)
+                            Text(
+                                "После комиссий: ${money(totalSaleNetAmount)} ₽",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            soldAssets.forEachIndexed { index, sold ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(sold.ticker, fontWeight = FontWeight.SemiBold)
+                                        Text(sold.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                        Text(
+                                            "${quantity(sold.quantity)} шт. · ${sold.saleCount} ${if (sold.saleCount == 1) "сделка" else "сделок"}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text("${money(sold.grossAmount)} ₽", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        Text("После комиссии ${money(sold.netAmount)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                if (index != soldAssets.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                     }
@@ -1787,11 +2166,17 @@ private fun AssetPurchaseHistoryDialog(
 private const val ALL_HISTORY_ACCOUNTS = "ALL"
 private const val UNASSIGNED_HISTORY_ACCOUNT = "UNASSIGNED"
 
-private fun historyAccountId(sourceKey: String?): String? {
+internal fun historyAccountId(sourceKey: String?): String? {
     if (sourceKey.isNullOrBlank() || !sourceKey.startsWith("SBER:")) return null
     val parts = sourceKey.split(':', limit = 3)
-    if (parts.size < 3 || parts[1] == "CASH") return null
-    return parts[1].takeIf { it.isNotBlank() }
+    if (parts.size < 3) return null
+
+    // Legacy imports used SBER:TRADE:... / SBER:CASH:... without an
+    // account identifier. New imports use SBER:<accountId>:TRADE|CASH|PAYOUT:...
+    // Do not mistake a legacy source category for a broker account ID.
+    val secondSegment = parts[1]
+    if (secondSegment.uppercase() in setOf("TRADE", "CASH", "PAYOUT")) return null
+    return secondSegment.takeIf { it.isNotBlank() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1951,8 +2336,18 @@ private fun OperationsScreen(
 }
 
 
+private data class SoldAssetSummary(
+    val ticker: String,
+    val name: String,
+    val quantity: Double,
+    val saleCount: Int,
+    val grossAmount: Double,
+    val netAmount: Double
+)
+
 @Composable
 private fun PayoutsScreen(
+    operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     assets: List<AssetEntity>,
     accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
@@ -2218,7 +2613,8 @@ private fun PayoutsScreen(
                                                         when (payout.status) {
                                                             "RECEIVED" -> "Получено"
                                                             "ANNOUNCED" -> "Объявлено"
-                                                            "RECOMMENDED", "FORECAST", "EXPECTED" -> "Прогноз"
+                                                            "RECOMMENDED" -> "Рекомендовано советом директоров"
+                                                            "FORECAST", "EXPECTED" -> "Прогноз"
                                                             else -> "Прогноз"
                                                         },
                                                         color = Color(0xFF69AFFF),
@@ -2620,6 +3016,99 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EventsScreen(
+    assets: List<AssetEntity>,
+    cashBalance: Double,
+    payouts: List<PayoutEntity>,
+    marketCalendarItems: List<MarketCalendarItemEntity>,
+    accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
+    accountCash: List<BrokerAccountCashEntity>,
+    onRefreshNews: () -> Unit,
+    newsSyncMessage: String?,
+    modifier: Modifier = Modifier
+) {
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
+    val selectedAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets
+        else accountAssets.asSequence()
+            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
+            .sortedBy { it.assetType + it.ticker }
+            .toList()
+    }
+    val selectedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val selectedTickers = remember(accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets.filter { it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+        else accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    val selectedPayouts = remember(payouts, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
+        else payouts.filter { payout ->
+            val payoutAccountId = historyAccountId(payout.sourceKey)
+            if (payoutAccountId != null) payoutAccountId == selectedAccountId
+            else payout.ticker.uppercase() in selectedTickers
+        }
+    }
+    val selectedNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) marketCalendarItems
+        else marketCalendarItems.filter { item ->
+            item.category == "ECONOMY" || item.relatedTickers.isBlank() ||
+                item.relatedTickers.split(",").any { it.trim().uppercase() in selectedTickers }
+        }
+    }
+    val selectedAccountLabel = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) "Все счета"
+        else accounts.firstOrNull { it.accountId == selectedAccountId }?.displayName ?: "Счёт"
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("События и новости", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                if (accounts.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedAccountLabel, onValueChange = {}, readOnly = true,
+                            label = { Text("Брокерский счёт") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Все счета") }, onClick = {
+                                selectedAccountId = ALL_HISTORY_ACCOUNTS
+                                accountMenuExpanded = false
+                            })
+                            accounts.forEach { account ->
+                                DropdownMenuItem(text = { Text(account.displayName) }, onClick = {
+                                    selectedAccountId = account.accountId
+                                    accountMenuExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            MarketCalendarSection(
+                news = selectedNews,
+                payouts = selectedPayouts,
+                onRefreshNews = onRefreshNews,
+                newsSyncMessage = newsSyncMessage,
+                portfolioAssets = selectedAssets,
+                portfolioCash = selectedCash
+            )
+        }
+    }
+}
+
 @Composable
 private fun AnalyticsScreen(
     assets: List<AssetEntity>,
@@ -2628,82 +3117,129 @@ private fun AnalyticsScreen(
     operations: List<OperationEntity>,
     payouts: List<PayoutEntity>,
     snapshots: List<PortfolioSnapshotEntity>,
+    compositionSnapshots: List<ru.mycapital.app.data.PortfolioCompositionSnapshotEntity>,
+    accounts: List<BrokerAccountEntity>,
+    accountAssets: List<BrokerAccountAssetEntity>,
+    accountCash: List<BrokerAccountCashEntity>,
     dao: ru.mycapital.app.data.PortfolioDao,
     modifier: Modifier = Modifier
 ) {
-    val invested = assets.sumOf { it.quantity * it.averagePrice }
-    val unrealized = marketValue - invested
-    val realizedResult = calculateRealizedTradingResult(operations)
-    val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
+    var selectedAccountId by remember { mutableStateOf(ALL_HISTORY_ACCOUNTS) }
+    val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.trim().uppercase() } }
+    val analyticsAssets = remember(assets, accountAssets, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) assets
+        else accountAssets.asSequence()
+            .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
+            .mapNotNull { position -> assetsByTicker[position.ticker.trim().uppercase()]?.copy(quantity = position.quantity) }
+            .sortedBy { it.assetType + it.ticker }
+            .toList()
+    }
+    val analyticsCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
+    val analyticsOperations = remember(operations, selectedAccountId) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
+        else operations.filter { historyAccountId(it.sourceKey) == selectedAccountId }
+    }
+    val analyticsHistoryAssets = remember(assets, analyticsAssets, analyticsOperations, selectedAccountId) {
+        val currentByTicker = analyticsAssets.associateBy { it.ticker.trim().uppercase() }
+        val allByTicker = assets.associateBy { it.ticker.trim().uppercase() }
+        val historicalTickers = analyticsOperations.asSequence()
+            .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+            .mapNotNull { it.ticker?.trim()?.uppercase()?.takeIf(String::isNotBlank) }
+            .toSet()
+        val tickers = currentByTicker.keys + historicalTickers
+        tickers.mapNotNull { ticker ->
+            currentByTicker[ticker] ?: allByTicker[ticker]?.copy(quantity = 0.0)
+        }.sortedBy { it.ticker }
+    }
+    var analyticsMarketHistory by remember { mutableStateOf(PortfolioMarketHistoryResult(emptyList(), null, emptyList())) }
+    var analyticsHistoryLoading by remember { mutableStateOf(false) }
+    var analyticsHistoryRefresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(analyticsAssets, analyticsOperations, analyticsCash, selectedAccountId, analyticsHistoryRefresh) {
+        analyticsHistoryLoading = true
+        try {
+            analyticsMarketHistory = withContext(Dispatchers.IO) {
+                buildPortfolioMarketHistory(
+                    assets = analyticsHistoryAssets,
+                    operations = analyticsOperations,
+                    currentCash = analyticsCash,
+                    range = PortfolioHistoryRange.ALL,
+                    includeInternalTransfers = selectedAccountId != ALL_HISTORY_ACCOUNTS,
+                    includedBrokerAccountIds = accounts.map { it.accountId }.toSet()
+                )
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            analyticsMarketHistory = PortfolioMarketHistoryResult(emptyList(), null, emptyList())
+        } finally {
+            analyticsHistoryLoading = false
+        }
+    }
+    val analyticsMarketValue = analyticsAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) }
+    val selectedTickers = remember(accountAssets, selectedAccountId) {
+        accountAssets.filter { it.accountId == selectedAccountId && it.quantity > 0.0 }.map { it.ticker.uppercase() }.toSet()
+    }
+    val analyticsPayouts = remember(payouts, selectedAccountId, selectedTickers) {
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
+        else payouts.filter { payout ->
+            val payoutAccountId = historyAccountId(payout.sourceKey)
+            if (payoutAccountId != null) payoutAccountId == selectedAccountId
+            else payout.ticker.uppercase() in selectedTickers
+        }
+    }
+    val invested = analyticsAssets.sumOf { it.quantity * it.averagePrice }
+    val unrealized = analyticsMarketValue - invested
+    val realizedResult = calculateRealizedTradingResult(analyticsOperations)
+    val receivedPayouts = analyticsPayouts.filter { it.status == "RECEIVED" }
     val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
     val payoutIncome = receivedDividends + receivedCoupons
     val totalInvestmentResult = unrealized + realizedResult.profit + payoutIncome
-    val totalValue = marketValue + cashBalance
+    val totalValue = analyticsMarketValue + analyticsCash
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
-    val groups = assets.groupBy { it.assetType.ifBlank { "Прочее" } }
-        .mapValues { (_, items) -> items.sumOf { it.quantity * it.currentPrice } }
-        .toList()
-        .sortedByDescending { it.second }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("Аналитика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Структура и текущий результат портфеля", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PortfolioAnalyticsSection(
+                assets = analyticsAssets,
+                cashBalance = analyticsCash,
+                accounts = accounts,
+                selectedAccountId = selectedAccountId,
+                onAccountSelected = { selectedAccountId = it },
+            )
         }
         item {
-            val todayMillis = System.currentTimeMillis()
-            val horizonMillis = todayMillis + TimeUnit.DAYS.toMillis(90)
-            val upcoming = payouts.filter {
-                it.status == "EXPECTED" && it.expectedDate != null &&
-                    it.expectedDate >= todayMillis && it.expectedDate <= horizonMillis
-            }.sortedBy { it.expectedDate }
-            Text("Ближайшие выплаты", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (upcoming.isEmpty()) {
-                Text("В ближайшие 90 дней ожидаемых выплат с известной датой нет.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                upcoming.take(8).forEach { payout ->
-                    Card(shape = RoundedCornerShape(16.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val date = java.time.Instant.ofEpochMilli(payout.expectedDate!!)
-                                .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                            Column(Modifier.weight(1f)) {
-                                Text(assets.firstOrNull { it.ticker.equals(payout.ticker, true) }?.name ?: payout.ticker,
-                                    fontWeight = FontWeight.SemiBold)
-                                Text("${date.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("ru", "RU")))} · ${payout.payoutType}",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text("≈ ${money(payout.totalAmount)} ₽", fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Стоимость капитала", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${money(totalValue)} ₽", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     HorizontalDivider()
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Рыночная стоимость активов")
-                        Text("${money(marketValue)} ₽", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Рыночная стоимость активов", modifier = Modifier.weight(1.05f), maxLines = 2)
+                        Text(
+                            "${money(analyticsMarketValue)} ₽",
+                            modifier = Modifier.weight(0.95f),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            fontSize = 14.sp
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Свободные деньги")
-                        Text("${money(cashBalance)} ₽", fontWeight = FontWeight.SemiBold)
+                        Text("${money(analyticsCash)} ₽", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
         }
+        if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Нереализованный результат", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -2718,7 +3254,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Реализованный результат сделок", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -2736,7 +3272,7 @@ private fun AnalyticsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(18.dp)) {
+            Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Полученные дивиденды и купоны", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2759,177 +3295,21 @@ private fun AnalyticsScreen(
                 }
             }
         }
-        item {
-            Text("Динамика капитала", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            if (snapshots.size >= 2) {
-                PortfolioHistoryChart(snapshots)
-                Text("График показывает условную доходность (база 100) с исключением пополнений и выводов. Денежные потоки учитываются на конец дневного интервала; для точного TWR потребуется точное время каждого потока.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Text("История только начинается. Приложение сохраняет ежедневную стоимость капитала; график появится после второго дневного снимка.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        item {
-            IndexBenchmarkSection(snapshots, dao)
-        }
-        item {
-            Text("Распределение активов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        }
-        if (totalValue <= 0.0) {
-            item { Text("Добавьте активы или внесите свободные деньги, чтобы увидеть структуру портфеля.") }
+
         } else {
-            items(groups) { (type, value) ->
-                val share = (value / totalValue).coerceIn(0.0, 1.0)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(type, fontWeight = FontWeight.Medium)
-                        Text("${money(value)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
-                    }
-                    LinearProgressIndicator(
-                        progress = { share.toFloat() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
             item {
-                val share = (cashBalance / totalValue).coerceIn(0.0, 1.0)
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Денежные средства", fontWeight = FontWeight.Medium)
-                        Text("${money(cashBalance)} ₽ · ${String.format(java.util.Locale("ru", "RU"), "%.1f%%", share * 100)}")
-                    }
-                    LinearProgressIndicator(progress = { share.toFloat() }, modifier = Modifier.fillMaxWidth())
-                }
+                Text(
+                    "Доходность по отдельному счёту пока не рассчитывается: себестоимость позиций хранится на уровне совокупного портфеля, а не каждого брокерского договора.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-        item {
-            Text(
-                "Доходность рассчитана методом условной стоимости единицы с поправкой на внешние денежные потоки. Это дневное приближение; сравнение с IMOEX и MCFTR будет добавлено отдельно.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        item { IndexBenchmarkSection(analyticsMarketHistory.points, dao) }
     }
 }
 
 
-@Composable
-private fun PortfolioHistoryChart(snapshots: List<PortfolioSnapshotEntity>) {
-    var selectedRange by remember { mutableStateOf(PortfolioHistoryRange.ALL) }
-    var showReturn by remember { mutableStateOf(false) }
-    val points = remember(snapshots, selectedRange) {
-        calculatePortfolioHistoryPoints(snapshots, selectedRange)
-    }
-    val plottedValues = points.map { if (showReturn) it.nav else it.totalValue }.map { it.toFloat() }
-    val minValue = plottedValues.minOrNull() ?: 0f
-    val maxValue = plottedValues.maxOrNull() ?: 0f
-    val range = (maxValue - minValue).takeIf { it > 0.0001f } ?: 1f
-    val lineColor = MaterialTheme.colorScheme.primary
-    val gridColor = MaterialTheme.colorScheme.outlineVariant
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            PortfolioHistoryRange.entries.forEach { period ->
-                FilterChip(
-                    selected = selectedRange == period,
-                    onClick = { selectedRange = period },
-                    label = { Text(period.label) }
-                )
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = !showReturn,
-                onClick = { showReturn = false },
-                label = { Text("Стоимость ₽") }
-            )
-            FilterChip(
-                selected = showReturn,
-                onClick = { showReturn = true },
-                label = { Text("Доходность %") }
-            )
-        }
-        if (points.size < 2) {
-            Text(
-                "За выбранный период пока недостаточно дневных снимков. Выберите более длинный период.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            val first = points.first()
-            val last = points.last()
-            if (showReturn) {
-                val totalReturn = last.nav - 100.0
-                Text(
-                    "Доходность за период: ${if (totalReturn >= 0) "+" else ""}${String.format(java.util.Locale("ru", "RU"), "%.2f%%", totalReturn)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (totalReturn >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-                Text(
-                    "Индекс доходности: 100 → ${String.format(java.util.Locale("ru", "RU"), "%.2f", last.nav)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Text(
-                    "Стоимость: ${money(last.totalValue)} ₽",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    "Изменение за период: ${if (last.totalValue - first.totalValue >= 0) "+" else ""}${money(last.totalValue - first.totalValue)} ₽",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    if (showReturn) String.format(java.util.Locale("ru", "RU"), "%.2f", minValue)
-                    else money(minValue.toDouble()),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    if (showReturn) String.format(java.util.Locale("ru", "RU"), "%.2f", maxValue)
-                    else money(maxValue.toDouble()),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Canvas(Modifier.fillMaxWidth().height(170.dp)) {
-                val left = 8f
-                val right = size.width - 8f
-                val top = 8f
-                val bottom = size.height - 8f
-                for (i in 0..3) {
-                    val y = top + (bottom - top) * i / 3f
-                    drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1f)
-                }
-                val path = Path()
-                plottedValues.forEachIndexed { index, value ->
-                    val x = left + (right - left) * index / (plottedValues.size - 1).toFloat()
-                    val y = bottom - ((value - minValue) / range) * (bottom - top)
-                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                drawPath(path, lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(first.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(last.dateKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Text(
-            if (showReturn)
-                "Доходность рассчитана как дневное приближение TWR: пополнения и выводы исключаются из изменения стоимости. Денежные потоки считаются совершёнными в конце дня."
-            else
-                "Показана фактическая оценка активов и свободных денег на дату дневного снимка. Изменение стоимости включает влияние пополнений и выводов.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
 private fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
 
 private fun quantity(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%.6f", value).trimEnd('0').trimEnd(',')
