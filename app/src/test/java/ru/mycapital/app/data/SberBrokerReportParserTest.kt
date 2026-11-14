@@ -9,6 +9,30 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class SberBrokerReportParserTest {
+    @Test
+    fun identicalTradesWithoutDealNumberCanHaveDistinctDeterministicKeys() {
+        val base = BrokerReportTrade(
+            tradeDate = LocalDate.parse("2026-10-01"),
+            settlementDate = LocalDate.parse("2026-10-02"),
+            time = "10:15:00",
+            name = "Тестовая акция",
+            ticker = "TEST",
+            side = "Покупка",
+            quantity = 10.0,
+            price = 100.0,
+            grossAmount = 1_000.0,
+            brokerFee = 1.0,
+            exchangeFee = 0.5,
+            dealNumber = "",
+            status = "И"
+        )
+        val first = base.copy(sourceKeyOccurrence = 0)
+        val second = base.copy(sourceKeyOccurrence = 1)
+        assertNotEquals(first.sourceKey, second.sourceKey)
+        assertEquals(first.sourceKey, base.copy(sourceKeyOccurrence = 0).sourceKey)
+        assertEquals(second.sourceKey, base.copy(sourceKeyOccurrence = 1).sourceKey)
+    }
+
     private fun sampleHtml(
         tableCount: Int = 11,
         tradePrice: String = "47.34",
