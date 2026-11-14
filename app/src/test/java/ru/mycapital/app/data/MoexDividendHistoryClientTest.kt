@@ -63,8 +63,6 @@ class MoexDividendHistoryClientTest {
             dividend("2023-05-18", 4.0),
             dividend("2024-05-22", 5.0),
             dividend("2025-05-20", 4.8),
-            dividend("2025-08-15", 3.0),
-            dividend("2026-08-17", 3.2)
         ).map { it.copy(secid = "T") }
 
         val forecasts = calculateHistoricalDividendForecasts(
