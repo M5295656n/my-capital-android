@@ -166,8 +166,9 @@ abstract class PortfolioDatabase : RoomDatabase() {
         @Synchronized
         fun closeForRestore() {
             check(restoreInProgress) { "Восстановление базы данных не заблокировано." }
-            INSTANCE?.close()
+            val database = INSTANCE
             INSTANCE = null
+            database?.close()
         }
 
         @Synchronized
