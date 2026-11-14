@@ -101,8 +101,9 @@ internal fun calculateRealizedTradingResult(
                 }
 
                 allocations.forEach { (lot, matched) ->
+                    check(lots.firstOrNull() === lot) { "FIFO lot order changed during calculation." }
                     lot.quantity -= matched
-                    if (lot.quantity <= 0.0000001) lots.remove(lot)
+                    if (lot.quantity <= 0.0000001) lots.removeFirst()
                 }
                 profit = nextProfit
                 addUnmatched(remaining)
