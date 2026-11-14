@@ -212,49 +212,89 @@ internal class MoexDividendHistoryClient {
     fun getHistory(ticker: String): DividendHistoryFetchResult {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
-        // Fetch the direct security history in one request. The forecast uses only
-        // this ticker's own dividend records; no cross-issuer ISIN aggregation is needed.
-        val secids = linkedSetOf(normalized)
+
+        // A MOEX instrument may have historical SECIDs after a ticker change.
+        // Resolve all issues with the same ISIN so the current ticker sees its
+        // complete dividend history (for example, TCSG -> T).
+        val tickerSearch = requestJson(
+            "https://iss.moex.com/iss/securities.json?q=$normalized&iss.meta=off"
+        )
+        val tickerRows = table(tickerSearch, "securities")
+        val isin = tickerRows.firstOrNull {
+            it.optString("secid").equals(normalized, ignoreCase = true)
+        }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
+
+        val relatedSecids = if (isin != null) {
+            val relatedSearch = requestJson(
+                "https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off"
+            )
+            table(relatedSearch, "securities")
+                .filter { it.optString("isin").equals(isin, ignoreCase = true) }
+                .mapNotNull { it.optString("secid").takeIf(String::isNotBlank) }
+                .toCollection(linkedSetOf())
+                .apply { add(normalized) }
+        } else {
+            linkedSetOf(normalized)
+        }
+
         var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
         try {
-        secids.forEach { secid ->
-            val payload = requestJson("https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off")
-            table(payload, "dividends").forEach { row ->
-                val dateText = row.optString("registryclosedate").takeIf { it.isNotBlank() && it != "null" }
-                    ?: row.optString("recorddate").takeIf { it.isNotBlank() && it != "null" }
-                val date = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: return@forEach
-                val amount = row.optDouble("value", Double.NaN)
-                val rawCurrency = row.optString("currencyid")
-                val currency = if (rawCurrency.isBlank() || rawCurrency == "null") "RUB" else rawCurrency
-                if (amount.isFinite() && amount > 0.0) {
-                    result += HistoricalDividend(secid, date, amount, currency)
+            relatedSecids.forEach { secid ->
+                val payload = requestJson(
+                    "https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off"
+                )
+                table(payload, "dividends").forEach rowLoop@{ row ->
+                    val dateText = row.optString("registryclosedate")
+                        .takeIf { it.isNotBlank() && it != "null" }
+                        ?: row.optString("recorddate").takeIf { it.isNotBlank() && it != "null" }
+                    val date = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: return@rowLoop
+                    val amount = row.optDouble("value", Double.NaN)
+                    val rawCurrency = row.optString("currencyid")
+                    val currency = if (rawCurrency.isBlank() || rawCurrency == "null") "RUB" else rawCurrency
+                    if (amount.isFinite() && amount > 0.0) {
+                        result += HistoricalDividend(secid, date, amount, currency)
+                    }
                 }
             }
-        }
         } catch (e: Exception) {
             annualCoverageVerified = false
             throw e
         }
-        val splitsPayload = requestJson(
-            "https://iss.moex.com/iss/statistics/engines/stock/splits/$normalized.json?iss.meta=off"
-        )
-        val splits = table(splitsPayload, "splits").mapNotNull { row ->
-            val splitDate = runCatching { LocalDate.parse(row.optString("tradedate")) }.getOrNull()
-                ?: return@mapNotNull null
-            val before = row.optDouble("before", Double.NaN)
-            val after = row.optDouble("after", Double.NaN)
-            if (!before.isFinite() || !after.isFinite() || before <= 0.0 || after <= 0.0) {
-                return@mapNotNull null
-            }
-            HistoricalSplit(normalized, splitDate, before, after)
+
+        // Split events can be attached to any historical SECID of the same issue.
+        // Collect them across aliases, then apply the same issue-level split history
+        // to each alias before normalizing rows to the portfolio's current ticker.
+        val splitRows = relatedSecids.flatMap { secid ->
+            runCatching {
+                val payload = requestJson(
+                    "https://iss.moex.com/iss/statistics/engines/stock/splits/$secid.json?iss.meta=off"
+                )
+                table(payload, "splits").mapNotNull { row ->
+                    val splitDate = runCatching { LocalDate.parse(row.optString("tradedate")) }.getOrNull()
+                        ?: return@mapNotNull null
+                    val before = row.optDouble("before", Double.NaN)
+                    val after = row.optDouble("after", Double.NaN)
+                    if (!before.isFinite() || !after.isFinite() || before <= 0.0 || after <= 0.0) {
+                        return@mapNotNull null
+                    }
+                    HistoricalSplit(secid, splitDate, before, after)
+                }
+            }.getOrElse { emptyList() }
+        }
+        val issueSplits = splitRows.flatMap { split ->
+            relatedSecids.map { alias -> split.copy(secid = alias) }
         }
         val splitAdjusted = adjustHistoricalDividendsForSplits(
-            result.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}" },
-            splits
-        )
+            result.distinctBy {
+                "${it.secid}:${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}"
+            },
+            issueSplits
+        ).map { it.copy(secid = normalized) }
         return DividendHistoryFetchResult(
-            splitAdjusted.sortedBy { it.recordDate },
+            splitAdjusted.distinctBy {
+                "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}"
+            }.sortedBy { it.recordDate },
             annualCoverageVerified
         )
     }
