@@ -75,21 +75,36 @@ internal fun calculateRealizedTradingResult(
                     return@forEach
                 }
 
+                // Preflight the complete FIFO allocation before mutating any lot.
+                // If a later lot overflows, the sale must not leave earlier lots
+                // consumed while only part of the row is reported as unmatched.
                 var remaining = quantity
-                while (remaining > 0.0000001 && lots.isNotEmpty()) {
-                    val lot = lots.first()
+                var profitDelta = 0.0
+                val allocations = mutableListOf<Pair<Lot, Double>>()
+                for (lot in lots) {
+                    if (remaining <= 0.0000001) break
                     val matched = minOf(remaining, lot.quantity)
                     val increment = matched * (netSalePerUnit - lot.unitCost)
-                    val nextProfit = profit + increment
-                    if (!increment.isFinite() || !nextProfit.isFinite()) {
-                        addUnmatched(remaining)
+                    val nextDelta = profitDelta + increment
+                    if (!increment.isFinite() || !nextDelta.isFinite()) {
+                        addUnmatched(quantity)
                         return@forEach
                     }
-                    profit = nextProfit
+                    allocations += lot to matched
+                    profitDelta = nextDelta
                     remaining -= matched
-                    lot.quantity -= matched
-                    if (lot.quantity <= 0.0000001) lots.removeFirst()
                 }
+                val nextProfit = profit + profitDelta
+                if (!nextProfit.isFinite()) {
+                    addUnmatched(quantity)
+                    return@forEach
+                }
+
+                allocations.forEach { (lot, matched) ->
+                    lot.quantity -= matched
+                    if (lot.quantity <= 0.0000001) lots.remove(lot)
+                }
+                profit = nextProfit
                 addUnmatched(remaining)
             }
         }
