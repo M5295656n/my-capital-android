@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.mycapital.app.data.SberBrokerReport
@@ -622,7 +623,16 @@ private fun MyCapitalApp() {
                             backupResultMessage = "База успешно расшифрована, проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
                             (context as? ComponentActivity)?.recreate()
                         } catch (error: Exception) {
-                            errorMessage = error.message ?: "Не удалось восстановить резервную копию. Проверьте пароль и целостность архива."
+                            if (error is PortfolioBackup.RestoreRequiresActivityRestartException) {
+                                Toast.makeText(
+                                    context,
+                                    error.message ?: "Восстановление не завершилось. Перезапускаю экран приложения.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                (context as? ComponentActivity)?.recreate()
+                            } else {
+                                errorMessage = error.message ?: "Не удалось восстановить резервную копию. Проверьте пароль и целостность архива."
+                            }
                         } finally {
                             isRestoringBackup = false
                         }

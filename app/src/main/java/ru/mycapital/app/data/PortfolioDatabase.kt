@@ -153,15 +153,34 @@ abstract class PortfolioDatabase : RoomDatabase() {
         }
 
         @Volatile private var INSTANCE: PortfolioDatabase? = null
+        @Volatile private var restoreInProgress: Boolean = false
+
+        @Synchronized
+        fun beginRestore(): PortfolioDatabase {
+            check(!restoreInProgress) { "Восстановление базы данных уже выполняется." }
+            val database = requireNotNull(INSTANCE) { "База данных ещё не открыта." }
+            restoreInProgress = true
+            return database
+        }
 
         @Synchronized
         fun closeForRestore() {
-            INSTANCE?.close()
+            check(restoreInProgress) { "Восстановление базы данных не заблокировано." }
+            val database = INSTANCE
             INSTANCE = null
+            database?.close()
+        }
+
+        @Synchronized
+        fun endRestore() {
+            restoreInProgress = false
         }
 
         fun getInstance(context: Context): PortfolioDatabase =
-            INSTANCE ?: synchronized(this) {
+            synchronized(this) {
+                check(!restoreInProgress) {
+                    "База данных временно недоступна: выполняется восстановление."
+                }
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     PortfolioDatabase::class.java,
