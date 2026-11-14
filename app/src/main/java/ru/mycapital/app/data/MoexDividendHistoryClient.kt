@@ -122,7 +122,7 @@ internal fun calculateHistoricalDividendForecasts(
 }
 
 /** Forward dividend yield based on payout records already stored in the portfolio database. */
-internal fun calculateForwardDividendYieldPercent(
+internal fun calculateForwardDividendYieldPercentFromPayouts(
     payouts: List<PayoutEntity>,
     ticker: String,
     currentPrice: Double,
