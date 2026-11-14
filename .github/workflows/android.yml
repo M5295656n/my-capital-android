@@ -74,16 +74,35 @@ jobs:
       - name: Run Room and broker-account instrumented tests
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          # Room and repository instrumentation does not require Google Play services.
-          # Use the lighter AOSP image to avoid Google APIs image boot/service instability.
+          # API 34 Google APIs image is more complete than the minimal AOSP image.
           api-level: 34
           arch: x86_64
-          target: default
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2
-          # Fail fast instead of spending 15 minutes polling a broken emulator.
+          target: google_apis
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 3072 -cores 2
           emulator-boot-timeout: 300
           disable-animations: true
-          script: gradle connectedDebugAndroidTest
+          script: |
+            set -euo pipefail
+            adb wait-for-device
+            READY=0
+            for attempt in $(seq 1 36); do
+              if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q '^1$' \
+                && adb shell service check activity 2>/dev/null | grep -q 'found' \
+                && adb shell service check package 2>/dev/null | grep -q 'found'; then
+                READY=1
+                break
+              fi
+              echo "Android framework services are not ready yet (attempt $attempt/36)."
+              sleep 5
+            done
+            if [ "$READY" -ne 1 ]; then
+              echo "Android framework did not become healthy; collecting diagnostics."
+              adb shell getprop || true
+              adb shell service list || true
+              exit 1
+            fi
+            echo "Android framework is ready; starting instrumented tests."
+            gradle connectedDebugAndroidTest
       - name: Upload instrumented test results
         if: always()
         uses: actions/upload-artifact@v4
