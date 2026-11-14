@@ -89,27 +89,69 @@ jobs:
           emulator-boot-timeout: 300
           disable-animations: true
           script: |
-            set -eu
-            adb wait-for-device
-            READY=0
-            for attempt in $(seq 1 36); do
-              if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q '^1$' \
-                && adb shell service check activity 2>/dev/null | grep -q 'found' \
-                && adb shell service check package 2>/dev/null | grep -q 'found'; then
-                READY=1
-                break
-              fi
-              echo "Android framework services are not ready yet (attempt $attempt/36)."
-              sleep 5
-            done
-            if [ "$READY" -ne 1 ]; then
-              echo "Android framework did not become healthy; collecting diagnostics."
-              adb shell getprop || true
-              adb shell service list || true
-              exit 1
-            fi
-            echo "Android framework is ready; starting instrumented tests."
-            gradle connectedDebugAndroidTest
+            set -eu; adb wait-for-device; READY=0; for attempt in $(seq 1 36); do if adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q '^1
+      - name: Upload instrumented test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-test-results
+          path: app/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64 secret" && exit 1)
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/my-capital-signing.jks
+      - name: Run unit tests
+        run: gradle testDebugUnitTest
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_PATH: my-capital-signing.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle assembleRelease
+      - name: Verify release APK signing certificate
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
+          printf '%s' "$VERIFY_OUTPUT"
+          ACTUAL="$(printf '%s' "$VERIFY_OUTPUT" | grep -i 'SHA-256 digest' | head -n 1 | sed 's/.*digest:[[:space:]]*//' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66"
+          echo "APK signer SHA-256: $ACTUAL"
+          test -n "$ACTUAL" || (echo "ERROR: Could not read APK signing certificate digest" && exit 1)
+          test "$ACTUAL" = "$EXPECTED" || (echo "ERROR: APK signing certificate does not match the project baseline" && exit 1)
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
+      - name: Upload signed release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-capital-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+ && adb shell service check activity 2>/dev/null | grep -q 'found' && adb shell service check package 2>/dev/null | grep -q 'found'; then READY=1; break; fi; echo "Android framework services are not ready yet (attempt $attempt/36)."; sleep 5; done; if [ "$READY" -ne 1 ]; then echo "Android framework did not become healthy; collecting diagnostics."; adb shell getprop || true; adb shell service list || true; exit 1; fi; echo "Android framework is ready; starting instrumented tests."; gradle connectedDebugAndroidTest
       - name: Upload instrumented test results
         if: always()
         uses: actions/upload-artifact@v4
