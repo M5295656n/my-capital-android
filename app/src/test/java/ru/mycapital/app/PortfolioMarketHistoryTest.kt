@@ -149,6 +149,37 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
+    fun fullyRedeemedBondRemainsInHistoryBeforeRedemptionAndClosesOnRedemptionDate() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-03-02")
+        val redemptionDate = LocalDate.parse("2026-03-03")
+        val result = buildPortfolioMarketHistory(
+            assets = emptyList(),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-03-01", 1.0, 1_000.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-03-02", 5.0, 100.0, ticker = "SU26238RMFS4"),
+                // Imported redemption cash rows use quantity=1 and carry cash amount in price.
+                operation(3, "Погашение", "2026-03-03", 1.0, 500.0, ticker = "SU26238RMFS4")
+            ),
+            currentCash = 1_000.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = redemptionDate
+        ) { ticker, type, _, _ ->
+            assertEquals("SU26238RMFS4", ticker)
+            assertTrue(type.contains("облиг", ignoreCase = true))
+            listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(redemptionDate, 100.0))
+        }
+
+        assertEquals(2, result.points.size)
+        assertEquals(5.0, result.points[0].quantities["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(500.0, result.points[0].assetValues["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(500.0, result.points[0].totalValue, 0.000001)
+        assertEquals(0.0, result.points[1].quantities["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(0.0, result.points[1].assetValues["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(1_000.0, result.points[1].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+    }
+
+    @Test
     fun tradeDateAndSettlementDateDoNotDoubleCountCashAndHoldings() = kotlinx.coroutines.runBlocking {
         val tradeDate = LocalDate.parse("2026-03-02")
         val settlementDate = LocalDate.parse("2026-03-04")
