@@ -201,6 +201,29 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
+    fun identicalPayoutRowsFromDifferentBrokerageAccountsRemainSeparate() = runBlocking {
+        val samePayout = BrokerReportCashFlow(
+            LocalDate.parse("2026-10-20"),
+            "Выплата дивидендов Т-Технологии. Налог удержан.",
+            8.40, 0.0, "DIV:SAME", "T"
+        )
+        val mainAccount = report(accountId = "403RY0J", cashFlows = listOf(samePayout))
+        val iisAccount = report(accountId = "S25F9ZU", cashFlows = listOf(samePayout))
+
+        val mainResult = repository.importBrokerReportHistory(mainAccount)
+        val iisResult = repository.importBrokerReportHistory(iisAccount)
+        val repeatedIisResult = repository.importBrokerReportHistory(iisAccount)
+
+        assertEquals(1, mainResult.payoutsImported)
+        assertEquals(1, iisResult.payoutsImported)
+        assertEquals(0, repeatedIisResult.payoutsImported)
+        assertEquals(1, repeatedIisResult.duplicates)
+        assertNotNull(dao.getPayoutBySourceKey("SBER:403RY0J:PAYOUT:DIV:SAME"))
+        assertNotNull(dao.getPayoutBySourceKey("SBER:S25F9ZU:PAYOUT:DIV:SAME"))
+        assertEquals(2, dao.observePayouts().first().size)
+    }
+
+    @Test
     fun legacyUnscopedImportKeyPreventsReimportAfterUpgrade() = runBlocking {
         dao.insertOperation(
             OperationEntity(
