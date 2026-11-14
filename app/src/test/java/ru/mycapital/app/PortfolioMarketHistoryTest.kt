@@ -216,12 +216,13 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
-    fun fullySoldInstrumentRemainsInHistoricalNavWithoutCurrentAssetRow() = kotlinx.coroutines.runBlocking {
+    fun fullySoldInstrumentWithoutStoredTypeIsReportedUnavailableInsteadOfAssumedShare() = kotlinx.coroutines.runBlocking {
         val buyDate = LocalDate.parse("2026-02-02")
         val sellDate = LocalDate.parse("2026-02-03")
-        val requestedTickers = mutableListOf<String>()
+        var priceLoaderCalled = false
         val result = buildPortfolioMarketHistory(
-            // A fully sold instrument is correctly absent from the current assets table.
+            // A fully sold instrument is absent from current assets; operation rows
+            // do not retain assetType, so the history builder must not guess.
             assets = emptyList(),
             operations = listOf(
                 operation(1, "Пополнение", "2026-02-01", 1.0, 500.0, ticker = "RUB"),
@@ -231,21 +232,14 @@ class PortfolioMarketHistoryTest {
             currentCash = 518.0,
             range = PortfolioHistoryRange.ALL,
             throughDate = sellDate
-        ) { ticker, type, _, _ ->
-            requestedTickers += ticker
-            assertFalse(type.contains("облиг", ignoreCase = true))
+        ) { _, _, _, _ ->
+            priceLoaderCalled = true
             listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(sellDate, 110.0))
         }
 
-        assertTrue(requestedTickers.contains("SBER"))
-        assertEquals(2, result.points.size)
-        assertEquals(2.0, result.points[0].quantities["SBER"] ?: 0.0, 0.000001)
-        assertEquals(200.0, result.points[0].assetValues["SBER"] ?: 0.0, 0.000001)
-        assertEquals(499.0, result.points[0].totalValue, 0.000001)
-        assertEquals(0.0, result.points[1].quantities["SBER"] ?: 0.0, 0.000001)
-        assertEquals(518.0, result.points[1].cashValue, 0.000001)
-        assertEquals(518.0, result.points[1].totalValue, 0.000001)
-        assertFalse(result.unavailableTickers.contains("SBER"))
+        assertFalse(priceLoaderCalled)
+        assertTrue(result.points.isEmpty())
+        assertTrue(result.unavailableTickers.contains("SBER"))
     }
 
     @Test
