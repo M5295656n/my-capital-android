@@ -26,6 +26,10 @@ internal fun calculateRealizedTradingResult(
     val lotsByBook = mutableMapOf<TradeBookKey, ArrayDeque<Lot>>()
     var profit = 0.0
     var unmatched = 0.0
+    fun addUnmatched(quantity: Double) {
+        val next = unmatched + quantity
+        unmatched = if (next.isFinite()) next else Double.MAX_VALUE
+    }
 
     operations.asSequence()
         .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
@@ -42,7 +46,7 @@ internal fun calculateRealizedTradingResult(
             val price = operation.price
             val commission = operation.commission
             if (!price.isFinite() || !commission.isFinite() || price < 0.0 || commission < 0.0) {
-                if (operation.operationType == "Продажа") unmatched += quantity
+                if (operation.operationType == "Продажа") addUnmatched(quantity)
                 return@forEach
             }
 
@@ -67,7 +71,7 @@ internal fun calculateRealizedTradingResult(
                 if (!grossProceeds.isFinite() || !netProceeds.isFinite() ||
                     netProceeds < 0.0 || !netSalePerUnit.isFinite()
                 ) {
-                    unmatched += quantity
+                    addUnmatched(quantity)
                     return@forEach
                 }
 
@@ -78,7 +82,7 @@ internal fun calculateRealizedTradingResult(
                     val increment = matched * (netSalePerUnit - lot.unitCost)
                     val nextProfit = profit + increment
                     if (!increment.isFinite() || !nextProfit.isFinite()) {
-                        unmatched += remaining
+                        addUnmatched(remaining)
                         return@forEach
                     }
                     profit = nextProfit
@@ -86,7 +90,7 @@ internal fun calculateRealizedTradingResult(
                     lot.quantity -= matched
                     if (lot.quantity <= 0.0000001) lots.removeFirst()
                 }
-                unmatched += remaining
+                addUnmatched(remaining)
             }
         }
 
