@@ -115,11 +115,20 @@ class CorporateEventsWorker(
         for (asset in historyEquities) {
             try {
                 val history = historyClient.getHistory(asset.ticker).dividends
+                val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                val confirmedFutureDates = providerDividendEvents.asSequence()
+                    .filter { it.ticker.equals(asset.ticker, ignoreCase = true) }
+                    .filter { it.status == "ANNOUNCED" || it.status == "RECOMMENDED" }
+                    .mapNotNull { it.recordDate ?: it.paymentDate }
+                    .map { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
+                    .filter { !it.isBefore(today) }
+                    .toList()
                 val forecasts = calculateHistoricalDividendForecasts(
                     ticker = asset.ticker,
                     dividends = history,
-                    today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
-                    horizonMonths = 24
+                    today = today,
+                    horizonMonths = 24,
+                    futureAnchorDates = confirmedFutureDates
                 ).filterNot { forecast ->
                     val forecastMonth = java.time.YearMonth.from(forecast.recordDate)
                     providerDividendEvents.any { event ->
