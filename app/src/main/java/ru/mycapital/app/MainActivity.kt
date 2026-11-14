@@ -830,7 +830,7 @@ private fun OverviewScreen(
             else -> 0.0
         }
     }
-    val receivedPayouts = payouts.filter { it.status == "RECEIVED" }
+    val receivedPayouts = payouts.filter { it.status == "RECEIVED" && isIncomePayoutType(it.payoutType) }
         .sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
     val realized = calculateRealizedTradingResult(operations).profit
     val openCost = assets.sumOf { it.quantity * it.averagePrice }
