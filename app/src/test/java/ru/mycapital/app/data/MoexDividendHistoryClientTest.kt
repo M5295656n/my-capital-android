@@ -57,6 +57,62 @@ class MoexDividendHistoryClientTest {
         assertEquals((23.70 / 292.43) * 100.0, yield!!, 0.001)
     }
 
+    @Test
+    fun forecastsRecurringDividendMonthFromRecentHistoryUsingMedianAmountAndDate() {
+        val history = listOf(
+            dividend("2023-05-18", 4.0),
+            dividend("2024-05-22", 5.0),
+            dividend("2025-05-20", 4.8),
+            dividend("2025-08-15", 3.0),
+            dividend("2026-08-17", 3.2)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 14),
+            horizonMonths = 18
+        )
+
+        assertEquals(1, forecasts.size)
+        assertEquals("T", forecasts.single().ticker)
+        assertEquals(4.8, forecasts.single().amountPerShare, 0.000001)
+        assertEquals(LocalDate.of(2027, 5, 20), forecasts.single().recordDate)
+        assertEquals("MYCAPITAL_HISTORY:T:2027-05-20", forecasts.single().sourceKey)
+    }
+
+    @Test
+    fun doesNotForecastMonthWithOnlyOneHistoricalOccurrence() {
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = listOf(dividend("2025-05-20", 4.8).copy(secid = "T")),
+            today = LocalDate.of(2026, 11, 14)
+        )
+
+        assertEquals(0, forecasts.size)
+    }
+
+    @Test
+    fun historyForecastYieldUsesStoredForecastAndDeclaredPayouts() {
+        val today = LocalDate.of(2026, 11, 14)
+        fun millis(date: String) = LocalDate.parse(date).atStartOfDay(ZoneId.of("Europe/Moscow"))
+            .toInstant().toEpochMilli()
+        val payouts = listOf(
+            PayoutEntity(ticker = "T", payoutType = "Дивиденд", amountPerUnit = 4.8, quantity = 4.0,
+                totalAmount = 19.2, expectedDate = millis("2027-05-20"), recordDate = millis("2027-05-20"),
+                status = "FORECAST", sourceKey = "MYCAPITAL_HISTORY:T:2027-05-20"),
+            PayoutEntity(ticker = "T", payoutType = "Дивиденд", amountPerUnit = 2.0, quantity = 4.0,
+                totalAmount = 8.0, expectedDate = millis("2027-08-20"), status = "ANNOUNCED",
+                sourceKey = "ANNOUNCED:T:2027-08-20"),
+            PayoutEntity(ticker = "SBER", payoutType = "Дивиденд", amountPerUnit = 100.0, quantity = 1.0,
+                totalAmount = 100.0, expectedDate = millis("2027-05-20"), status = "FORECAST")
+        )
+
+        val yield = calculateForwardDividendYieldPercent(payouts, "T", 300.0, today)
+
+        assertEquals((4.8 + 2.0) / 300.0 * 100.0, yield!!, 0.000001)
+    }
+
     private fun dividend(date: String, amount: Double) =
         HistoricalDividend("SBER", LocalDate.parse(date), amount, "RUB")
 }
