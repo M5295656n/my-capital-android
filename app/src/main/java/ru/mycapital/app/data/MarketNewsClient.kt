@@ -268,8 +268,12 @@ internal fun readBoundedResponseBody(body: okhttp3.ResponseBody, maxBytes: Int):
     if (maxBytes < 0) return null
     if (body.contentLength() > maxBytes.toLong()) return null
     return body.source().use { source ->
-        source.request(maxBytes.toLong() + 1L)
-        val bytes = source.buffer.readByteArray()
+        val limit = maxBytes.toLong() + 1L
+        source.request(limit)
+        // Read at most limit bytes even when Content-Length is unknown and the
+        // underlying source has buffered a larger network chunk.
+        val bytesToRead = minOf(source.buffer.size, limit)
+        val bytes = source.buffer.readByteArray(bytesToRead)
         bytes.takeIf { it.size <= maxBytes }
     }
 }
