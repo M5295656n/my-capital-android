@@ -134,6 +134,7 @@ object PortfolioBackup {
             val candidate = File.createTempFile("mycapital-restore-candidate-", ".db", target.parentFile).also { candidateTemp = it }
             val currentDatabase = PortfolioDatabase.beginRestore()
             var databaseCloseAttempted = false
+            var rollbackReady = false
             try {
                 currentDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
                     check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
@@ -147,7 +148,13 @@ object PortfolioBackup {
                     check(!wal.exists() || wal.length() == 0L) {
                         "Журнал базы данных остался активным. Повторите восстановление."
                     }
-                    if (target.exists()) target.copyTo(rollback, overwrite = true)
+                    if (target.exists()) {
+                        target.copyTo(rollback, overwrite = true)
+                        // A failed copy can leave a partial temp file. It must never
+                        // be treated as a valid rollback image.
+                        validateDatabase(rollback)
+                        rollbackReady = true
+                    }
                     candidate.delete()
                     tempDb.copyTo(candidate, overwrite = true)
                     validateDatabase(candidate)
@@ -160,7 +167,7 @@ object PortfolioBackup {
                     File(target.absolutePath + "-wal").delete()
                     File(target.absolutePath + "-shm").delete()
                 } catch (error: Exception) {
-                    if (rollback.exists()) {
+                    if (rollbackReady && rollback.isFile) {
                         val rollbackCandidate = File.createTempFile("mycapital-rollback-candidate-", ".db", target.parentFile)
                         try {
                             rollback.copyTo(rollbackCandidate, overwrite = true)
