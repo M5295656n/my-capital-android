@@ -18,8 +18,11 @@ object PortfolioBackup {
     private const val DATABASE_FILE = "my_capital.db"
     private const val BACKUP_ENTRY = "my_capital.db"
     private const val MANIFEST_ENTRY = "manifest.txt"
-    private const val DATABASE_VERSION = 14
+    private const val MIN_SUPPORTED_DATABASE_VERSION = 14
+    private const val CURRENT_DATABASE_VERSION = 19
     private const val MAX_ARCHIVE_BYTES = 256L * 1024L * 1024L
+    private const val MAX_DATABASE_ENTRY_BYTES = 256L * 1024L * 1024L
+    private const val MAX_MANIFEST_BYTES = 64L * 1024L
 
     data class BackupInfo(val databaseVersion: Int, val databaseBytes: Long)
 
@@ -75,21 +78,39 @@ object PortfolioBackup {
         val tempDb = File(extractDir, BACKUP_ENTRY)
         try {
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                archive.outputStream().use { output -> input.copyTo(output) }
+                archive.outputStream().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        check(total <= MAX_ARCHIVE_BYTES) { "Размер архива превышает допустимый предел." }
+                        output.write(buffer, 0, count)
+                    }
+                }
             } ?: error("Не удалось открыть архив.")
             check(archive.length() in 1..MAX_ARCHIVE_BYTES) { "Размер архива недопустим." }
             extractDir.mkdirs()
             val zip = ZipFile(archive, password)
             val headers = zip.fileHeaders
-            check(headers.isNotEmpty() && headers.all { it.isEncrypted }) {
-                "Архив не зашифрован или имеет неверный формат."
+            check(headers.size == 2 && headers.all { it.isEncrypted } &&
+                headers.map { it.fileName }.toSet() == setOf(MANIFEST_ENTRY, BACKUP_ENTRY)) {
+                "Архив должен содержать только зашифрованные манифест и базу данных."
             }
-            check(headers.any { it.fileName == MANIFEST_ENTRY } && headers.any { it.fileName == BACKUP_ENTRY }) {
-                "В архиве отсутствует база данных или манифест."
+            val manifestHeader = headers.single { it.fileName == MANIFEST_ENTRY }
+            val databaseHeader = headers.single { it.fileName == BACKUP_ENTRY }
+            check(manifestHeader.uncompressedSize in 1..MAX_MANIFEST_BYTES &&
+                databaseHeader.uncompressedSize in 1..MAX_DATABASE_ENTRY_BYTES) {
+                "Размер распакованных данных недопустим."
             }
             // Extract only the two expected entries; never unpack arbitrary archive paths.
             zip.extractFile(MANIFEST_ENTRY, extractDir.absolutePath)
             zip.extractFile(BACKUP_ENTRY, extractDir.absolutePath)
+            check(File(extractDir, MANIFEST_ENTRY).length() in 1..MAX_MANIFEST_BYTES &&
+                tempDb.length() in 1..MAX_DATABASE_ENTRY_BYTES) {
+                "Фактический размер распакованных данных превышает допустимый предел."
+            }
             val manifest = File(extractDir, MANIFEST_ENTRY).readText(Charsets.UTF_8)
             check(manifest.startsWith("MyCapital backup") && manifest.contains("format=2") &&
                 manifest.contains("encryption=AES-256")) {
@@ -100,9 +121,15 @@ object PortfolioBackup {
 
             val target = context.getDatabasePath(DATABASE_FILE)
             val rollback = File(context.cacheDir, "mycapital-before-restore.db")
+            val currentDatabase = PortfolioDatabase.getInstance(context)
+            currentDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
+                check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
+                    "Не удалось подготовить текущую базу к восстановлению."
+                }
+            }
+            PortfolioDatabase.closeForRestore()
             if (target.exists()) target.copyTo(rollback, overwrite = true)
             try {
-                PortfolioDatabase.closeForRestore()
                 File(target.absolutePath + "-wal").delete()
                 File(target.absolutePath + "-shm").delete()
                 tempDb.copyTo(target, overwrite = true)
@@ -129,8 +156,9 @@ object PortfolioBackup {
         val db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
         try {
             val version = db.version
-            check(version == DATABASE_VERSION) {
-                "Версия базы в архиве ($version) не поддерживается этой версией приложения."
+            check(version in MIN_SUPPORTED_DATABASE_VERSION..CURRENT_DATABASE_VERSION) {
+                "Версия базы в архиве ($version) не поддерживается. Допустимый диапазон: " +
+                    "$MIN_SUPPORTED_DATABASE_VERSION–$CURRENT_DATABASE_VERSION."
             }
             db.rawQuery("PRAGMA integrity_check", null).use { cursor ->
                 check(cursor.moveToFirst() && cursor.getString(0) == "ok") {
