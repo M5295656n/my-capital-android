@@ -168,12 +168,12 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(38.15, importedCoupon.reportedNetAmount!!, 0.000001)
         assertEquals("SU26228RMFS9", importedCoupon.ticker)
         assertEquals(3, operations.size)
-        assertEquals(setOf("Дивиденд", "Купон"), operations.map { it.operationType }.toSet())
+        assertEquals(setOf("Дивиденд", "Купон", "Внутренний перевод исходящий"), operations.map { it.operationType }.toSet())
         assertEquals(8.40, operations.single { it.operationType == "Дивиденд" }.price, 0.000001)
         assertEquals(38.15, operations.single { it.operationType == "Купон" }.price, 0.000001)
         assertEquals("T", operations.single { it.operationType == "Дивиденд" }.ticker)
         assertEquals("SU26228RMFS9", operations.single { it.operationType == "Купон" }.ticker)
-        assertEquals(null, dao.getOperationBySourceKey("TRANSFER:1"))
+        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:TRANSFER:TRANSFER:1"))
     }
 
 
@@ -244,7 +244,8 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(4.0, updated.quantity, 0.000001)
         assertEquals(12.0, updated.currentPrice, 0.000001)
         assertEquals(10.0, updated.averagePrice, 0.000001)
-        assertEquals(null, dao.getAssetByTicker("XYZ"))
+        assertNotNull(dao.getAssetByTicker("XYZ"))
+        assertEquals(1.0, dao.getAssetByTicker("XYZ")!!.quantity, 0.000001)
     }
 
     @Test
