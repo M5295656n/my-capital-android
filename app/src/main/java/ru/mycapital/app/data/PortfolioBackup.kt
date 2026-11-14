@@ -153,14 +153,17 @@ object PortfolioBackup {
                 } catch (error: Exception) {
                     if (rollback.exists()) {
                         val rollbackCandidate = File.createTempFile("mycapital-rollback-candidate-", ".db", target.parentFile)
-                        rollbackCandidate.delete()
-                        rollback.copyTo(rollbackCandidate, overwrite = true)
-                        java.nio.file.Files.move(
-                            rollbackCandidate.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        )
+                        try {
+                            rollback.copyTo(rollbackCandidate, overwrite = true)
+                            java.nio.file.Files.move(
+                                rollbackCandidate.toPath(),
+                                target.toPath(),
+                                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                            )
+                        } finally {
+                            rollbackCandidate.delete()
+                        }
                     }
                     File(target.absolutePath + "-wal").delete()
                     File(target.absolutePath + "-shm").delete()
