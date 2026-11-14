@@ -26,6 +26,11 @@ object PortfolioBackup {
 
     data class BackupInfo(val databaseVersion: Int, val databaseBytes: Long)
 
+    class RestoreRequiresActivityRestartException(
+        message: String,
+        cause: Throwable
+    ) : IllegalStateException(message, cause)
+
     fun export(context: Context, destination: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
         val database = PortfolioDatabase.getInstance(context)
@@ -117,12 +122,14 @@ object PortfolioBackup {
             val rollback = File(context.cacheDir, "mycapital-before-restore.db")
             val candidate = File(target.parentFile, "mycapital-restore-candidate.db")
             val currentDatabase = PortfolioDatabase.beginRestore()
+            var databaseCloseAttempted = false
             try {
                 currentDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
                     check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
                         "Не удалось подготовить текущую базу к восстановлению."
                     }
                 }
+                databaseCloseAttempted = true
                 PortfolioDatabase.closeForRestore()
                 try {
                     val wal = File(target.absolutePath + "-wal")
@@ -160,6 +167,14 @@ object PortfolioBackup {
                     candidate.delete()
                     rollback.delete()
                 }
+            } catch (error: Exception) {
+                if (databaseCloseAttempted) {
+                    throw RestoreRequiresActivityRestartException(
+                        error.message ?: "Восстановление не завершилось. База возвращена к прежнему состоянию; перезапустите экран приложения.",
+                        error
+                    )
+                }
+                throw error
             } finally {
                 PortfolioDatabase.endRestore()
             }
