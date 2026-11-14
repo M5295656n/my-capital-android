@@ -213,37 +213,52 @@ internal class MoexDividendHistoryClient {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
 
-        // A MOEX instrument may have historical SECIDs after a ticker change.
-        // Resolve all issues with the same ISIN so the current ticker sees its
-        // complete dividend history (for example, TCSG -> T).
-        val tickerSearch = requestJson(
-            "https://iss.moex.com/iss/securities.json?q=$normalized&iss.meta=off"
-        )
-        val tickerRows = table(tickerSearch, "securities")
-        val isin = tickerRows.firstOrNull {
-            it.optString("secid").equals(normalized, ignoreCase = true)
-        }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
+        // Resolve the canonical ISIN from the direct security description first.
+        // The broad securities search endpoint is supplementary: it can omit the
+        // exact ticker row or fail transiently, and must never block direct history.
+        val description = runCatching {
+            requestJson("https://iss.moex.com/iss/securities/$normalized.json?iss.meta=off")
+        }.getOrNull()
+        val descriptionIsin = table(description ?: JSONObject(), "description")
+            .firstNotNullOfOrNull { row ->
+                if (row.optString("name").equals("ISIN", ignoreCase = true)) {
+                    row.optString("value").takeIf { it.isNotBlank() && it != "null" }
+                } else null
+            }
 
-        val relatedSecids = if (isin != null) {
-            val relatedSearch = requestJson(
-                "https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off"
+        val tickerSearchIsin = runCatching {
+            val payload = requestJson(
+                "https://iss.moex.com/iss/securities.json?q=$normalized&iss.meta=off"
             )
-            table(relatedSearch, "securities")
-                .filter { it.optString("isin").equals(isin, ignoreCase = true) }
-                .mapNotNull { it.optString("secid").takeIf(String::isNotBlank) }
-                .toCollection(linkedSetOf())
-                .apply { add(normalized) }
-        } else {
-            linkedSetOf(normalized)
+            table(payload, "securities").firstOrNull {
+                it.optString("secid").equals(normalized, ignoreCase = true)
+            }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
+        }.getOrNull()
+        val isin = descriptionIsin ?: tickerSearchIsin
+
+        val relatedSecids = linkedSetOf(normalized)
+        if (isin != null) {
+            runCatching {
+                val relatedSearch = requestJson(
+                    "https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off"
+                )
+                table(relatedSearch, "securities")
+                    .filter { it.optString("isin").equals(isin, ignoreCase = true) }
+                    .mapNotNull { it.optString("secid").takeIf(String::isNotBlank) }
+                    .forEach { relatedSecids.add(it) }
+            }
         }
 
         var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
-        try {
-            relatedSecids.forEach { secid ->
+        var successfulHistoryEndpoints = 0
+        var lastHistoryError: Exception? = null
+        relatedSecids.forEach { secid ->
+            try {
                 val payload = requestJson(
                     "https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off"
                 )
+                successfulHistoryEndpoints++
                 table(payload, "dividends").forEach rowLoop@{ row ->
                     val dateText = row.optString("registryclosedate")
                         .takeIf { it.isNotBlank() && it != "null" }
@@ -256,10 +271,19 @@ internal class MoexDividendHistoryClient {
                         result += HistoricalDividend(secid, date, amount, currency)
                     }
                 }
+            } catch (error: Exception) {
+                annualCoverageVerified = false
+                lastHistoryError = error
             }
-        } catch (e: Exception) {
-            annualCoverageVerified = false
-            throw e
+        }
+        // A retired SECID can legitimately stop serving history while the current
+        // SECID remains available. Keep usable partial history; fail only when none
+        // of the candidate security IDs could be queried.
+        if (successfulHistoryEndpoints == 0) {
+            throw IOException(
+                "Не удалось получить историю дивидендов MOEX для $normalized: " +
+                    (lastHistoryError?.message ?: "нет доступных SECID")
+            )
         }
 
         // Split events can be attached to any historical SECID of the same issue.
