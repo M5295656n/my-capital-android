@@ -67,7 +67,7 @@ internal fun calculateHistoricalDividendForecasts(
     ticker: String,
     dividends: List<HistoricalDividend>,
     today: LocalDate,
-    horizonMonths: Int = 12
+    horizonMonths: Int = 24
 ): List<HistoricalDividendForecast> {
     if (horizonMonths <= 0) return emptyList()
     val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
