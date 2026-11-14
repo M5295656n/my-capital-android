@@ -223,6 +223,19 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun extractsCreditRatingsFromOfficialPlacementDocuments() {
+        val html = """
+            <table>
+              <tr><td>Рейтинг выпуска</td><td>AAA(RU)</td></tr>
+              <tr><td>Кредитный рейтинг эмитента</td><td>AA+(RU), прогноз стабильный</td></tr>
+            </table>
+        """.trimIndent()
+        val details = parsePlacementDetailsFromHtml(html, "Размещение облигаций")
+        assertEquals("AAA(RU)", details.issueRating)
+        assertEquals("AA+(RU), прогноз стабильный", details.issuerRating)
+    }
+
+    @Test
     fun doesNotInferCouponRateFromCouponAmountInHtmlTable() {
         val html = """
             <table><tr><td>Размер купона</td><td>42 руб.</td></tr></table>
