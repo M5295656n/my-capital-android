@@ -33,14 +33,22 @@ object PortfolioBackup {
         val tempDb = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.db")
         val tempArchive = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.zip")
         try {
-            // Checkpoint WAL and require SQLite to report that all frames were checkpointed.
-            database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
-                check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
-                    "Не удалось безопасно сохранить журнал базы данных. Повторите попытку."
+            // Freeze new Room opens and close the singleton before copying the main DB file.
+            // This prevents a concurrent Room write from landing in WAL after checkpoint
+            // but before the file copy, which would otherwise produce an incomplete backup.
+            val lockedDatabase = PortfolioDatabase.beginRestore()
+            try {
+                lockedDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
+                    check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
+                        "Не удалось безопасно сохранить журнал базы данных. Повторите попытку."
+                    }
                 }
+                PortfolioDatabase.closeForRestore()
+                check(source.isFile && source.length() > 0L) { "Локальная база данных не найдена." }
+                source.copyTo(tempDb, overwrite = true)
+            } finally {
+                PortfolioDatabase.endRestore()
             }
-            check(source.isFile && source.length() > 0L) { "Локальная база данных не найдена." }
-            source.copyTo(tempDb, overwrite = true)
             val version = validateDatabase(tempDb)
             val zip = ZipFile(tempArchive, password)
             val manifest = File(context.cacheDir, "mycapital-manifest-${System.currentTimeMillis()}.txt")
