@@ -194,7 +194,7 @@ internal suspend fun buildPortfolioMarketHistory(
             .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
             .filter { it.operationDate < endOfDay }
             .filter { (it.settlementDate ?: it.operationDate) >= endOfDay }
-            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers) }
+            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers, includedBrokerAccountIds) }
         val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
