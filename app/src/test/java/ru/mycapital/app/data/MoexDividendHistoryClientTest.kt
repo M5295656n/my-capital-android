@@ -153,7 +153,7 @@ class MoexDividendHistoryClientTest {
                 totalAmount = 100.0, expectedDate = millis("2027-05-20"), status = "FORECAST")
         )
 
-        val yield = calculateForwardDividendYieldPercent(payouts, "T", 300.0, today)
+        val yield = calculateForwardDividendYieldPercentFromPayouts(payouts, "T", 300.0, today)
 
         assertEquals((4.8 + 2.0) / 300.0 * 100.0, yield!!, 0.000001)
     }
