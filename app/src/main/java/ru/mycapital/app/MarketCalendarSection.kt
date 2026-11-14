@@ -67,8 +67,8 @@ private data class CalendarDisplayItem(
 
 internal fun extractCreditRating(summary: String, label: String): String? {
     require(label == "выпуска" || label == "эмитента")
-    val ratingPattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\\\s*прогноз\\\\s+[А-Яа-яЁё]+)?)"
-    return Regex("(?i)Рейтинг $label:\\\\s*$ratingPattern")
+    val ratingPattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\s*прогноз\\s+[А-Яа-яЁё]+)?)"
+    return Regex("(?i)Рейтинг $label:\\s*$ratingPattern")
         .find(summary)
         ?.groupValues
         ?.get(1)
