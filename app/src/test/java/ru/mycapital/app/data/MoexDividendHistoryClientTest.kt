@@ -99,7 +99,7 @@ class MoexDividendHistoryClientTest {
             PayoutEntity(assetId = null, ticker = "T", payoutType = "Дивиденд", amountPerUnit = 4.8, quantity = 4.0,
                 totalAmount = 19.2, expectedDate = millis("2027-05-20"), recordDate = millis("2027-05-20"),
                 status = "FORECAST", sourceKey = "MYCAPITAL_HISTORY:T:2027-05-20"),
-            PayoutEntity(ticker = "T", payoutType = "Дивиденд", amountPerUnit = 2.0, quantity = 4.0,
+            PayoutEntity(assetId = null, ticker = "T", payoutType = "Дивиденд", amountPerUnit = 2.0, quantity = 4.0,
                 totalAmount = 8.0, expectedDate = millis("2027-08-20"), status = "ANNOUNCED",
                 sourceKey = "ANNOUNCED:T:2027-08-20"),
             PayoutEntity(assetId = null, ticker = "SBER", payoutType = "Дивиденд", amountPerUnit = 100.0, quantity = 1.0,
