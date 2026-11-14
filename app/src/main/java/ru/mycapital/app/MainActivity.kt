@@ -1364,7 +1364,33 @@ private fun AssetsScreen(
                             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AssetTypeIcon("cash", "RUB")
+                            Canvas(Modifier.size(width = 58.dp, height = 48.dp)) {
+                                val w = size.width
+                                val h = size.height
+                                drawRoundRect(
+                                    color = Color(0xFFB58A32),
+                                    topLeft = Offset(w * 0.18f, h * 0.25f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.72f, h * 0.62f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx())
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFF2E8B63),
+                                    topLeft = Offset(w * 0.08f, h * 0.12f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.66f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx())
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFF49A879),
+                                    topLeft = Offset(w * 0.08f, h * 0.12f),
+                                    size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.66f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx()),
+                                    style = Stroke(width = 1.4.dp.toPx())
+                                )
+                                drawCircle(Color(0xFFFFE6A3), radius = h * 0.17f, center = Offset(w * 0.46f, h * 0.45f))
+                                drawCircle(Color(0xFF2E8B63), radius = h * 0.12f, center = Offset(w * 0.46f, h * 0.45f), style = Stroke(width = 1.2.dp.toPx()))
+                                drawLine(Color(0xFFFFE6A3), Offset(w * 0.17f, h * 0.24f), Offset(w * 0.27f, h * 0.24f), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                                drawLine(Color(0xFFFFE6A3), Offset(w * 0.65f, h * 0.66f), Offset(w * 0.76f, h * 0.66f), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                            }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text("Кэш", fontWeight = FontWeight.Bold, fontSize = 17.sp)
