@@ -132,7 +132,7 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
-    fun payoutImportsUseCreditedNetAmountsAndIgnoreInternalTransfers() = runBlocking {
+    fun payoutImportsUseCreditedNetAmountsAndRecordScopedInternalTransfers() = runBlocking {
         dao.ensureCashBalance(CashBalanceEntity(balance = 250.0))
         val report = report(
             cashFlows = listOf(
@@ -150,12 +150,12 @@ class BrokerReportRepositoryInstrumentedTest {
         val operations = dao.observeOperations().first()
         val payouts = dao.observePayouts().first()
 
-        assertEquals(2, first.imported)
+        assertEquals(3, first.imported) // dividend, coupon and one account-side internal transfer
         assertEquals(2, first.payoutsImported)
         assertEquals(0, first.duplicates)
         assertEquals(0, second.imported)
         assertEquals(0, second.payoutsImported)
-        assertEquals(2, second.duplicates)
+        assertEquals(3, second.duplicates)
         assertEquals(250.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(2, payouts.size)
         val importedDividend = payouts.single { it.payoutType == "Дивиденд" }
@@ -167,13 +167,16 @@ class BrokerReportRepositoryInstrumentedTest {
         assertNotNull(importedDividend.actualDate)
         assertEquals(38.15, importedCoupon.reportedNetAmount!!, 0.000001)
         assertEquals("SU26228RMFS9", importedCoupon.ticker)
-        assertEquals(2, operations.size)
-        assertEquals(setOf("Дивиденд", "Купон"), operations.map { it.operationType }.toSet())
+        assertEquals(3, operations.size)
+        assertEquals(setOf("Дивиденд", "Купон", "Внутренний перевод исходящий"), operations.map { it.operationType }.toSet())
         assertEquals(8.40, operations.single { it.operationType == "Дивиденд" }.price, 0.000001)
         assertEquals(38.15, operations.single { it.operationType == "Купон" }.price, 0.000001)
         assertEquals("T", operations.single { it.operationType == "Дивиденд" }.ticker)
         assertEquals("SU26228RMFS9", operations.single { it.operationType == "Купон" }.ticker)
         assertEquals(null, dao.getOperationBySourceKey("TRANSFER:1"))
+        val internalTransfer = dao.getOperationBySourceKey("SBER:403RY0J:CASH:TRANSFER:1")
+        assertNotNull(internalTransfer)
+        assertEquals("403RY0J", internalTransfer!!.accountId)
     }
 
 
@@ -218,7 +221,7 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
-    fun snapshotReconciliationSetsAbsoluteCashAndOnlyUpdatesMatchedAssets() = runBlocking {
+    fun snapshotReconciliationSetsAbsoluteCashAndCreatesPreviouslyUnknownHeldAssets() = runBlocking {
         val assetId = dao.insertAsset(
             AssetEntity(ticker = "ABC", name = "ABC", assetType = "Акция",
                 quantity = 2.0, averagePrice = 10.0, currentPrice = 11.0)
@@ -237,14 +240,15 @@ class BrokerReportRepositoryInstrumentedTest {
         val result = repository.reconcileBrokerReportSnapshot(report)
         val updated = dao.getAsset(assetId)!!
 
-        assertEquals(1, result.matchedAssets)
-        assertEquals(1, result.unmatchedReportAssets)
+        assertEquals(2, result.matchedAssets) // ABC already existed; XYZ was created from the broker snapshot
+        assertEquals(0, result.unmatchedReportAssets)
         assertEquals(5.0, result.previousCash, 0.000001)
         assertEquals(42.0, dao.getCashBalance()!!, 0.000001)
         assertEquals(4.0, updated.quantity, 0.000001)
         assertEquals(12.0, updated.currentPrice, 0.000001)
         assertEquals(10.0, updated.averagePrice, 0.000001)
-        assertEquals(null, dao.getAssetByTicker("XYZ"))
+        assertEquals(1.0, dao.getAssetByTicker("XYZ")!!.quantity, 0.000001)
+        assertEquals(null, dao.getAssetByTicker("OLD"))
     }
 
     @Test
