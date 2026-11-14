@@ -19,6 +19,13 @@ class MarketNewsClientTest {
     }
 
     @Test
+    fun acceptsUnknownLengthBodyExactlyAtTheConfiguredLimit() {
+        val bytes = ByteArray(16) { it.toByte() }
+        val body = okhttp3.ResponseBody.create(null, bytes)
+        assertEquals(bytes.toList(), readBoundedResponseBody(body, 16)!!.toList())
+    }
+
+    @Test
     fun parsesOfficialRssAndMatchesOnlyPortfolioTickers() {
         val now = Instant.parse("2026-11-08T12:00:00Z").toEpochMilli()
         val xml = """
