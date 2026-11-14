@@ -93,7 +93,7 @@ internal fun MarketCalendarSection(
                 category = when (it.category) { "ECONOMY" -> "Экономика"; "NEW_ISSUES" -> "Новые размещения"; else -> "Компании" },
                 title = org.jsoup.parser.Parser.unescapeEntities(it.title, false),
                 description = org.jsoup.parser.Parser.unescapeEntities(
-                    it.summary.substringBefore(Regex("(?i)\\\\sРейтинг (?:выпуска|эмитента):")),
+                    Regex("(?i)\\sРейтинг (?:выпуска|эмитента):.*$").replace(it.summary, "").trim(),
                     false
                 ).trim(),
                 source = it.sourceName,
@@ -130,8 +130,8 @@ internal fun MarketCalendarSection(
                         }
                         add("Купон: $couponLabel")
                         if (instrument.contains("облигац", ignoreCase = true)) {
-                            val issueRating = Regex("(?i)Рейтинг выпуска:\\\\s*([^.;]+)").find(it.summary)?.groupValues?.get(1)?.trim()
-                            val issuerRating = Regex("(?i)Рейтинг эмитента:\\\\s*([^.;]+)").find(it.summary)?.groupValues?.get(1)?.trim()
+                            val issueRating = Regex("(?i)Рейтинг выпуска:\\s*([^.;]+)").find(it.summary)?.groupValues?.get(1)?.trim()
+                            val issuerRating = Regex("(?i)Рейтинг эмитента:\\s*([^.;]+)").find(it.summary)?.groupValues?.get(1)?.trim()
                             add("Рейтинг выпуска: " + (issueRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                             add("Рейтинг эмитента: " + (issuerRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                         }
