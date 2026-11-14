@@ -224,7 +224,7 @@ class MarketNewsClientTest {
 
     @Test
     fun stripsPreviouslyStoredRatingsFromMultilineSummaryWithoutLeavingDuplicates() {
-        val summary = "Announcement details\\nРейтинг выпуска: AAA(RU)\\nРейтинг эмитента: AA+(RU), прогноз стабильный"
+        val summary = "Announcement details\nРейтинг выпуска: AAA(RU)\nРейтинг эмитента: AA+(RU), прогноз стабильный"
 
         assertEquals("Announcement details", stripStoredCreditRatings(summary))
     }
