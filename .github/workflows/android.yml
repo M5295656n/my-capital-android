@@ -14,8 +14,52 @@ on:
   workflow_dispatch:
 
 jobs:
+  instrumented-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ steps.filter.outputs.required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decide whether Android instrumented tests are required
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run: full instrumented suite enabled."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --name-only "$BASE_SHA...$HEAD_SHA" > changed-files.txt
+          elif [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "New branch push: run full instrumented suite."
+            exit 0
+          else
+            git diff --name-only "$BEFORE_SHA" "$HEAD_SHA" > changed-files.txt
+          fi
+
+          cat changed-files.txt
+          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^([^/]+/)?build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Data-layer or Android integration files changed: instrumented suite enabled."
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "No database/import/restore integration changes: instrumented suite skipped."
+          fi
 
   instrumented-tests:
+    needs: instrumented-filter
+    if: needs.instrumented-filter.outputs.required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -30,14 +74,13 @@ jobs:
       - name: Run Room and broker-account instrumented tests
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 35
           arch: x86_64
           target: google_apis
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect
           emulator-boot-timeout: 900
           disable-animations: true
-          script: |
-            gradle connectedDebugAndroidTest || { adb logcat -d -v threadtime > app/build/outputs/androidTest-results/connected/emulator-logcat.txt; exit 1; }
+          script: gradle connectedDebugAndroidTest
       - name: Upload instrumented test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,8 +122,8 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
-          printf '%s\n' "$VERIFY_OUTPUT"
-          ACTUAL="$(printf '%s\n' "$VERIFY_OUTPUT" | grep -i 'SHA-256 digest' | head -n 1 | sed 's/.*digest:[[:space:]]*//' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          printf '%s' "$VERIFY_OUTPUT"
+          ACTUAL="$(printf '%s' "$VERIFY_OUTPUT" | grep -i 'SHA-256 digest' | head -n 1 | sed 's/.*digest:[[:space:]]*//' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
           EXPECTED="77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66"
           echo "APK signer SHA-256: $ACTUAL"
           test -n "$ACTUAL" || (echo "ERROR: Could not read APK signing certificate digest" && exit 1)
@@ -99,4 +142,3 @@ jobs:
           name: my-capital-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-
