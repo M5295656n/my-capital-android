@@ -117,6 +117,9 @@ interface PortfolioDao {
     @Query("DELETE FROM payouts WHERE sourceKey LIKE 'LONGSHORT:%' AND UPPER(ticker) = UPPER(:ticker) AND status != 'RECEIVED'")
     suspend fun deleteUnreceivedLongShortDividendEventsForTicker(ticker: String)
 
+    @Query("DELETE FROM payouts WHERE sourceKey LIKE 'MYCAPITAL_HISTORY:%' AND UPPER(ticker) = UPPER(:ticker) AND status != 'RECEIVED'")
+    suspend fun deleteUnreceivedMyCapitalHistoryDividendForecastsForTicker(ticker: String)
+
     @Query("SELECT * FROM payouts WHERE id = :payoutId LIMIT 1")
     suspend fun getPayoutById(payoutId: Long): PayoutEntity?
 
