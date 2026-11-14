@@ -67,7 +67,8 @@ internal fun calculateHistoricalDividendForecasts(
     ticker: String,
     dividends: List<HistoricalDividend>,
     today: LocalDate,
-    horizonMonths: Int = 24
+    horizonMonths: Int = 24,
+    futureAnchorDates: List<LocalDate> = emptyList()
 ): List<HistoricalDividendForecast> {
     if (horizonMonths <= 0) return emptyList()
     val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
@@ -83,7 +84,6 @@ internal fun calculateHistoricalDividendForecasts(
 
     val recurringByMonth = usable.groupBy { it.recordDate.monthValue }
         .filterValues { rows -> rows.map { it.recordDate.year }.distinct().size >= 2 }
-    if (recurringByMonth.isEmpty()) return emptyList()
 
     fun median(values: List<Double>): Double {
         val sorted = values.sorted()
@@ -118,6 +118,41 @@ internal fun calculateHistoricalDividendForecasts(
         }
         month = month.plusMonths(1)
     }
+    // Quarterly issuers may not repeat the same record month in two separate
+    // years. When recent observations show a stable 2–5 month cadence, project
+    // it from the latest confirmed upcoming event or latest historical record.
+    val cadenceRows = usable
+        .filter { !it.recordDate.isBefore(today.minusMonths(18)) }
+        .sortedBy { it.recordDate }
+    if (cadenceRows.size >= 3) {
+        val intervals = cadenceRows.zipWithNext { first, second ->
+            java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
+        }.filter { it > 0.0 }
+        if (intervals.size >= 2) {
+            val cadenceDays = median(intervals)
+            if (cadenceDays in 60.0..150.0) {
+                val anchor = (cadenceRows.map { it.recordDate } + futureAnchorDates.filter { !it.isBefore(today) })
+                    .maxOrNull() ?: cadenceRows.last().recordDate
+                val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
+                val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
+                val stepDays = Math.round(cadenceDays).coerceAtLeast(1L)
+                var date = anchor.plusDays(stepDays)
+                while (!date.isAfter(endMonth.atEndOfMonth())) {
+                    if (!date.isBefore(today) && amount.isFinite() && amount > 0.0) {
+                        cadenceForecasts += HistoricalDividendForecast(
+                            ticker = normalizedTicker,
+                            amountPerShare = amount,
+                            recordDate = date,
+                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                        )
+                    }
+                    date = date.plusDays(stepDays)
+                }
+                if (cadenceForecasts.isNotEmpty()) return cadenceForecasts
+            }
+        }
+    }
+
     return forecasts
 }
 
@@ -213,37 +248,52 @@ internal class MoexDividendHistoryClient {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
 
-        // A MOEX instrument may have historical SECIDs after a ticker change.
-        // Resolve all issues with the same ISIN so the current ticker sees its
-        // complete dividend history (for example, TCSG -> T).
-        val tickerSearch = requestJson(
-            "https://iss.moex.com/iss/securities.json?q=$normalized&iss.meta=off"
-        )
-        val tickerRows = table(tickerSearch, "securities")
-        val isin = tickerRows.firstOrNull {
-            it.optString("secid").equals(normalized, ignoreCase = true)
-        }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
+        // Resolve the canonical ISIN from the direct security description first.
+        // The broad securities search endpoint is supplementary: it can omit the
+        // exact ticker row or fail transiently, and must never block direct history.
+        val description = runCatching {
+            requestJson("https://iss.moex.com/iss/securities/$normalized.json?iss.meta=off")
+        }.getOrNull()
+        val descriptionIsin = table(description ?: JSONObject(), "description")
+            .firstNotNullOfOrNull { row ->
+                if (row.optString("name").equals("ISIN", ignoreCase = true)) {
+                    row.optString("value").takeIf { it.isNotBlank() && it != "null" }
+                } else null
+            }
 
-        val relatedSecids = if (isin != null) {
-            val relatedSearch = requestJson(
-                "https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off"
+        val tickerSearchIsin = runCatching {
+            val payload = requestJson(
+                "https://iss.moex.com/iss/securities.json?q=$normalized&iss.meta=off"
             )
-            table(relatedSearch, "securities")
-                .filter { it.optString("isin").equals(isin, ignoreCase = true) }
-                .mapNotNull { it.optString("secid").takeIf(String::isNotBlank) }
-                .toCollection(linkedSetOf())
-                .apply { add(normalized) }
-        } else {
-            linkedSetOf(normalized)
+            table(payload, "securities").firstOrNull {
+                it.optString("secid").equals(normalized, ignoreCase = true)
+            }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
+        }.getOrNull()
+        val isin = descriptionIsin ?: tickerSearchIsin
+
+        val relatedSecids = linkedSetOf(normalized)
+        if (isin != null) {
+            runCatching {
+                val relatedSearch = requestJson(
+                    "https://iss.moex.com/iss/securities.json?q=$isin&iss.meta=off"
+                )
+                table(relatedSearch, "securities")
+                    .filter { it.optString("isin").equals(isin, ignoreCase = true) }
+                    .mapNotNull { it.optString("secid").takeIf(String::isNotBlank) }
+                    .forEach { relatedSecids.add(it) }
+            }
         }
 
         var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
-        try {
-            relatedSecids.forEach { secid ->
+        var successfulHistoryEndpoints = 0
+        var lastHistoryError: Exception? = null
+        relatedSecids.forEach { secid ->
+            try {
                 val payload = requestJson(
                     "https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off"
                 )
+                successfulHistoryEndpoints++
                 table(payload, "dividends").forEach rowLoop@{ row ->
                     val dateText = row.optString("registryclosedate")
                         .takeIf { it.isNotBlank() && it != "null" }
@@ -256,10 +306,19 @@ internal class MoexDividendHistoryClient {
                         result += HistoricalDividend(secid, date, amount, currency)
                     }
                 }
+            } catch (error: Exception) {
+                annualCoverageVerified = false
+                lastHistoryError = error
             }
-        } catch (e: Exception) {
-            annualCoverageVerified = false
-            throw e
+        }
+        // A retired SECID can legitimately stop serving history while the current
+        // SECID remains available. Keep usable partial history; fail only when none
+        // of the candidate security IDs could be queried.
+        if (successfulHistoryEndpoints == 0) {
+            throw IOException(
+                "Не удалось получить историю дивидендов MOEX для $normalized: " +
+                    (lastHistoryError?.message ?: "нет доступных SECID")
+            )
         }
 
         // Split events can be attached to any historical SECID of the same issue.

@@ -110,16 +110,28 @@ class CorporateEventsWorker(
 
         // Build a separate, clearly labelled estimate from MOEX dividend history.
         // Only equity assets are eligible; funds, currencies and metals are not inferred.
-        val historyEquities = equities.filter { it.assetType.contains("акци", ignoreCase = true) }
+        val historyEquities = equities.filter {
+            it.assetType.contains("акци", ignoreCase = true) ||
+                normalizeDividendTicker(it.ticker) in setOf("T", "X5")
+        }
         val historyClient = MoexDividendHistoryClient()
         for (asset in historyEquities) {
             try {
                 val history = historyClient.getHistory(asset.ticker).dividends
+                val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                val confirmedFutureDates = providerDividendEvents.asSequence()
+                    .filter { it.ticker.equals(asset.ticker, ignoreCase = true) }
+                    .filter { it.status == "ANNOUNCED" || it.status == "RECOMMENDED" }
+                    .mapNotNull { it.recordDate ?: it.paymentDate }
+                    .map { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
+                    .filter { !it.isBefore(today) }
+                    .toList()
                 val forecasts = calculateHistoricalDividendForecasts(
                     ticker = asset.ticker,
                     dividends = history,
-                    today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
-                    horizonMonths = 24
+                    today = today,
+                    horizonMonths = 24,
+                    futureAnchorDates = confirmedFutureDates
                 ).filterNot { forecast ->
                     val forecastMonth = java.time.YearMonth.from(forecast.recordDate)
                     providerDividendEvents.any { event ->
