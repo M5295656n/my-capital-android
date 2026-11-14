@@ -80,6 +80,25 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun forecastsCurrentTickerUsingHistoricalRowsFromPreviousTickerAlias() {
+        val legacyHistory = listOf(
+            dividend("2025-05-16", 3.2).copy(secid = "TCSG"),
+            dividend("2026-05-25", 4.5).copy(secid = "T")
+        )
+        val normalizedHistory = legacyHistory.map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = normalizedHistory,
+            today = LocalDate.of(2026, 11, 14)
+        )
+
+        assertEquals(1, forecasts.size)
+        assertEquals(LocalDate.of(2027, 5, 21), forecasts.single().recordDate)
+        assertEquals(3.85, forecasts.single().amountPerShare, 0.000001)
+    }
+
+    @Test
     fun adjustsPreSplitDividendAmountsToCurrentShareUnitsBeforeForecasting() {
         val history = listOf(
             dividend("2025-05-16", 32.0).copy(secid = "T"),
