@@ -30,7 +30,7 @@ internal fun calculateRemainingPurchaseLots(
             if (ticker.isBlank() || !operation.quantity.isFinite() || operation.quantity <= 0.0) {
                 return@forEach
             }
-            val key = BookKey(brokerAccountIdFromTradeSourceKey(operation.sourceKey), ticker)
+            val key = BookKey(tradeBookAccountKey(operation), ticker)
             val lots = lotsByBook.getOrPut(key) { ArrayDeque() }
 
             if (operation.operationType == "Покупка") {
