@@ -218,7 +218,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
-    val ratingValue = "([^.;]{1,60})"
+    val ratingValue = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\s*прогноз\\s+[А-Яа-яЁё]+)?)"
     val issueRating = capture(Regex("(?:кредитный\\s+)?рейтинг\\s+(?:выпуска|эмиссии)\\s*[:—-]\\s*$ratingValue", RegexOption.IGNORE_CASE))
     val issuerRating = capture(Regex("(?:кредитный\\s+)?рейтинг\\s+эмитента\\s*[:—-]\\s*$ratingValue", RegexOption.IGNORE_CASE))
     val explicitDate = "(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)"
