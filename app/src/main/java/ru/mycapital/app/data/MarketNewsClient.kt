@@ -602,13 +602,13 @@ class MarketNewsClient {
                 val documentResult = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
                 val bestDetails = mergePlacementDetails(pageDetails, documentResult?.details)
                 fun storedRating(label: String): String? {
-                    val pattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\\\s*прогноз\\\\s+[А-Яа-яЁё]+)?)"
-                    return Regex("(?i)Рейтинг $label:\\\\s*$pattern")
+                    val pattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\s*прогноз\\s+[А-Яа-яЁё]+)?)"
+                    return Regex("(?i)Рейтинг $label:\\s*$pattern")
                         .find(item.summary)?.groupValues?.get(1)?.trim()
                 }
                 val issueRating = bestDetails.issueRating ?: storedRating("выпуска")
                 val issuerRating = bestDetails.issuerRating ?: storedRating("эмитента")
-                val summaryWithoutStoredRatings = Regex("(?i)\\\\sРейтинг (?:выпуска|эмитента):.*$")
+                val summaryWithoutStoredRatings = Regex("(?i)\\sРейтинг (?:выпуска|эмитента):.*$")
                     .replace(item.summary, "").trim()
                 item.copy(
                     issuer = item.issuer ?: bestDetails.issuer,
