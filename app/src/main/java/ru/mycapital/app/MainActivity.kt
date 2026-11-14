@@ -476,7 +476,7 @@ private fun MyCapitalApp() {
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
                 Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, { selectedHistoryRange = it }, historyResult, historyLoading, historyLoadError, { historyRefresh++ }, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
-                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
+                Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, cashBalance ?: 0.0, brokerAccountCash, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(operations, payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
@@ -1270,6 +1270,8 @@ private fun AssetsScreen(
     payouts: List<PayoutEntity>,
     accounts: List<BrokerAccountEntity>,
     accountAssets: List<BrokerAccountAssetEntity>,
+    cashBalance: Double,
+    accountCash: List<BrokerAccountCashEntity>,
     onOpenAsset: (AssetEntity) -> Unit,
     onEditAsset: (AssetEntity) -> Unit,
     onDeleteAsset: (AssetEntity) -> Unit,
@@ -1330,6 +1332,8 @@ private fun AssetsScreen(
     }
     val totalSaleAmount = soldAssets.sumOf { it.grossAmount }
     val totalSaleNetAmount = soldAssets.sumOf { it.netAmount }
+    val displayedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
+        else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
 
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
@@ -1350,6 +1354,27 @@ private fun AssetsScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(top = 4.dp, bottom = 90.dp)
         ) {
+            if (displayedCash > 0.0) {
+                item(key = "portfolio-cash") {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AssetTypeIcon("cash", "RUB")
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Кэш", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                Text("Денежные средства", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text("${money(displayedCash)} ₽", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
             if (displayedAssets.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().heightIn(min = 100.dp), contentAlignment = Alignment.Center) {
