@@ -93,6 +93,24 @@ internal fun parseLongShortDividendCsv(
             .thenBy { it.ticker })
 }
 
+/**
+ * Keep provider forecasts visible for the next two years, including the next calendar year.
+ * The payment date is preferred because it is the expected cash-flow date; the record date
+ * is a fallback for feeds that do not publish a payment date.
+ */
+internal fun isWithinDividendForecastHorizon(
+    event: DividendCalendarEvent,
+    today: LocalDate,
+    horizonYears: Long = 2L
+): Boolean {
+    val eventDateMillis = event.paymentDate ?: event.recordDate ?: return false
+    val eventDate = java.time.Instant.ofEpochMilli(eventDateMillis)
+        .atZone(ZoneOffset.UTC)
+        .toLocalDate()
+    val limit = today.plusYears(horizonYears)
+    return !eventDate.isBefore(today) && !eventDate.isAfter(limit)
+}
+
 private fun parseDividendDate(value: String): LocalDate? {
     if (value.isBlank()) return null
     return runCatching { LocalDate.parse(value) }.getOrNull()

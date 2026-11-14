@@ -28,6 +28,8 @@ class CorporateEventsWorker(
         var importedDividends = 0
         var matchedDividends = 0
         var feedEvents = 0
+        var providerDividendEvents = emptyList<DividendCalendarEvent>()
+        var historyForecastsSaved = 0
         val errors = mutableListOf<String>()
 
         if (equities.isNotEmpty()) {
@@ -40,16 +42,15 @@ class CorporateEventsWorker(
             val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
             // Add issuer-confirmed announcements that may not yet be present in the public feed.
             val events = mergeOfficialDividendAnnouncements(fetchedEvents, today)
+            providerDividendEvents = events
             feedEvents = events.size
             setProgress(Data.Builder().putString("summary", "Long/Short: получено событий $feedEvents; проверяю совпадения с тикерами портфеля…").build())
             val byTicker = equities.associateBy { normalizeDividendTicker(it.ticker) }
-            val forecastLimit = today.plusYears(1)
-            // Dividend forecasts are limited to the next 12 months. If no payment date
-            // is supplied, use the record date as the calendar event date.
+            // Keep provider forecasts for the next two years so the next calendar
+            // year's expected dividends (not only the current year's) remain visible.
             val matched = events.filter { event ->
-                val eventDate = event.paymentDate ?: event.recordDate
-                val date = eventDate?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.of("UTC")).toLocalDate() }
-                normalizeDividendTicker(event.ticker) in byTicker && date != null && !date.isBefore(today) && !date.isAfter(forecastLimit)
+                normalizeDividendTicker(event.ticker) in byTicker &&
+                    isWithinDividendForecastHorizon(event, today)
             }
             matchedDividends = matched.size
             // Never erase the cache when the feed is valid but does not contain any
@@ -105,6 +106,71 @@ class CorporateEventsWorker(
                 .build())
         }
 
+        }
+
+        // Build a separate, clearly labelled estimate from MOEX dividend history.
+        // Only equity assets are eligible; funds, currencies and metals are not inferred.
+        val historyEquities = equities.filter { it.assetType.contains("акци", ignoreCase = true) }
+        val historyClient = MoexDividendHistoryClient()
+        for (asset in historyEquities) {
+            try {
+                val history = historyClient.getHistory(asset.ticker).dividends
+                val forecasts = calculateHistoricalDividendForecasts(
+                    ticker = asset.ticker,
+                    dividends = history,
+                    today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
+                    horizonMonths = 24
+                ).filterNot { forecast ->
+                    val forecastMonth = java.time.YearMonth.from(forecast.recordDate)
+                    providerDividendEvents.any { event ->
+                        if (!event.ticker.equals(asset.ticker, ignoreCase = true)) {
+                            false
+                        } else {
+                            val timestamp = event.recordDate ?: event.paymentDate
+                            timestamp != null && java.time.YearMonth.from(
+                                java.time.Instant.ofEpochMilli(timestamp)
+                                    .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                            ) == forecastMonth
+                        }
+                    }
+                }
+
+                database.withTransaction {
+                    dao.deleteUnreceivedMyCapitalHistoryDividendForecastsForTicker(asset.ticker)
+                    forecasts.forEach { forecast ->
+                        val estimatedRecordDate = forecast.recordDate.atStartOfDay(java.time.ZoneOffset.UTC)
+                            .toInstant().toEpochMilli()
+                        val payout = PayoutEntity(
+                            assetId = asset.id,
+                            ticker = asset.ticker,
+                            payoutType = "Дивиденд",
+                            amountPerUnit = forecast.amountPerShare,
+                            quantity = asset.quantity,
+                            totalAmount = forecast.amountPerShare * asset.quantity,
+                            taxAmount = 0.0,
+                            expectedDate = estimatedRecordDate,
+                            actualDate = null,
+                            status = "FORECAST",
+                            sourceKey = forecast.sourceKey,
+                            recordDate = estimatedRecordDate,
+                            sourceName = "MyCapital · история MOEX"
+                        )
+                        val existing = dao.getPayoutBySourceKey(forecast.sourceKey)
+                        if (existing == null) {
+                            if (dao.insertPayout(payout) != -1L) historyForecastsSaved++
+                        } else if (existing.status != "RECEIVED") {
+                            dao.updatePayout(payout.copy(id = existing.id))
+                            historyForecastsSaved++
+                        }
+                    }
+                }
+            } catch (error: Exception) {
+                // History-based forecasts are supplemental. Preserve the last good
+                // forecast cache if MOEX is temporarily unavailable for one ticker.
+                if (errors.size < 8) {
+                    errors += "Прогноз ${asset.ticker}: история MOEX не обновлена (${error.message ?: error.javaClass.simpleName})"
+                }
+            }
         }
 
         // Bond coupons remain sourced from MOEX ISS; the Long/Short feed is for equities.
@@ -170,7 +236,7 @@ class CorporateEventsWorker(
         }
 
         val summary = buildString {
-            append("Акции: получено событий $feedEvents, совпадений $matchedDividends, записей $importedDividends. ")
+            append("Акции: получено событий $feedEvents, совпадений $matchedDividends, записей $importedDividends; прогнозов по истории MOEX добавлено/обновлено $historyForecastsSaved. ")
             append("Облигации: найдено ${bondAssets.size}, получено будущих событий выплат (купоны, амортизации, погашения) $bondEventsReceived, записей добавлено/обновлено $bondPayoutsSaved, неподдерживаемых $unsupportedBonds.")
             if (errors.isNotEmpty()) append(" Ошибки: ").append(errors.joinToString("; "))
         }
@@ -179,6 +245,7 @@ class CorporateEventsWorker(
             .putInt("feed_events", feedEvents)
             .putInt("matched_dividends", matchedDividends)
             .putInt("imported_dividends", importedDividends)
+            .putInt("history_forecasts", historyForecastsSaved)
             .putInt("bond_assets", bondAssets.size)
             .putInt("bond_events", bondEventsReceived)
             .putInt("bond_payouts_saved", bondPayoutsSaved)
