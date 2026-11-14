@@ -67,7 +67,8 @@ internal fun calculateHistoricalDividendForecasts(
     ticker: String,
     dividends: List<HistoricalDividend>,
     today: LocalDate,
-    horizonMonths: Int = 24
+    horizonMonths: Int = 24,
+    futureAnchorDates: List<LocalDate> = emptyList()
 ): List<HistoricalDividendForecast> {
     if (horizonMonths <= 0) return emptyList()
     val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
@@ -118,6 +119,41 @@ internal fun calculateHistoricalDividendForecasts(
         }
         month = month.plusMonths(1)
     }
+    // Quarterly issuers may not repeat the same record month in two separate
+    // years. When recent observations show a stable 2–5 month cadence, project
+    // it from the latest confirmed upcoming event or latest historical record.
+    val cadenceRows = usable
+        .filter { !it.recordDate.isBefore(today.minusMonths(18)) }
+        .sortedBy { it.recordDate }
+    if (cadenceRows.size >= 3) {
+        val intervals = cadenceRows.zipWithNext { first, second ->
+            java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
+        }.filter { it > 0.0 }
+        if (intervals.size >= 2) {
+            val cadenceDays = median(intervals)
+            if (cadenceDays in 60.0..150.0) {
+                val anchor = (cadenceRows.map { it.recordDate } + futureAnchorDates.filter { !it.isBefore(today) })
+                    .maxOrNull() ?: cadenceRows.last().recordDate
+                val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
+                val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
+                val stepDays = Math.round(cadenceDays).coerceAtLeast(1L)
+                var date = anchor.plusDays(stepDays)
+                while (!date.isAfter(endMonth.atEndOfMonth())) {
+                    if (!date.isBefore(today) && amount.isFinite() && amount > 0.0) {
+                        cadenceForecasts += HistoricalDividendForecast(
+                            ticker = normalizedTicker,
+                            amountPerShare = amount,
+                            recordDate = date,
+                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                        )
+                    }
+                    date = date.plusDays(stepDays)
+                }
+                if (cadenceForecasts.isNotEmpty()) return cadenceForecasts
+            }
+        }
+    }
+
     return forecasts
 }
 
