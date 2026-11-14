@@ -100,7 +100,7 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
             },
             trades = buildList {
                 repeat(47) { index -> add(trade("MAIN-DEAL-$index", "ЗИ", "MAIN01")) }
-                add(trade("MAIN-DEAL-REJECTED", "ЗО", "MAIN02"))
+                add(trade("MAIN-DEAL-REJECTED", "Отклонена", "MAIN02"))
             }
         )
         val iisReport = report(
