@@ -33,23 +33,10 @@ object PortfolioBackup {
         val tempDb = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.db")
         val tempArchive = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.zip")
         try {
-            // Freeze new Room opens and close the singleton before copying the main DB file.
-            // This prevents a concurrent Room write from landing in WAL after checkpoint
-            // but before the file copy, which would otherwise produce an incomplete backup.
-            val lockedDatabase = PortfolioDatabase.beginRestore()
-            try {
-                lockedDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
-                    check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
-                        "Не удалось безопасно сохранить журнал базы данных. Повторите попытку."
-                    }
-                }
-                PortfolioDatabase.closeForRestore()
-                check(source.isFile && source.length() > 0L) { "Локальная база данных не найдена." }
-                source.copyTo(tempDb, overwrite = true)
-            } finally {
-                PortfolioDatabase.endRestore()
-            }
-            val version = validateDatabase(tempDb)
+            // VACUUM INTO creates a transactionally consistent snapshot while keeping
+            // the live Room instance open. Closing the singleton here would invalidate
+            // DAO/Flow instances already remembered by the Compose application.
+            val version = createConsistentSnapshot(database, tempDb)
             val zip = ZipFile(tempArchive, password)
             val manifest = File(context.cacheDir, "mycapital-manifest-${System.currentTimeMillis()}.txt")
             try {
@@ -183,6 +170,27 @@ object PortfolioBackup {
             archive.delete()
             extractDir.deleteRecursively()
         }
+    }
+
+    internal fun createConsistentSnapshot(database: PortfolioDatabase, destination: File): Int {
+        val liveDatabase = database.openHelper.writableDatabase
+        val sqliteVersion = liveDatabase.query("SELECT sqlite_version()").use { cursor ->
+            check(cursor.moveToFirst()) { "Не удалось определить версию SQLite." }
+            cursor.getString(0)
+        }
+        val versionParts = sqliteVersion.split(".").mapNotNull { it.toIntOrNull() }
+        val supported = versionParts.size >= 2 &&
+            (versionParts[0] > 3 || (versionParts[0] == 3 && versionParts[1] >= 27))
+        check(supported) {
+            "Для безопасного создания копии требуется SQLite 3.27 или новее. Текущая версия: $sqliteVersion."
+        }
+        destination.delete()
+        val escapedPath = destination.absolutePath.replace("'", "''")
+        liveDatabase.execSQL("VACUUM INTO '$escapedPath'")
+        check(destination.isFile && destination.length() > 0L) {
+            "SQLite не создала файл резервной копии."
+        }
+        return validateDatabase(destination)
     }
 
     private fun validateDatabase(file: File): Int {
