@@ -160,7 +160,24 @@ internal suspend fun buildPortfolioMarketHistory(
                         else -> 0.0
                     }
                 }
-            val quantityAtClose = asset.quantity - futureTradeDelta
+            // Reverse future full redemptions just like future trades: the current
+            // asset row is already zero after maturity, but historical dates before
+            // maturity must still show the outstanding bond position.
+            val futureRedemptionQuantity = operationsByTicker[ticker].orEmpty()
+                .filter { it.operationType == "Погашение" && it.operationDate >= endOfDay }
+                .minByOrNull { it.operationDate }
+                ?.let { redemption ->
+                    val previousRedemptionDate = operationsByTicker[ticker].orEmpty()
+                        .filter { it.operationType == "Погашение" && it.operationDate < redemption.operationDate }
+                        .maxOfOrNull { it.operationDate }
+                    operationsByTicker[ticker].orEmpty().asSequence()
+                        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
+                        .filter { it.operationDate < redemption.operationDate }
+                        .filter { previousRedemptionDate == null || it.operationDate >= previousRedemptionDate }
+                        .sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
+                        .coerceAtLeast(0.0)
+                } ?: 0.0
+            val quantityAtClose = asset.quantity - futureTradeDelta + futureRedemptionQuantity
             if (quantityAtClose < -0.0000001) {
                 unavailableConcurrent.add(ticker)
             }
