@@ -130,8 +130,9 @@ internal fun MarketCalendarSection(
                         }
                         add("Купон: $couponLabel")
                         if (instrument.contains("облигац", ignoreCase = true)) {
-                            val issueRating = Regex("(?i)Рейтинг выпуска:\\s*([^.;]+)").find(it.summary)?.groupValues?.get(1)?.trim()
-                            val issuerRating = Regex("(?i)Рейтинг эмитента:\\s*([^.;]+)").find(it.summary)?.groupValues?.get(1)?.trim()
+                            val ratingPattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\\\s*прогноз\\\\s+[А-Яа-яЁё]+)?)"
+                            val issueRating = Regex("(?i)Рейтинг выпуска:\\\\s*$ratingPattern").find(it.summary)?.groupValues?.get(1)?.trim()
+                            val issuerRating = Regex("(?i)Рейтинг эмитента:\\\\s*$ratingPattern").find(it.summary)?.groupValues?.get(1)?.trim()
                             add("Рейтинг выпуска: " + (issueRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                             add("Рейтинг эмитента: " + (issuerRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                         }
