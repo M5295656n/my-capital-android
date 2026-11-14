@@ -336,7 +336,14 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     unsettledSkipped++
                     return@forEach
                 }
-                val scopedSourceKey = "SBER:${report.accountId}:TRADE:${trade.sourceKey.removePrefix("SBER:")}"
+                // Normalize both current and legacy key formats to the broker trade identifier.
+                // Older releases stored trades as SBER:TRADE:<id>, while current imports
+                // scope the same identifier by agreement.
+                val tradeKey = trade.sourceKey
+                    .removePrefix("SBER:TRADE:")
+                    .removePrefix("SBER:")
+                val scopedSourceKey = "SBER:${report.accountId}:TRADE:$tradeKey"
+                val legacySourceKey = "SBER:TRADE:$tradeKey"
                 val row = OperationEntity(
                     assetId = assetsByTicker[trade.ticker.uppercase()]?.id,
                     operationType = if (isBuy) "Покупка" else "Продажа",
@@ -351,11 +358,11 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     accountId = report.accountId
                 )
                 val settlementTimestamp = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
-                val legacyDuplicate = dao.getOperationBySourceKey(trade.sourceKey)
+                val legacyDuplicate = dao.getOperationBySourceKey(legacySourceKey)
                 if (legacyDuplicate != null) {
                     // Keep the legacy account assignment unchanged. An unscoped
                     // key is not sufficient evidence to attribute it to this report.
-                    dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
+                    dao.updateOperationSettlementDate(legacySourceKey, settlementTimestamp)
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
