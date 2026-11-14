@@ -123,6 +123,74 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
+    fun fullRedemptionRestoresOnlyRemainingQuantityAfterPartialSale() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-04-01")
+        val saleDate = LocalDate.parse("2026-04-02")
+        val maturityDate = LocalDate.parse("2026-04-03")
+        val ticker = "SU26238RMFS4"
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 2L, ticker = ticker, name = "ОФЗ 26238", assetType = "Облигация",
+                quantity = 0.0, averagePrice = 0.0, currentPrice = 0.0
+            )),
+            operations = listOf(
+                operation(20, "Пополнение", "2026-03-31", 1.0, 1_000.0, ticker = "RUB"),
+                operation(21, "Покупка", "2026-04-01", 10.0, 100.0, ticker = ticker),
+                operation(22, "Продажа", "2026-04-02", 4.0, 110.0, ticker = ticker),
+                operation(23, "Погашение", "2026-04-03", 1.0, 600.0, ticker = ticker)
+            ),
+            currentCash = 1_040.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = maturityDate
+        ) { _, _, _, _ ->
+            listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(saleDate, 110.0), MoexDailyClose(maturityDate, 100.0))
+        }
+
+        assertEquals(10.0, result.points[0].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(6.0, result.points[1].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(0.0, result.points[2].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(1_040.0, result.points[2].totalValue, 0.000001)
+    }
+
+    @Test
+    fun multipleRedemptionsRestoreOnlyThePositionOutstandingInEachPeriod() = kotlinx.coroutines.runBlocking {
+        val ticker = "SU26238RMFS4"
+        val firstBuy = LocalDate.parse("2026-04-01")
+        val firstRedemption = LocalDate.parse("2026-04-02")
+        val secondBuy = LocalDate.parse("2026-04-03")
+        val secondRedemption = LocalDate.parse("2026-04-04")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 2L, ticker = ticker, name = "ОФЗ 26238", assetType = "Облигация",
+                quantity = 0.0, averagePrice = 0.0, currentPrice = 0.0
+            )),
+            operations = listOf(
+                operation(30, "Пополнение", "2026-03-31", 1.0, 1_000.0, ticker = "RUB"),
+                operation(31, "Покупка", "2026-04-01", 5.0, 100.0, ticker = ticker),
+                operation(32, "Погашение", "2026-04-02", 1.0, 500.0, ticker = ticker),
+                operation(33, "Покупка", "2026-04-03", 3.0, 110.0, ticker = ticker),
+                operation(34, "Погашение", "2026-04-04", 1.0, 330.0, ticker = ticker)
+            ),
+            currentCash = 830.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = secondRedemption
+        ) { _, _, _, _ ->
+            listOf(
+                MoexDailyClose(firstBuy, 100.0),
+                MoexDailyClose(firstRedemption, 100.0),
+                MoexDailyClose(secondBuy, 110.0),
+                MoexDailyClose(secondRedemption, 110.0)
+            )
+        }
+
+        assertEquals(5.0, result.points[0].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(0.0, result.points[1].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(3.0, result.points[2].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(0.0, result.points[3].quantities[ticker] ?: 0.0, 0.000001)
+        assertEquals(830.0, result.points[3].totalValue, 0.000001)
+    }
+
+    @Test
     fun includesOfzDirtyRublePriceInPortfolioHistory() = kotlinx.coroutines.runBlocking {
         val buyDate = LocalDate.parse("2026-04-01")
         val result = buildPortfolioMarketHistory(
