@@ -96,14 +96,6 @@ interface PortfolioDao {
     @Query("UPDATE operations SET settlementDate = :settlementDate WHERE sourceKey = :sourceKey")
     suspend fun updateOperationSettlementDate(sourceKey: String, settlementDate: Long)
 
-    @Query("UPDATE operations SET accountId = :accountId, sourceKey = :scopedSourceKey, settlementDate = COALESCE(:settlementDate, settlementDate) WHERE sourceKey = :legacySourceKey AND accountId IS NULL")
-    suspend fun assignLegacyOperationToBrokerAccount(
-        legacySourceKey: String,
-        accountId: String,
-        scopedSourceKey: String,
-        settlementDate: Long? = null
-    )
-
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertImportedOperation(operation: OperationEntity): Long
 
