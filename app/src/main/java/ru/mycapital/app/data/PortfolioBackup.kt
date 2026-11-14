@@ -29,7 +29,6 @@ object PortfolioBackup {
     fun export(context: Context, destination: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
         val database = PortfolioDatabase.getInstance(context)
-        val source = context.getDatabasePath(DATABASE_FILE)
         val tempDb = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.db")
         val tempArchive = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.zip")
         try {
