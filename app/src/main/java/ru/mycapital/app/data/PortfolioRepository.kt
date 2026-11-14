@@ -315,15 +315,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 // Older app versions used an unscoped key. Respect it during upgrade
                 // so re-importing an old statement cannot create a duplicate.
                 if (dao.getOperationBySourceKey(flow.rowKey) != null) {
-                    // Attribute a uniquely matched legacy operation to the account
-                    // from this statement; never overwrite an existing assignment.
-                    if (dao.getOperationBySourceKey(scopedSourceKey) == null) {
-                        dao.assignLegacyOperationToBrokerAccount(
-                            legacySourceKey = flow.rowKey,
-                            accountId = report.accountId,
-                            scopedSourceKey = scopedSourceKey
-                        )
-                    }
+                    // Preserve the legacy row without assigning an account: an
+                    // unscoped key alone cannot prove which agreement produced it.
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
@@ -360,18 +353,9 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 val settlementTimestamp = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
                 val legacyDuplicate = dao.getOperationBySourceKey(trade.sourceKey)
                 if (legacyDuplicate != null) {
-                    // Upgrade older imports in place. Only assign an account when
-                    // the legacy row is still unassigned and the scoped key is free.
-                    if (legacyDuplicate.accountId == null && dao.getOperationBySourceKey(scopedSourceKey) == null) {
-                        dao.assignLegacyOperationToBrokerAccount(
-                            legacySourceKey = trade.sourceKey,
-                            accountId = report.accountId,
-                            scopedSourceKey = scopedSourceKey,
-                            settlementDate = settlementTimestamp
-                        )
-                    } else {
-                        dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
-                    }
+                    // Keep the legacy account assignment unchanged. An unscoped
+                    // key is not sufficient evidence to attribute it to this report.
+                    dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
