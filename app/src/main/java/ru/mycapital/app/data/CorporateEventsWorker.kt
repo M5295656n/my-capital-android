@@ -119,7 +119,7 @@ class CorporateEventsWorker(
                     ticker = asset.ticker,
                     dividends = history,
                     today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow")),
-                    horizonMonths = 12
+                    horizonMonths = 24
                 ).filterNot { forecast ->
                     val forecastMonth = java.time.YearMonth.from(forecast.recordDate)
                     providerDividendEvents.any { event ->
