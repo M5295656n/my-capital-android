@@ -93,6 +93,19 @@ class RealizedTradingCalculationsTest {
     }
 
     @Test
+    fun unmatchedQuantitySaturatesInsteadOfOverflowing() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Продажа", Double.MAX_VALUE, 0.0, date = 1L),
+                trade("Продажа", Double.MAX_VALUE, 0.0, date = 2L)
+            )
+        )
+
+        assertEquals(Double.MAX_VALUE, result.unmatchedQuantity, 0.0)
+        assertTrue(result.unmatchedQuantity.isFinite())
+    }
+
+    @Test
     fun accountIdIsReadOnlyFromScopedTradeKeys() {
         assertEquals("MAIN-001", brokerAccountIdFromTradeSourceKey("SBER:MAIN-001:TRADE:123"))
         assertNull(brokerAccountIdFromTradeSourceKey(null))
