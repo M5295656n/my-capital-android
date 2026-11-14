@@ -1554,7 +1554,6 @@ private fun AssetDetailScreen(
         } finally { loading = false }
     }
     val price = candles.lastOrNull()?.close ?: asset.currentPrice
-    val isDividendAsset = !(asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true) || asset.assetType.contains("bond", true))
     val forwardDividendYieldPercent = remember(assetPayouts, price, asset.ticker) {
         ru.mycapital.app.data.calculateForwardDividendYieldPercent(
             assetPayouts,
