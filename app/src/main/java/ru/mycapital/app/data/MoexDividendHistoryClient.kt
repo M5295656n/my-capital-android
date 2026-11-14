@@ -204,9 +204,9 @@ internal fun calculateDividendHistoryMetrics(
 
 internal class MoexDividendHistoryClient {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .callTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(10, TimeUnit.SECONDS)
         .build()
 
     fun getHistory(ticker: String): DividendHistoryFetchResult {
