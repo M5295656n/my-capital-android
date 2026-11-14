@@ -149,10 +149,10 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
-    fun forecastsRecurringDividendBeyondTwelveMonthsWithinTwoYearHorizon() {
+    fun forecastsX5NextJulyDividendFromItsTwoRecentJulyPayments() {
         val history = listOf(
-            dividend("2024-12-12", 10.0),
-            dividend("2025-12-15", 12.0)
+            dividend("2025-07-09", 648.0),
+            dividend("2026-07-07", 245.0)
         ).map { it.copy(secid = "X5") }
 
         val forecasts = calculateHistoricalDividendForecasts(
@@ -161,7 +161,8 @@ class MoexDividendHistoryClientTest {
             today = LocalDate.of(2026, 11, 14)
         )
 
-        assertEquals(true, forecasts.any { it.recordDate == LocalDate.of(2027, 12, 14) })
+        assertEquals(true, forecasts.any { it.recordDate == LocalDate.of(2027, 7, 8) })
+        assertEquals(446.5, forecasts.single().amountPerShare, 0.000001)
     }
 
     @Test
