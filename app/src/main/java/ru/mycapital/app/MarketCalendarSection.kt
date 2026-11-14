@@ -65,6 +65,17 @@ private data class CalendarDisplayItem(
     val portfolioExposure: List<String> = emptyList()
 )
 
+internal fun extractCreditRating(summary: String, label: String): String? {
+    require(label == "выпуска" || label == "эмитента")
+    val ratingPattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\s*прогноз\\s+[А-Яа-яЁё]+)?)"
+    return Regex("(?i)Рейтинг $label:\\s*$ratingPattern")
+        .find(summary)
+        ?.groupValues
+        ?.get(1)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+}
+
 @Composable
 internal fun MarketCalendarSection(
     news: List<MarketCalendarItemEntity>,
@@ -92,7 +103,10 @@ internal fun MarketCalendarSection(
                 date = java.time.Instant.ofEpochMilli(it.eventDate).atZone(zone).toLocalDate(),
                 category = when (it.category) { "ECONOMY" -> "Экономика"; "NEW_ISSUES" -> "Новые размещения"; else -> "Компании" },
                 title = org.jsoup.parser.Parser.unescapeEntities(it.title, false),
-                description = org.jsoup.parser.Parser.unescapeEntities(it.summary, false),
+                description = org.jsoup.parser.Parser.unescapeEntities(
+                    Regex("(?i)\\sРейтинг (?:выпуска|эмитента):.*$").replace(it.summary, "").trim(),
+                    false
+                ).trim(),
                 source = it.sourceName,
                 url = it.sourceUrl,
                 detailsUrl = it.detailsSourceUrl,
@@ -123,12 +137,14 @@ internal fun MarketCalendarSection(
                             instrument.contains("акци", ignoreCase = true) -> "Не применяется"
                             instrument.contains("структурн", ignoreCase = true) && instrument.contains("дисконт", ignoreCase = true) -> "Обычный купон не предусмотрен; доход определяется условиями выпуска"
                             it.couponRate != null -> it.couponRate
-                            else -> "Не опубликован"
+                            else -> "Не сообщено"
                         }
                         add("Купон: $couponLabel")
                         if (instrument.contains("облигац", ignoreCase = true)) {
-                            add("Рейтинг выпуска: Нет данных в опубликованных документах")
-                            add("Рейтинг эмитента: Нет данных в карточке события")
+                            val issueRating = extractCreditRating(it.summary, "выпуска")
+                            val issuerRating = extractCreditRating(it.summary, "эмитента")
+                            add("Рейтинг выпуска: " + (issueRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
+                            add("Рейтинг эмитента: " + (issuerRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                         }
                     }
                     it.couponAmount?.let { value -> add("Размер купона: $value") }

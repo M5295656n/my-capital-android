@@ -169,6 +169,9 @@ internal fun parseCbrStatisticsCalendar(
     }.distinctBy { it.sourceKey }.sortedBy { it.eventDate }
 }
 
+internal fun stripStoredCreditRatings(summary: String): String =
+    Regex("(?is)\\sРейтинг (?:выпуска|эмитента):.*$").replace(summary, "").trim()
+
 internal data class ParsedPlacementDetails(
     val issuer: String? = null,
     val instrumentType: String? = null,
@@ -179,8 +182,9 @@ internal data class ParsedPlacementDetails(
     val placementStartDate: String? = null,
     val tradingStartDate: String? = null,
     val isin: String? = null,
-    val couponAmount: String? = null
-)
+    val couponAmount: String? = null,
+    val issueRating: String? = null,
+    val issuerRating: String? = null)
 
 internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacementDetails {
     val text = "$title $summary".replace(Regex("\\s+"), " ")
@@ -217,6 +221,9 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         RegexOption.IGNORE_CASE
     ))
     val isin = Regex("\\b[A-Z]{2}[A-Z0-9]{10}\\b").find(text)?.value
+    val ratingValue = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\s*прогноз\\s+[А-Яа-яЁё]+)?)"
+    val issueRating = capture(Regex("(?:кредитный\\s+)?рейтинг\\s+(?:выпуска|эмиссии)\\s*[:—-]\\s*$ratingValue", RegexOption.IGNORE_CASE))
+    val issuerRating = capture(Regex("(?:кредитный\\s+)?рейтинг\\s+эмитента\\s*[:—-]\\s*$ratingValue", RegexOption.IGNORE_CASE))
     val explicitDate = "(?:\\d{1,2}[. ]\\d{1,2}(?:[. ]\\d{4})?|\\d{1,2}\\s+[а-яё]+(?:\\s+\\d{4})?)"
     val applicationDates = capture(Regex(
         "((?:дата\\s+сбора\\s+заявок|период\\s+букбилдинга|сбор\\s+заявок|при[её]м\\s+заявок|книга\\s+заявок)[^.;]{0,120}?$explicitDate)",
@@ -230,7 +237,7 @@ internal fun parsePlacementDetails(title: String, summary: String): ParsedPlacem
         "(?:дата\\s+начала\\s+торгов|начало\\s+торгов|дата\\s+допуска\\s+к\\s+торгам|допуск\\s+к\\s+торгам|торги\\s+начнутся)\\s*[:—-]?\\s*($explicitDate)",
         RegexOption.IGNORE_CASE
     ))
-    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, placementStartDate, tradingDate, isin, couponAmount)
+    return ParsedPlacementDetails(issuer, instrumentType, volume, price, coupon, applicationDates, placementStartDate, tradingDate, isin, couponAmount, issueRating, issuerRating)
 }
 
 internal fun parseExplicitPlacementEventDate(
@@ -292,6 +299,8 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
     val document = Jsoup.parse(html)
     val labeledValues = mutableListOf<String>()
     val labelRules = listOf(
+        Regex("(?:кредитный )?рейтинг выпуска|(?:кредитный )?рейтинг эмиссии", RegexOption.IGNORE_CASE) to "Рейтинг выпуска",
+        Regex("(?:кредитный )?рейтинг эмитента", RegexOption.IGNORE_CASE) to "Рейтинг эмитента",
         Regex("эмитент|наименование эмитента|полное наименование компании|компания", RegexOption.IGNORE_CASE) to "Эмитент",
         Regex("об[ъь]?[её]м выпуска|об[ъь]?[её]м размещения|об[ъь]?[её]м эмиссии|общий об[ъь]?[её]м размещения|номинальный об[ъь]?[её]м|количество размещаемых|количество облигаций|количество акций", RegexOption.IGNORE_CASE) to "Объём выпуска",
         Regex("цена размещения|цена предложения|ценовой диапазон|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
@@ -356,7 +365,9 @@ internal fun mergePlacementDetails(primary: ParsedPlacementDetails, secondary: P
         placementStartDate = primary.placementStartDate ?: secondary.placementStartDate,
         tradingStartDate = primary.tradingStartDate ?: secondary.tradingStartDate,
         isin = primary.isin ?: secondary.isin,
-        couponAmount = primary.couponAmount ?: secondary.couponAmount
+        couponAmount = primary.couponAmount ?: secondary.couponAmount,
+        issueRating = primary.issueRating ?: secondary.issueRating,
+        issuerRating = primary.issuerRating ?: secondary.issuerRating
     )
 }
 
@@ -367,7 +378,7 @@ internal data class OfficialPlacementDocumentResult(
 
 private fun ParsedPlacementDetails.hasAnyKnownValue(): Boolean = listOf(
     issuer, instrumentType, placementVolume, placementPrice, couponRate,
-    applicationDates, placementStartDate, tradingStartDate, isin, couponAmount
+    applicationDates, placementStartDate, tradingStartDate, isin, couponAmount, issueRating, issuerRating
 ).any { !it.isNullOrBlank() }
 
 internal fun selectPlacementDocumentSourceUrl(
@@ -593,6 +604,14 @@ class MarketNewsClient {
                 val documentUrl = findOfficialPlacementDocumentUrl(pageHtml, item.sourceUrl)
                 val documentResult = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
                 val bestDetails = mergePlacementDetails(pageDetails, documentResult?.details)
+                fun storedRating(label: String): String? {
+                    val pattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\s*прогноз\\s+[А-Яа-яЁё]+)?)"
+                    return Regex("(?i)Рейтинг $label:\\s*$pattern")
+                        .find(item.summary)?.groupValues?.get(1)?.trim()
+                }
+                val issueRating = bestDetails.issueRating ?: storedRating("выпуска")
+                val issuerRating = bestDetails.issuerRating ?: storedRating("эмитента")
+                val summaryWithoutStoredRatings = stripStoredCreditRatings(item.summary)
                 item.copy(
                     issuer = item.issuer ?: bestDetails.issuer,
                     instrumentType = item.instrumentType ?: bestDetails.instrumentType,
@@ -605,6 +624,11 @@ class MarketNewsClient {
                     eventDate = parseExplicitPlacementEventDate(bestDetails) ?: item.eventDate,
                     isin = item.isin ?: bestDetails.isin,
                     couponAmount = item.couponAmount ?: bestDetails.couponAmount,
+                    summary = buildString {
+                        append(summaryWithoutStoredRatings)
+                        issueRating?.let { append(" Рейтинг выпуска: ").append(it.trim()) }
+                        issuerRating?.let { append(" Рейтинг эмитента: ").append(it.trim()) }
+                    },
                     detailsSourceUrl = documentResult?.sourceUrl ?: item.sourceUrl
                 )
             }
