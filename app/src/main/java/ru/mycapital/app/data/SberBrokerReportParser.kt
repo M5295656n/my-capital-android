@@ -82,11 +82,13 @@ data class BrokerReportTrade(
     val brokerFee: Double,
     val exchangeFee: Double,
     val dealNumber: String,
-    val status: String
+    val status: String,
+    val sourceKeyOccurrence: Int = 0
 ) {
     val totalFee: Double get() = brokerFee + exchangeFee
     val sourceKey: String get() = if (dealNumber.isNotBlank()) "SBER:$dealNumber"
-        else "SBER:${tradeDate}:$time:$ticker:$side:$quantity:$price"
+        else "SBER:${tradeDate}:$time:$ticker:$side:$quantity:$price" +
+            if (sourceKeyOccurrence > 0) ":DUP:$sourceKeyOccurrence" else ""
 }
 
 data class SberBrokerReport(
@@ -215,7 +217,7 @@ object SberBrokerReportParser {
         val currencyIndex = flowHeader.indexOf("Валюта")
         val creditIndex = flowHeader.indexOf("Сумма зачисления")
         val debitIndex = flowHeader.indexOf("Сумма списания")
-        val occurrences = mutableMapOf<String, Int>()
+        val cashFlowOccurrences = mutableMapOf<String, Int>()
         val cashFlows = flowRows.drop(flowsTable.second + 1).mapNotNull { row ->
             val dateText = row.getOrNull(dateIndex).orEmpty()
             if (!datePattern.matches(dateText)) return@mapNotNull null
@@ -227,8 +229,8 @@ object SberBrokerReportParser {
             if (credit == 0.0 && debit == 0.0) return@mapNotNull null
             val date = LocalDate.parse(dateText, dateFormat)
             val canonical = "${date}:$description:$credit:$debit"
-            val occurrence = occurrences.getOrDefault(canonical, 0)
-            occurrences[canonical] = occurrence + 1
+            val occurrence = cashFlowOccurrences.getOrDefault(canonical, 0)
+            cashFlowOccurrences[canonical] = occurrence + 1
             BrokerReportCashFlow(
                 date = date,
                 description = description,
@@ -337,7 +339,7 @@ object SberBrokerReportParser {
 
         val tradesTable = locate(setOf("Дата заключения", "Дата расчетов", "Номер сделки"))
         val tradeRows = rows(tradesTable.first).drop(tradesTable.second + 1)
-        val trades = tradeRows.mapNotNull { row ->
+        val parsedTrades = tradeRows.mapNotNull { row ->
             if (!datePattern.matches(row.getOrNull(0).orEmpty()) || row.size < 16 || row[5] != "RUB") return@mapNotNull null
             BrokerReportTrade(
                 tradeDate = LocalDate.parse(row[0], dateFormat),
@@ -365,6 +367,18 @@ object SberBrokerReportParser {
                 dealNumber = row[13],
                 status = row[15]
             )
+        }
+        // Identical rows without a broker deal number are legitimate in some exports.
+        // Assign deterministic occurrence suffixes so the unique DB key keeps every row
+        // while remaining stable when the same report is imported again.
+        val tradeOccurrences = mutableMapOf<String, Int>()
+        val trades = parsedTrades.map { trade ->
+            if (trade.dealNumber.isNotBlank()) trade
+            else {
+                val occurrence = tradeOccurrences.getOrDefault(trade.sourceKey, 0)
+                tradeOccurrences[trade.sourceKey] = occurrence + 1
+                trade.copy(sourceKeyOccurrence = occurrence)
+            }
         }
 
         require(assets.isNotEmpty()) { "В отчёте не найдены позиции ценных бумаг." }
