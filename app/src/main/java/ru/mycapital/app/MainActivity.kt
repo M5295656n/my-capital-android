@@ -169,7 +169,7 @@ private fun MyCapitalApp() {
     val historyAssetsKey = remember(assets) {
         assets.map { Triple(it.ticker.uppercase(), it.quantity, it.assetType) }
     }
-    LaunchedEffect(historyAssetsKey, operations, cashBalance, selectedHistoryRange, historyRefresh) {
+    LaunchedEffect(historyAssetsKey, operations, cashBalance, brokerAccounts, selectedHistoryRange, historyRefresh) {
         historyLoading = true
         historyLoadError = null
         var latestSuccessful: PortfolioMarketHistoryResult? = null
@@ -178,7 +178,7 @@ private fun MyCapitalApp() {
             try {
                 val loaded = kotlinx.coroutines.withTimeout(90_000L) {
                     withContext(Dispatchers.IO) {
-                        buildPortfolioMarketHistory(assets, operations, cashBalance ?: 0.0, selectedHistoryRange)
+                        buildPortfolioMarketHistory(assets, operations, cashBalance ?: 0.0, selectedHistoryRange, includedBrokerAccountIds = brokerAccounts.map { it.accountId }.toSet())
                     }
                 }
                 latestSuccessful = loaded
@@ -3113,7 +3113,8 @@ private fun AnalyticsScreen(
                     operations = analyticsOperations,
                     currentCash = analyticsCash,
                     range = PortfolioHistoryRange.ALL,
-                    includeInternalTransfers = selectedAccountId != ALL_HISTORY_ACCOUNTS
+                    includeInternalTransfers = selectedAccountId != ALL_HISTORY_ACCOUNTS,
+                    includedBrokerAccountIds = accounts.map { it.accountId }.toSet()
                 )
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
