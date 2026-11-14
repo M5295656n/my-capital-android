@@ -185,15 +185,9 @@ internal class MoexDividendHistoryClient {
     fun getHistory(ticker: String): DividendHistoryFetchResult {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
+        // Fetch the direct security history in one request. The forecast uses only
+        // this ticker's own dividend records; no cross-issuer ISIN aggregation is needed.
         val secids = linkedSetOf(normalized)
-        val security = requestJson("https://iss.moex.com/iss/securities/$normalized.json?iss.meta=off")
-        val isin = table(security, "description").firstNotNullOfOrNull { row ->
-            val name = row.optString("name").uppercase(Locale.ROOT)
-            if (name == "ISIN") row.optString("value").takeIf { it.isNotBlank() && it != "null" } else null
-        }
-        // The direct security dividend endpoint is the authoritative history for the
-        // requested ticker. A secondary ISIN-wide securities search is optional and
-        // must not suppress the metric for every issuer when that search is incomplete.
         var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
         try {
