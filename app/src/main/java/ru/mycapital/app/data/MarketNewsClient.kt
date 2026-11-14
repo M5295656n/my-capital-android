@@ -169,6 +169,9 @@ internal fun parseCbrStatisticsCalendar(
     }.distinctBy { it.sourceKey }.sortedBy { it.eventDate }
 }
 
+internal fun stripStoredCreditRatings(summary: String): String =
+    Regex("(?is)\\sРейтинг (?:выпуска|эмитента):.*$").replace(summary, "").trim()
+
 internal data class ParsedPlacementDetails(
     val issuer: String? = null,
     val instrumentType: String? = null,
@@ -608,8 +611,7 @@ class MarketNewsClient {
                 }
                 val issueRating = bestDetails.issueRating ?: storedRating("выпуска")
                 val issuerRating = bestDetails.issuerRating ?: storedRating("эмитента")
-                val summaryWithoutStoredRatings = Regex("(?i)\\sРейтинг (?:выпуска|эмитента):.*$")
-                    .replace(item.summary, "").trim()
+                val summaryWithoutStoredRatings = stripStoredCreditRatings(item.summary)
                 item.copy(
                     issuer = item.issuer ?: bestDetails.issuer,
                     instrumentType = item.instrumentType ?: bestDetails.instrumentType,
