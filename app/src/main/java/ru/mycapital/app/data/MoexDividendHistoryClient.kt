@@ -21,6 +21,104 @@ internal data class DividendHistoryMetrics(
     val historyCount: Int
 )
 
+internal data class HistoricalDividendForecast(
+    val ticker: String,
+    val amountPerShare: Double,
+    val recordDate: LocalDate,
+    val sourceKey: String
+)
+
+/**
+ * Estimate recurring dividend months from MOEX history only.
+ *
+ * A month is forecast only when it appeared in at least two different years
+ * during the last five years. The amount and day are medians of up to the
+ * three most recent observations for that month. The result is an estimated
+ * record date, not an announced payment date.
+ */
+internal fun calculateHistoricalDividendForecasts(
+    ticker: String,
+    dividends: List<HistoricalDividend>,
+    today: LocalDate,
+    horizonMonths: Int = 18
+): List<HistoricalDividendForecast> {
+    if (horizonMonths <= 0) return emptyList()
+    val normalizedTicker = ticker.trim().uppercase(Locale.ROOT)
+    if (normalizedTicker.isBlank()) return emptyList()
+
+    val historyStart = today.minusYears(5)
+    val usable = dividends.filter {
+        it.secid.equals(normalizedTicker, ignoreCase = true) &&
+            it.currency.equals("RUB", ignoreCase = true) &&
+            it.amountPerShare.isFinite() && it.amountPerShare > 0.0 &&
+            !it.recordDate.isBefore(historyStart) && !it.recordDate.isAfter(today)
+    }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
+
+    val recurringByMonth = usable.groupBy { it.recordDate.monthValue }
+        .filterValues { rows -> rows.map { it.recordDate.year }.distinct().size >= 2 }
+    if (recurringByMonth.isEmpty()) return emptyList()
+
+    fun median(values: List<Double>): Double {
+        val sorted = values.sorted()
+        val middle = sorted.size / 2
+        return if (sorted.size % 2 == 0) {
+            (sorted[middle - 1] + sorted[middle]) / 2.0
+        } else sorted[middle]
+    }
+
+    val startMonth = java.time.YearMonth.from(today)
+    val endMonth = startMonth.plusMonths(horizonMonths.toLong())
+    val forecasts = mutableListOf<HistoricalDividendForecast>()
+    var month = startMonth
+    while (!month.isAfter(endMonth)) {
+        val observations = recurringByMonth[month.monthValue]
+        if (observations != null) {
+            val recent = observations.sortedBy { it.recordDate }.takeLast(3)
+            val estimatedDay = median(recent.map { it.recordDate.dayOfMonth.toDouble() })
+                .toInt().coerceIn(1, month.lengthOfMonth())
+            val date = month.atDay(estimatedDay)
+            if (!date.isBefore(today)) {
+                val amount = median(recent.map { it.amountPerShare })
+                if (amount.isFinite() && amount > 0.0) {
+                    forecasts += HistoricalDividendForecast(
+                        ticker = normalizedTicker,
+                        amountPerShare = amount,
+                        recordDate = date,
+                        sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                    )
+                }
+            }
+        }
+        month = month.plusMonths(1)
+    }
+    return forecasts
+}
+
+/** Forward dividend yield based on payout records already stored in the portfolio database. */
+internal fun calculateForwardDividendYieldPercent(
+    payouts: List<PayoutEntity>,
+    ticker: String,
+    currentPrice: Double,
+    today: LocalDate
+): Double? {
+    if (!currentPrice.isFinite() || currentPrice <= 0.0) return null
+    val endDate = today.plusDays(365)
+    val amount = payouts.asSequence()
+        .filter { it.ticker.equals(ticker, true) && it.payoutType.equals("Дивиденд", true) }
+        .filter { it.status in setOf("ANNOUNCED", "RECOMMENDED", "FORECAST") && it.actualDate == null }
+        .mapNotNull { payout ->
+            val timestamp = payout.recordDate ?: payout.expectedDate ?: return@mapNotNull null
+            val date = java.time.Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.of("Europe/Moscow")).toLocalDate()
+            if (!date.isBefore(today) && !date.isAfter(endDate)) {
+                (payout.sourceKey ?: "${payout.ticker}:${timestamp}") to payout.amountPerUnit
+            } else null
+        }
+        .distinctBy { it.first }
+        .sumOf { it.second }
+    return amount.takeIf { it > 0.0 }?.div(currentPrice)?.times(100.0)
+}
+
 internal data class DividendHistoryFetchResult(
     val dividends: List<HistoricalDividend>,
     // True only when the issuer ISIN lookup and every discovered security history loaded.
