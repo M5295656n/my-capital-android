@@ -65,6 +65,17 @@ private data class CalendarDisplayItem(
     val portfolioExposure: List<String> = emptyList()
 )
 
+internal fun extractCreditRating(summary: String, label: String): String? {
+    require(label == "выпуска" || label == "эмитента")
+    val ratingPattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\\\s*прогноз\\\\s+[А-Яа-яЁё]+)?)"
+    return Regex("(?i)Рейтинг $label:\\\\s*$ratingPattern")
+        .find(summary)
+        ?.groupValues
+        ?.get(1)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+}
+
 @Composable
 internal fun MarketCalendarSection(
     news: List<MarketCalendarItemEntity>,
@@ -130,9 +141,8 @@ internal fun MarketCalendarSection(
                         }
                         add("Купон: $couponLabel")
                         if (instrument.contains("облигац", ignoreCase = true)) {
-                            val ratingPattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\\\s*прогноз\\\\s+[А-Яа-яЁё]+)?)"
-                            val issueRating = Regex("(?i)Рейтинг выпуска:\\\\s*$ratingPattern").find(it.summary)?.groupValues?.get(1)?.trim()
-                            val issuerRating = Regex("(?i)Рейтинг эмитента:\\\\s*$ratingPattern").find(it.summary)?.groupValues?.get(1)?.trim()
+                            val issueRating = extractCreditRating(it.summary, "выпуска")
+                            val issuerRating = extractCreditRating(it.summary, "эмитента")
                             add("Рейтинг выпуска: " + (issueRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                             add("Рейтинг эмитента: " + (issuerRating?.takeIf { value -> value.isNotBlank() } ?: "Не сообщено"))
                         }
