@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp") version "2.2.20-2.0.2"
 }
+ksp {
+    arg("room.schemaLocation", "\$projectDir/schemas")
+}
 android {
     namespace = "ru.mycapital.app"
     compileSdk = 36
