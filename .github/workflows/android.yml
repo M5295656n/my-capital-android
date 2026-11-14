@@ -16,7 +16,7 @@ on:
 jobs:
 
   instrumented-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -30,19 +30,22 @@ jobs:
       - name: Run Room and broker-account instrumented tests
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
           target: google_apis
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect
           emulator-boot-timeout: 900
           disable-animations: true
-          script: gradle connectedDebugAndroidTest
+          script: |
+            gradle connectedDebugAndroidTest || { adb logcat -d -v threadtime > app/build/outputs/androidTest-results/connected/emulator-logcat.txt; exit 1; }
       - name: Upload instrumented test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: instrumented-test-results
-          path: app/build/outputs/androidTest-results/connected/
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/outputs/androidTest-results/connected/emulator-logcat.txt
           if-no-files-found: warn
 
   build:
