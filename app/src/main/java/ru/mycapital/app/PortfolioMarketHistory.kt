@@ -151,33 +151,37 @@ internal suspend fun buildPortfolioMarketHistory(
         var hasUnpricedHolding = false
 
         supported.forEach { (ticker, asset) ->
-            val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
-                .filter { it.operationDate >= endOfDay }
-                .sumOf { operation ->
-                    when (operation.operationType) {
-                        "Покупка" -> operation.quantity
-                        "Продажа" -> -operation.quantity
-                        else -> 0.0
-                    }
-                }
-            // Reverse future full redemptions just like future trades: the current
-            // asset row is already zero after maturity, but historical dates before
-            // maturity must still show the outstanding bond position.
-            val futureRedemptionQuantity = operationsByTicker[ticker].orEmpty()
-                .filter { it.operationType == "Погашение" && it.operationDate >= endOfDay }
-                .minByOrNull { it.operationDate }
-                ?.let { redemption ->
-                    val previousRedemptionDate = operationsByTicker[ticker].orEmpty()
+            // Rewind the position ledger from today's quantity to this historical
+            // close. Full redemptions close the position; their quantity is stored
+            // as a cash-flow convention (1), so restore the actual outstanding
+            // quantity calculated from trades since the preceding redemption.
+            val tickerOperations = operationsByTicker[ticker].orEmpty()
+            val redemptionQuantities = tickerOperations
+                .filter { it.operationType == "Погашение" }
+                .sortedBy { it.operationDate }
+                .map { redemption ->
+                    val previousRedemptionDate = tickerOperations
                         .filter { it.operationType == "Погашение" && it.operationDate < redemption.operationDate }
                         .maxOfOrNull { it.operationDate }
-                    operationsByTicker[ticker].orEmpty().asSequence()
+                    val outstanding = tickerOperations.asSequence()
                         .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
                         .filter { it.operationDate < redemption.operationDate }
                         .filter { previousRedemptionDate == null || it.operationDate >= previousRedemptionDate }
                         .sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
-                        .coerceAtLeast(0.0)
-                } ?: 0.0
-            val quantityAtClose = asset.quantity - futureTradeDelta + futureRedemptionQuantity
+                    redemption.operationDate to outstanding.coerceAtLeast(0.0)
+                }.toMap()
+            val futurePositionAdjustment = tickerOperations.asSequence()
+                .filter { it.operationDate >= endOfDay }
+                .sortedByDescending { it.operationDate }
+                .sumOf { operation ->
+                    when (operation.operationType) {
+                        "Покупка" -> -operation.quantity
+                        "Продажа" -> operation.quantity
+                        "Погашение" -> redemptionQuantities[operation.operationDate] ?: 0.0
+                        else -> 0.0
+                    }
+                }
+            val quantityAtClose = asset.quantity + futurePositionAdjustment
             if (quantityAtClose < -0.0000001) {
                 unavailableConcurrent.add(ticker)
             }
