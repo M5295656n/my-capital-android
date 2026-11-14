@@ -84,7 +84,6 @@ internal fun calculateHistoricalDividendForecasts(
 
     val recurringByMonth = usable.groupBy { it.recordDate.monthValue }
         .filterValues { rows -> rows.map { it.recordDate.year }.distinct().size >= 2 }
-    if (recurringByMonth.isEmpty()) return emptyList()
 
     fun median(values: List<Double>): Double {
         val sorted = values.sorted()
