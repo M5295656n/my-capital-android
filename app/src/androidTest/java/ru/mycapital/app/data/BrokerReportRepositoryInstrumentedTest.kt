@@ -173,7 +173,7 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(38.15, operations.single { it.operationType == "Купон" }.price, 0.000001)
         assertEquals("T", operations.single { it.operationType == "Дивиденд" }.ticker)
         assertEquals("SU26228RMFS9", operations.single { it.operationType == "Купон" }.ticker)
-        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:TRANSFER:TRANSFER:1"))
+        assertNotNull(dao.getOperationBySourceKey("SBER:403RY0J:CASH:TRANSFER:1"))
     }
 
 
