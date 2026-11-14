@@ -43,7 +43,9 @@ class SberBrokerReportParserTest {
         includeMatchingIisRegisterRows: Boolean = true,
         plannedClosingQuantity: String = "3",
         plannedClosingCash: String = "635.73",
-        tradeStatus: String = "И"
+        tradeStatus: String = "И",
+        tradeDealNumber: String = "123456",
+        duplicateTradeRow: Boolean = false
     ): String {
         val assets = """
             <table>
@@ -81,7 +83,8 @@ class SberBrokerReportParserTest {
             <table>
               <tr><td>Дата заключения</td><td>Дата расчетов</td><td>Время заключения</td><td>Наименование ЦБ</td><td>Код ЦБ</td><td>Валюта</td><td>Вид</td><td>Количество, шт.</td><td>Цена ²</td><td>Сумма</td><td>НКД ⁴</td><td>Комиссия Брокера</td><td>Комиссия Биржи</td><td>Номер сделки</td><td>Комментарий</td><td>Статус сделки ⁵</td></tr>
               <tr><td>1</td></tr>
-              <tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>$tradeCode</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>123456</td><td></td><td>$tradeStatus</td></tr>
+              <tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>$tradeCode</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>$tradeDealNumber</td><td></td><td>$tradeStatus</td></tr>
+              ${if (duplicateTradeRow) """<tr><td>30.10.2026</td><td>02.11.2026</td><td>10:54:54</td><td>Тестовая акция</td><td>$tradeCode</td><td>RUB</td><td>Покупка</td><td>10</td><td>$tradePrice</td><td>473.40</td><td>0</td><td>0.28</td><td>0.14</td><td>$tradeDealNumber</td><td></td><td>$tradeStatus</td></tr>""" else ""}
             </table>
         """.trimIndent()
         val securities = """
@@ -122,6 +125,17 @@ class SberBrokerReportParserTest {
         }
         val accountId = if (tableCount == 9) "TESTIIS03" else "TESTMAIN01"
         return "<html><head><title>Отчёт брокера\n$accountId</title></head><body>за период с 30.10.2026 по 30.10.2026${orderedTables.joinToString("")}</body></html>"
+    }
+
+    @Test
+    fun parserAssignsStableDistinctKeysToIdenticalTradesWithoutDealNumbers() {
+        val html = sampleHtml(tradeDealNumber = "", duplicateTradeRow = true, includeMatchingIisRegisterRows = false)
+        val first = SberBrokerReportParser.parse(html)
+        val second = SberBrokerReportParser.parse(html)
+
+        assertEquals(2, first.trades.size)
+        assertNotEquals(first.trades[0].sourceKey, first.trades[1].sourceKey)
+        assertEquals(first.trades.map { it.sourceKey }, second.trades.map { it.sourceKey })
     }
 
     @Test
