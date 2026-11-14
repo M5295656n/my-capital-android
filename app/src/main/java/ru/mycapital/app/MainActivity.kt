@@ -1305,7 +1305,7 @@ private fun AssetsScreen(
             .filter { it.operationType == "Продажа" }
             .filter { operation ->
                 val accountMatches = selectedAccountId == ALL_HISTORY_ACCOUNTS ||
-                    historyAccountId(operation.sourceKey) == selectedAccountId
+                    historyAccountId(operation) == selectedAccountId
                 val operationDate = java.time.Instant.ofEpochMilli(operation.operationDate)
                     .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
                 accountMatches && (selectedSoldYear == null || operationDate.year == selectedSoldYear)
@@ -2061,7 +2061,7 @@ private fun AssetPurchaseHistoryDialog(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text("${quantity(purchase.quantity)} шт. × ${money(purchase.price)} ₽")
-                                val accountId = historyAccountId(purchase.sourceKey)
+                                val accountId = historyAccountId(purchase)
                                 val accountLabel = accounts.firstOrNull { it.accountId == accountId }?.displayName
                                     ?: if (accountId == null) "Счёт не указан" else "Счёт не найден в списке"
                                 Text(
@@ -2114,7 +2114,7 @@ private fun AssetPurchaseHistoryDialog(
                     ) {
                         items(sales, key = { it.id }) { sale ->
                             val result = saleResults[sale.id]
-                            val accountId = historyAccountId(sale.sourceKey)
+                            val accountId = historyAccountId(sale)
                             val accountLabel = accounts.firstOrNull { it.accountId == accountId }?.displayName
                                 ?: if (accountId == null) "Счёт не указан" else "Счёт не найден в списке"
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -2165,6 +2165,9 @@ private fun AssetPurchaseHistoryDialog(
 
 private const val ALL_HISTORY_ACCOUNTS = "ALL"
 private const val UNASSIGNED_HISTORY_ACCOUNT = "UNASSIGNED"
+
+internal fun historyAccountId(operation: OperationEntity): String? =
+    operation.accountId?.takeIf { it.isNotBlank() } ?: historyAccountId(operation.sourceKey)
 
 internal fun historyAccountId(sourceKey: String?): String? {
     if (sourceKey.isNullOrBlank() || !sourceKey.startsWith("SBER:")) return null
@@ -2237,8 +2240,8 @@ private fun OperationsScreen(
     val visibleOperations = operations.filter { operation ->
         val matchesAccount = when (selectedAccountId) {
             ALL_HISTORY_ACCOUNTS -> true
-            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation.sourceKey) == null
-            else -> historyAccountId(operation.sourceKey) == selectedAccountId
+            UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(operation) == null
+            else -> historyAccountId(operation) == selectedAccountId
         }
         val matchesType = when (operationTypeFilter) {
             "Сделки" -> operation.operationType == "Покупка" || operation.operationType == "Продажа"
@@ -2398,9 +2401,10 @@ private fun PayoutsScreen(
                     if (payoutAccountId != null) {
                         payoutAccountId == selectedAccountId
                     } else {
-                        // Portfolio-level forecasts/manual events are shown only when their
-                        // ticker is actually held on the selected broker account.
-                        payout.ticker.uppercase() in selectedTickers
+                        // Without an explicit account link, keep the payout unassigned;
+                        // ticker membership is ambiguous when the same security is held
+                        // in more than one brokerage account.
+                        false
                     }
                 }
             }
@@ -3051,8 +3055,7 @@ private fun EventsScreen(
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) payouts
         else payouts.filter { payout ->
             val payoutAccountId = historyAccountId(payout.sourceKey)
-            if (payoutAccountId != null) payoutAccountId == selectedAccountId
-            else payout.ticker.uppercase() in selectedTickers
+            payoutAccountId != null && payoutAccountId == selectedAccountId
         }
     }
     val selectedNews = remember(marketCalendarItems, selectedAccountId, selectedTickers) {
@@ -3138,7 +3141,7 @@ private fun AnalyticsScreen(
         else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
     val analyticsOperations = remember(operations, selectedAccountId) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) operations
-        else operations.filter { historyAccountId(it.sourceKey) == selectedAccountId }
+        else operations.filter { historyAccountId(it) == selectedAccountId }
     }
     val analyticsHistoryAssets = remember(assets, analyticsAssets, analyticsOperations, selectedAccountId) {
         val currentByTicker = analyticsAssets.associateBy { it.ticker.trim().uppercase() }

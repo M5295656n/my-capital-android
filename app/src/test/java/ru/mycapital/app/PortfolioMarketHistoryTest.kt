@@ -242,6 +242,20 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
+    fun explicitOperationAccountIdTakesPrecedenceOverLegacySourceKey() {
+        val legacy = operation(1, "Покупка", "2026-01-01", 1.0, 100.0)
+            .copy(sourceKey = "SBER:TRADE:old", accountId = "ACCOUNT-EXPLICIT")
+        assertEquals("ACCOUNT-EXPLICIT", historyAccountId(legacy))
+    }
+
+    @Test
+    fun explicitOperationAccountIdWorksWithoutSourceKey() {
+        val manualLinked = operation(2, "Продажа", "2026-01-02", 1.0, 110.0)
+            .copy(accountId = "ACCOUNT-EXPLICIT")
+        assertEquals("ACCOUNT-EXPLICIT", historyAccountId(manualLinked))
+    }
+
+    @Test
     fun scopedSourceKeysResolveTheBrokerAccountId() {
         assertEquals("403RY0J", historyAccountId("SBER:403RY0J:TRADE:deal-123"))
         assertEquals("S25F9ZU", historyAccountId("SBER:S25F9ZU:CASH:deposit-123"))
