@@ -1,4 +1,5 @@
 name: Android CI
+# This PR is stacked on the Room restore lifecycle branch.
 
 concurrency:
   group: android-ci-${{ github.ref }}
