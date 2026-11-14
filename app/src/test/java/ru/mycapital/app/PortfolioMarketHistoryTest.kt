@@ -310,4 +310,61 @@ class PortfolioMarketHistoryTest {
         assertEquals(102.0, result.points[1].nav, 0.000001)
     }
 
+
+    @Test
+    fun transferToAccountOutsideConsolidatedPortfolioIsAnExternalWithdrawal() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-08-03")
+        val secondDate = LocalDate.parse("2026-08-04")
+        val transfer = operation(3, "Внутренний перевод исходящий", "2026-08-04", 1.0, 500.0, ticker = "RUB")
+            .copy(accountId = "403RY0J", note = "Импорт: Перевод ДС с договора 403RY0J на договора S25F9ZU")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 500.0, currentPrice = 500.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-08-03", 1.0, 1_500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-08-03", 1.0, 500.0),
+                transfer
+            ),
+            currentCash = 500.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = secondDate,
+            includedBrokerAccountIds = setOf("403RY0J")
+        ) { _, _, _, _ -> listOf(MoexDailyClose(firstDate, 500.0), MoexDailyClose(secondDate, 500.0)) }
+
+        assertEquals(1_500.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+        assertEquals(100.0, result.points[1].nav, 0.000001)
+    }
+
+    @Test
+    fun transferBetweenTwoIncludedAccountsDoesNotChangeConsolidatedNav() = kotlinx.coroutines.runBlocking {
+        val firstDate = LocalDate.parse("2026-08-03")
+        val secondDate = LocalDate.parse("2026-08-04")
+        val outgoing = operation(3, "Внутренний перевод исходящий", "2026-08-04", 1.0, 500.0, ticker = "RUB")
+            .copy(accountId = "403RY0J", note = "Перевод ДС с договора 403RY0J на договора S25F9ZU")
+        val incoming = operation(4, "Внутренний перевод входящий", "2026-08-04", 1.0, 500.0, ticker = "RUB")
+            .copy(accountId = "S25F9ZU", note = "Перевод ДС с договора 403RY0J на договора S25F9ZU")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 1L, ticker = "SBER", name = "Сбербанк", assetType = "Акция",
+                quantity = 1.0, averagePrice = 500.0, currentPrice = 500.0
+            )),
+            operations = listOf(
+                operation(1, "Пополнение", "2026-08-03", 1.0, 1_500.0, ticker = "RUB"),
+                operation(2, "Покупка", "2026-08-03", 1.0, 500.0),
+                outgoing, incoming
+            ),
+            currentCash = 1_000.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = secondDate,
+            includedBrokerAccountIds = setOf("403RY0J", "S25F9ZU")
+        ) { _, _, _, _ -> listOf(MoexDailyClose(firstDate, 500.0), MoexDailyClose(secondDate, 500.0)) }
+
+        assertEquals(1_500.0, result.points[0].totalValue, 0.000001)
+        assertEquals(1_500.0, result.points[1].totalValue, 0.000001)
+        assertEquals(100.0, result.points[1].nav, 0.000001)
+    }
+
 }
