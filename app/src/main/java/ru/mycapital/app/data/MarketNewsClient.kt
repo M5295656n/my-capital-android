@@ -601,6 +601,15 @@ class MarketNewsClient {
                 val documentUrl = findOfficialPlacementDocumentUrl(pageHtml, item.sourceUrl)
                 val documentResult = documentUrl?.let { fetchOfficialPlacementDocument(it, item.title) }
                 val bestDetails = mergePlacementDetails(pageDetails, documentResult?.details)
+                fun storedRating(label: String): String? {
+                    val pattern = "([A-Za-zА-Яа-яЁё0-9+()−-]{1,24}(?:,\\\\s*прогноз\\\\s+[А-Яа-яЁё]+)?)"
+                    return Regex("(?i)Рейтинг $label:\\\\s*$pattern")
+                        .find(item.summary)?.groupValues?.get(1)?.trim()
+                }
+                val issueRating = bestDetails.issueRating ?: storedRating("выпуска")
+                val issuerRating = bestDetails.issuerRating ?: storedRating("эмитента")
+                val summaryWithoutStoredRatings = Regex("(?i)\\\\sРейтинг (?:выпуска|эмитента):.*$")
+                    .replace(item.summary, "").trim()
                 item.copy(
                     issuer = item.issuer ?: bestDetails.issuer,
                     instrumentType = item.instrumentType ?: bestDetails.instrumentType,
@@ -614,9 +623,9 @@ class MarketNewsClient {
                     isin = item.isin ?: bestDetails.isin,
                     couponAmount = item.couponAmount ?: bestDetails.couponAmount,
                     summary = buildString {
-                        append(item.summary)
-                        bestDetails.issueRating?.let { append(" Рейтинг выпуска: ").append(it.trim()) }
-                        bestDetails.issuerRating?.let { append(" Рейтинг эмитента: ").append(it.trim()) }
+                        append(summaryWithoutStoredRatings)
+                        issueRating?.let { append(" Рейтинг выпуска: ").append(it.trim()) }
+                        issuerRating?.let { append(" Рейтинг эмитента: ").append(it.trim()) }
                     },
                     detailsSourceUrl = documentResult?.sourceUrl ?: item.sourceUrl
                 )
