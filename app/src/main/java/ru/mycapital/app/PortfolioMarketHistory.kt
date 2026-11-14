@@ -81,10 +81,12 @@ internal suspend fun buildPortfolioMarketHistory(
         ticker to (assetsByTicker[ticker] ?: AssetEntity(
             ticker = ticker,
             name = ticker,
-            // Broker history stores no asset type on operations. MOEX bond tickers
-            // use the SU...RMFS... convention; other supported traded instruments
-            // are quoted by MOEX in the shares market (including exchange funds).
-            assetType = if (ticker.startsWith("SU") && ticker.contains("RMFS")) "Облигация" else "Акция",
+            // OperationEntity does not persist the instrument type. Do not guess
+            // from ticker prefixes: corporate bonds and other instruments may not
+            // follow one naming convention. Until a reliable MOEX metadata lookup
+            // is available, expose this ticker as unavailable instead of querying
+            // the shares market and silently building a false history.
+            assetType = "Неизвестно",
             quantity = 0.0,
             averagePrice = 0.0,
             currentPrice = 0.0
