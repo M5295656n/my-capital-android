@@ -82,11 +82,13 @@ data class BrokerReportTrade(
     val brokerFee: Double,
     val exchangeFee: Double,
     val dealNumber: String,
-    val status: String
+    val status: String,
+    val sourceKeyOccurrence: Int = 0
 ) {
     val totalFee: Double get() = brokerFee + exchangeFee
     val sourceKey: String get() = if (dealNumber.isNotBlank()) "SBER:$dealNumber"
-        else "SBER:${tradeDate}:$time:$ticker:$side:$quantity:$price"
+        else "SBER:${tradeDate}:$time:$ticker:$side:$quantity:$price" +
+            if (sourceKeyOccurrence > 0) ":DUP:$sourceKeyOccurrence" else ""
 }
 
 data class SberBrokerReport(
@@ -337,7 +339,7 @@ object SberBrokerReportParser {
 
         val tradesTable = locate(setOf("Дата заключения", "Дата расчетов", "Номер сделки"))
         val tradeRows = rows(tradesTable.first).drop(tradesTable.second + 1)
-        val trades = tradeRows.mapNotNull { row ->
+        val parsedTrades = tradeRows.mapNotNull { row ->
             if (!datePattern.matches(row.getOrNull(0).orEmpty()) || row.size < 16 || row[5] != "RUB") return@mapNotNull null
             BrokerReportTrade(
                 tradeDate = LocalDate.parse(row[0], dateFormat),
@@ -365,6 +367,18 @@ object SberBrokerReportParser {
                 dealNumber = row[13],
                 status = row[15]
             )
+        }
+        // Identical rows without a broker deal number are legitimate in some exports.
+        // Assign deterministic occurrence suffixes so the unique DB key keeps every row
+        // while remaining stable when the same report is imported again.
+        val occurrences = mutableMapOf<String, Int>()
+        val trades = parsedTrades.map { trade ->
+            if (trade.dealNumber.isNotBlank()) trade
+            else {
+                val occurrence = occurrences.getOrDefault(trade.sourceKey, 0)
+                occurrences[trade.sourceKey] = occurrence + 1
+                trade.copy(sourceKeyOccurrence = occurrence)
+            }
         }
 
         require(assets.isNotEmpty()) { "В отчёте не найдены позиции ценных бумаг." }
