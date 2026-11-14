@@ -34,15 +34,15 @@ object PortfolioBackup {
     fun export(context: Context, destination: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
         val database = PortfolioDatabase.getInstance(context)
-        val tempDb = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.db")
-        val tempArchive = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.zip")
+        val tempDb = File.createTempFile("mycapital-backup-", ".db", context.cacheDir)
+        val tempArchive = File.createTempFile("mycapital-backup-", ".zip", context.cacheDir)
         try {
             // VACUUM INTO creates a transactionally consistent snapshot while keeping
             // the live Room instance open. Closing the singleton here would invalidate
             // DAO/Flow instances already remembered by the Compose application.
             val version = createConsistentSnapshot(database, tempDb)
             val zip = ZipFile(tempArchive, password)
-            val manifest = File(context.cacheDir, "mycapital-manifest-${System.currentTimeMillis()}.txt")
+            val manifest = File.createTempFile("mycapital-manifest-", ".txt", context.cacheDir)
             try {
                 manifest.writeText(
                     "MyCapital backup\nformat=2\ndatabaseVersion=$version\ncreatedAt=${System.currentTimeMillis()}\nencryption=AES-256\n",
@@ -72,8 +72,10 @@ object PortfolioBackup {
 
     fun restore(context: Context, sourceUri: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
-        val archive = File(context.cacheDir, "mycapital-restore-${System.currentTimeMillis()}.zip")
-        val extractDir = File(context.cacheDir, "mycapital-restore-${System.currentTimeMillis()}")
+        val archive = File.createTempFile("mycapital-restore-", ".zip", context.cacheDir)
+        val extractDir = File.createTempFile("mycapital-restore-", ".dir", context.cacheDir).apply {
+            check(delete() && mkdirs()) { "Не удалось подготовить временную папку восстановления." }
+        }
         val tempDb = File(extractDir, BACKUP_ENTRY)
         try {
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
@@ -119,8 +121,8 @@ object PortfolioBackup {
             check(manifest.contains("databaseVersion=$version")) { "Версия базы не совпадает с манифестом." }
 
             val target = context.getDatabasePath(DATABASE_FILE)
-            val rollback = File(context.cacheDir, "mycapital-before-restore.db")
-            val candidate = File(target.parentFile, "mycapital-restore-candidate.db")
+            val rollback = File.createTempFile("mycapital-before-restore-", ".db", context.cacheDir)
+            val candidate = File.createTempFile("mycapital-restore-candidate-", ".db", target.parentFile)
             val currentDatabase = PortfolioDatabase.beginRestore()
             var databaseCloseAttempted = false
             try {
@@ -150,7 +152,7 @@ object PortfolioBackup {
                     File(target.absolutePath + "-shm").delete()
                 } catch (error: Exception) {
                     if (rollback.exists()) {
-                        val rollbackCandidate = File(target.parentFile, "mycapital-rollback-candidate.db")
+                        val rollbackCandidate = File.createTempFile("mycapital-rollback-candidate-", ".db", target.parentFile)
                         rollbackCandidate.delete()
                         rollback.copyTo(rollbackCandidate, overwrite = true)
                         java.nio.file.Files.move(
