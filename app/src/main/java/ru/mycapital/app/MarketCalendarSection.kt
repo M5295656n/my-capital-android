@@ -123,12 +123,12 @@ internal fun MarketCalendarSection(
                             instrument.contains("акци", ignoreCase = true) -> "Не применяется"
                             instrument.contains("структурн", ignoreCase = true) && instrument.contains("дисконт", ignoreCase = true) -> "Обычный купон не предусмотрен; доход определяется условиями выпуска"
                             it.couponRate != null -> it.couponRate
-                            else -> "Не опубликован"
+                            else -> "Не сообщено"
                         }
                         add("Купон: $couponLabel")
                         if (instrument.contains("облигац", ignoreCase = true)) {
-                            add("Рейтинг выпуска: Нет данных в опубликованных документах")
-                            add("Рейтинг эмитента: Нет данных в карточке события")
+                            add("Рейтинг выпуска: Не сообщено")
+                            add("Рейтинг эмитента: Не сообщено")
                         }
                     }
                     it.couponAmount?.let { value -> add("Размер купона: $value") }
