@@ -156,20 +156,20 @@ internal suspend fun buildPortfolioMarketHistory(
             // as a cash-flow convention (1), so restore the actual outstanding
             // quantity calculated from trades since the preceding redemption.
             val tickerOperations = operationsByTicker[ticker].orEmpty()
-            val redemptionQuantities = tickerOperations
-                .filter { it.operationType == "Погашение" }
-                .sortedBy { it.operationDate }
-                .map { redemption ->
-                    val previousRedemptionDate = tickerOperations
-                        .filter { it.operationType == "Погашение" && it.operationDate < redemption.operationDate }
-                        .maxOfOrNull { it.operationDate }
-                    val outstanding = tickerOperations.asSequence()
-                        .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
-                        .filter { it.operationDate < redemption.operationDate }
-                        .filter { previousRedemptionDate == null || it.operationDate >= previousRedemptionDate }
-                        .sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
-                    redemption.operationDate to outstanding.coerceAtLeast(0.0)
-                }.toMap()
+            val redemptionQuantities = mutableMapOf<Long, Double>()
+            var outstandingBeforeRedemption = 0.0
+            tickerOperations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
+                .forEach { operation ->
+                    when (operation.operationType) {
+                        "Покупка" -> outstandingBeforeRedemption += operation.quantity
+                        "Продажа" -> outstandingBeforeRedemption =
+                            (outstandingBeforeRedemption - operation.quantity).coerceAtLeast(0.0)
+                        "Погашение" -> {
+                            redemptionQuantities[operation.id] = outstandingBeforeRedemption
+                            outstandingBeforeRedemption = 0.0
+                        }
+                    }
+                }
             val futurePositionAdjustment = tickerOperations.asSequence()
                 .filter { it.operationDate >= endOfDay }
                 .sortedByDescending { it.operationDate }
@@ -177,7 +177,7 @@ internal suspend fun buildPortfolioMarketHistory(
                     when (operation.operationType) {
                         "Покупка" -> -operation.quantity
                         "Продажа" -> operation.quantity
-                        "Погашение" -> redemptionQuantities[operation.operationDate] ?: 0.0
+                        "Погашение" -> redemptionQuantities[operation.id] ?: 0.0
                         else -> 0.0
                     }
                 }
