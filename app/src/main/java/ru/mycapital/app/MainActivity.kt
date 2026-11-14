@@ -1555,7 +1555,7 @@ private fun AssetDetailScreen(
     }
     val price = candles.lastOrNull()?.close ?: asset.currentPrice
     val forwardDividendYieldPercent = remember(assetPayouts, price, asset.ticker) {
-        ru.mycapital.app.data.calculateForwardDividendYieldPercent(
+        ru.mycapital.app.data.calculateForwardDividendYieldPercentFromPayouts(
             assetPayouts,
             asset.ticker,
             price,
