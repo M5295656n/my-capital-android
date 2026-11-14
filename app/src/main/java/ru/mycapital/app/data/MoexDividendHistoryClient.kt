@@ -102,7 +102,7 @@ internal fun calculateHistoricalDividendForecasts(
         if (observations != null) {
             val recent = observations.sortedBy { it.recordDate }.takeLast(3)
             val estimatedDay = median(recent.map { it.recordDate.dayOfMonth.toDouble() })
-                .let { kotlin.math.round(it).toInt() }.coerceIn(1, month.lengthOfMonth())
+                .let { Math.round(it).toInt() }.coerceIn(1, month.lengthOfMonth())
             val date = month.atDay(estimatedDay)
             if (!date.isBefore(today)) {
                 val amount = median(recent.map { it.amountPerShare })
