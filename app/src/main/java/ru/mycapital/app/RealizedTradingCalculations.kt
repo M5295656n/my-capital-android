@@ -26,13 +26,13 @@ internal fun calculateRealizedTradingResult(
 
     operations.asSequence()
         .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
-        .sortedBy { it.operationDate }
+        .sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
         .forEach { operation ->
             val ticker = operation.ticker?.trim()?.uppercase().orEmpty()
             if (ticker.isBlank() || operation.quantity <= 0.0) return@forEach
 
             val key = TradeBookKey(
-                accountId = brokerAccountIdFromTradeSourceKey(operation.sourceKey),
+                accountId = tradeBookAccountKey(operation),
                 ticker = ticker
             )
             val lots = lotsByBook.getOrPut(key) { ArrayDeque() }
@@ -67,4 +67,25 @@ internal fun brokerAccountIdFromTradeSourceKey(sourceKey: String?): String? {
     val parts = sourceKey.split(':', limit = 4)
     if (parts.size < 4 || parts[0] != "SBER" || parts[2] != "TRADE") return null
     return parts[1].takeIf { it.isNotBlank() }
+}
+
+/**
+ * Resolve a trade book without guessing an account for legacy imports.
+ * Explicit accountId wins; scoped broker keys are the fallback. An unscoped
+ * legacy Sber trade is isolated by operation id so it cannot be matched to
+ * another unknown-account trade or to a manual trade.
+ */
+internal fun tradeBookAccountKey(operation: OperationEntity): String? {
+    operation.accountId?.takeIf { it.isNotBlank() }?.let { return it }
+    brokerAccountIdFromTradeSourceKey(operation.sourceKey)?.let { return it }
+    val sourceKey = operation.sourceKey.orEmpty()
+    if (sourceKey.startsWith("SBER:TRADE:", ignoreCase = true)) {
+        // Persisted rows have stable positive IDs. Unsaved/test rows may still
+        // carry Room's default id=0, so use their unscoped source key instead.
+        val identity = operation.id.takeIf { it > 0L }?.toString()
+            ?: sourceKey.takeIf { it.isNotBlank() }
+            ?: "UNIDENTIFIED"
+        return "LEGACY_UNKNOWN:$identity"
+    }
+    return null
 }

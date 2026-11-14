@@ -55,6 +55,43 @@ class RealizedTradingCalculationsTest {
         assertNull(brokerAccountIdFromTradeSourceKey("SBER:MAIN-001:CASH:123"))
     }
 
+    @Test
+    fun explicitAccountIdTakesPrecedenceOverLegacyOrMissingSourceKey() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 1.0, 100.0, date = 1L, sourceKey = "SBER:TRADE:legacy-buy")
+                    .copy(accountId = "ACCOUNT-1"),
+                trade("Продажа", 1.0, 150.0, date = 2L)
+                    .copy(accountId = "ACCOUNT-1")
+            )
+        )
+        assertEquals(50.0, result.profit, 0.000001)
+        assertEquals(0.0, result.unmatchedQuantity, 0.000001)
+    }
+
+    @Test
+    fun legacyUnscopedBrokerTradesAreNotMatchedToEachOtherWithoutAccountIdentity() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 1.0, 100.0, date = 1L, sourceKey = "SBER:TRADE:legacy-buy"),
+                trade("Продажа", 1.0, 150.0, date = 2L, sourceKey = "SBER:TRADE:legacy-sell")
+            )
+        )
+        assertEquals(0.0, result.profit, 0.000001)
+        assertEquals(1.0, result.unmatchedQuantity, 0.000001)
+    }
+
+    @Test
+    fun sameTimestampTradesUseStableIdOrderingRegardlessOfInputOrder() {
+        val buy = trade("Покупка", 1.0, 100.0, date = 10L).copy(id = 1L)
+        val sell = trade("Продажа", 1.0, 150.0, date = 10L).copy(id = 2L)
+        val forward = calculateRealizedTradingResult(listOf(buy, sell))
+        val reversed = calculateRealizedTradingResult(listOf(sell, buy))
+        assertEquals(50.0, forward.profit, 0.000001)
+        assertEquals(forward.profit, reversed.profit, 0.000001)
+        assertEquals(0.0, reversed.unmatchedQuantity, 0.000001)
+    }
+
     private fun trade(
         type: String,
         quantity: Double,
