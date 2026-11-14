@@ -78,6 +78,8 @@ object PortfolioBackup {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
         var archive: File? = null
         var extractDir: File? = null
+        var rollbackTemp: File? = null
+        var candidateTemp: File? = null
         try {
             val archiveFile = File.createTempFile("mycapital-restore-", ".zip", context.cacheDir)
             archive = archiveFile
@@ -128,8 +130,8 @@ object PortfolioBackup {
             check(manifest.contains("databaseVersion=$version")) { "Версия базы не совпадает с манифестом." }
 
             val target = context.getDatabasePath(DATABASE_FILE)
-            val rollback = File.createTempFile("mycapital-before-restore-", ".db", context.cacheDir)
-            val candidate = File.createTempFile("mycapital-restore-candidate-", ".db", target.parentFile)
+            val rollback = File.createTempFile("mycapital-before-restore-", ".db", context.cacheDir).also { rollbackTemp = it }
+            val candidate = File.createTempFile("mycapital-restore-candidate-", ".db", target.parentFile).also { candidateTemp = it }
             val currentDatabase = PortfolioDatabase.beginRestore()
             var databaseCloseAttempted = false
             try {
@@ -195,6 +197,8 @@ object PortfolioBackup {
             password.fill('\u0000')
             archive?.delete()
             extractDir?.deleteRecursively()
+            rollbackTemp?.delete()
+            candidateTemp?.delete()
         }
     }
 
