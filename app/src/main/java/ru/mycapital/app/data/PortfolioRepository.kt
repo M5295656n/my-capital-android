@@ -315,6 +315,15 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 // Older app versions used an unscoped key. Respect it during upgrade
                 // so re-importing an old statement cannot create a duplicate.
                 if (dao.getOperationBySourceKey(flow.rowKey) != null) {
+                    // Attribute a uniquely matched legacy operation to the account
+                    // from this statement; never overwrite an existing assignment.
+                    if (dao.getOperationBySourceKey(scopedSourceKey) == null) {
+                        dao.assignLegacyOperationToBrokerAccount(
+                            legacySourceKey = flow.rowKey,
+                            accountId = report.accountId,
+                            scopedSourceKey = scopedSourceKey
+                        )
+                    }
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
@@ -351,9 +360,18 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 val settlementTimestamp = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
                 val legacyDuplicate = dao.getOperationBySourceKey(trade.sourceKey)
                 if (legacyDuplicate != null) {
-                    // Upgrade older imports in place: settlementDate was not stored
-                    // by previous app versions.
-                    dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
+                    // Upgrade older imports in place. Only assign an account when
+                    // the legacy row is still unassigned and the scoped key is free.
+                    if (legacyDuplicate.accountId == null && dao.getOperationBySourceKey(scopedSourceKey) == null) {
+                        dao.assignLegacyOperationToBrokerAccount(
+                            legacySourceKey = trade.sourceKey,
+                            accountId = report.accountId,
+                            scopedSourceKey = scopedSourceKey,
+                            settlementDate = settlementTimestamp
+                        )
+                    } else {
+                        dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
+                    }
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
