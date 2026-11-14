@@ -74,11 +74,14 @@ jobs:
       - name: Run Room and broker-account instrumented tests
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          # Room and repository instrumentation does not require Google Play services.
+          # Use the lighter AOSP image to avoid Google APIs image boot/service instability.
+          api-level: 34
           arch: x86_64
-          target: google_apis
-          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect
-          emulator-boot-timeout: 900
+          target: default
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2
+          # Fail fast instead of spending 15 minutes polling a broken emulator.
+          emulator-boot-timeout: 300
           disable-animations: true
           script: gradle connectedDebugAndroidTest
       - name: Upload instrumented test results
