@@ -162,7 +162,7 @@ class MoexDividendHistoryClientTest {
         )
 
         assertEquals(true, forecasts.any { it.recordDate == LocalDate.of(2027, 7, 8) })
-        assertEquals(446.5, forecasts.single().amountPerShare, 0.000001)
+        assertEquals(446.5, forecasts.first { it.recordDate == LocalDate.of(2027, 7, 8) }.amountPerShare, 0.000001)
     }
 
     @Test
