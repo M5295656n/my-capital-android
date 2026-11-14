@@ -171,13 +171,6 @@ abstract class PortfolioDatabase : RoomDatabase() {
         }
 
         @Synchronized
-        internal fun closeForRestoreIfOpenForTest() {
-            if (restoreInProgress) restoreInProgress = false
-            INSTANCE?.close()
-            INSTANCE = null
-        }
-
-        @Synchronized
         fun endRestore() {
             restoreInProgress = false
         }
