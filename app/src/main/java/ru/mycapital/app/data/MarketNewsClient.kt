@@ -296,13 +296,13 @@ internal fun parsePlacementDetailsFromHtml(html: String, title: String): ParsedP
     val document = Jsoup.parse(html)
     val labeledValues = mutableListOf<String>()
     val labelRules = listOf(
+        Regex("(?:кредитный )?рейтинг выпуска|(?:кредитный )?рейтинг эмиссии", RegexOption.IGNORE_CASE) to "Рейтинг выпуска",
+        Regex("(?:кредитный )?рейтинг эмитента", RegexOption.IGNORE_CASE) to "Рейтинг эмитента",
         Regex("эмитент|наименование эмитента|полное наименование компании|компания", RegexOption.IGNORE_CASE) to "Эмитент",
         Regex("об[ъь]?[её]м выпуска|об[ъь]?[её]м размещения|об[ъь]?[её]м эмиссии|общий об[ъь]?[её]м размещения|номинальный об[ъь]?[её]м|количество размещаемых|количество облигаций|количество акций", RegexOption.IGNORE_CASE) to "Объём выпуска",
         Regex("цена размещения|цена предложения|ценовой диапазон|цена одной облигации|цена одной акции", RegexOption.IGNORE_CASE) to "Цена размещения",
         Regex("купонная ставка|ставка купона|процентная ставка по купону|размер процентной ставки", RegexOption.IGNORE_CASE) to "Ставка купона",
         Regex("размер купона|размер купонного дохода|сумма купона|сумма выплаты на одну облигацию|денежный размер купона|купонный доход|величина купона", RegexOption.IGNORE_CASE) to "Размер купона",
-        Regex("(?:кредитный )?рейтинг выпуска|(?:кредитный )?рейтинг эмиссии", RegexOption.IGNORE_CASE) to "Рейтинг выпуска",
-        Regex("(?:кредитный )?рейтинг эмитента", RegexOption.IGNORE_CASE) to "Рейтинг эмитента",
         Regex("\\bisin\\b", RegexOption.IGNORE_CASE) to "ISIN",
         Regex("дата сбора заявок|период букбилдинга|сбор заявок|при[её]м заявок|книга заявок", RegexOption.IGNORE_CASE) to "Сбор заявок",
         Regex("дата начала размещения|размещение с", RegexOption.IGNORE_CASE) to "Начало размещения",
