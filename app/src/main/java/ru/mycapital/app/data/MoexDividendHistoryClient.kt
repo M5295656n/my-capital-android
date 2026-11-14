@@ -107,7 +107,7 @@ internal fun calculateForwardDividendYieldPercent(
         .filter { it.ticker.equals(ticker, true) && it.payoutType.equals("Дивиденд", true) }
         .filter { it.status in setOf("ANNOUNCED", "RECOMMENDED", "FORECAST") && it.actualDate == null }
         .mapNotNull { payout ->
-            val timestamp = payout.recordDate ?: payout.expectedDate ?: return@mapNotNull null
+            val timestamp = payout.expectedDate ?: payout.recordDate ?: return@mapNotNull null
             val date = java.time.Instant.ofEpochMilli(timestamp)
                 .atZone(ZoneId.of("Europe/Moscow")).toLocalDate()
             if (!date.isBefore(today) && !date.isAfter(endDate)) {
