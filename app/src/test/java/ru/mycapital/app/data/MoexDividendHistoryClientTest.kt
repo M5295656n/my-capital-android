@@ -69,7 +69,7 @@ class MoexDividendHistoryClientTest {
             ticker = "T",
             dividends = history,
             today = LocalDate.of(2026, 11, 14),
-            horizonMonths = 18
+            horizonMonths = 12
         )
 
         assertEquals(1, forecasts.size)
