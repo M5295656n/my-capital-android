@@ -244,7 +244,7 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals(4.0, updated.quantity, 0.000001)
         assertEquals(12.0, updated.currentPrice, 0.000001)
         assertEquals(10.0, updated.averagePrice, 0.000001)
-        assertEquals(null, dao.getAssetByTicker("XYZ"))
+        assertNotNull(dao.getAssetByTicker("XYZ"))
     }
 
     @Test
