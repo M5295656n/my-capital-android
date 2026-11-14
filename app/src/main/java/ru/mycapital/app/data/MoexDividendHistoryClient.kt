@@ -16,6 +16,33 @@ internal data class HistoricalDividend(
     val currency: String
 )
 
+internal data class HistoricalSplit(
+    val secid: String,
+    val tradedate: LocalDate,
+    val before: Double,
+    val after: Double
+) {
+    val shareMultiplier: Double get() = after / before
+}
+
+/**
+ * Convert pre-split dividends to today's share units. MOEX split ratio is
+ * after / before; an old per-share amount is divided by every later ratio.
+ */
+internal fun adjustHistoricalDividendsForSplits(
+    dividends: List<HistoricalDividend>,
+    splits: List<HistoricalSplit>
+): List<HistoricalDividend> = dividends.map { dividend ->
+    val laterMultiplier = splits.asSequence()
+        .filter { it.secid.equals(dividend.secid, ignoreCase = true) }
+        .filter { it.tradedate.isAfter(dividend.recordDate) }
+        .map { it.shareMultiplier }
+        .filter { it.isFinite() && it > 0.0 }
+        .fold(1.0) { total, multiplier -> total * multiplier }
+    if (laterMultiplier == 1.0) dividend
+    else dividend.copy(amountPerShare = dividend.amountPerShare / laterMultiplier)
+}
+
 internal data class DividendHistoryMetrics(
     val fiveYearGrowthPercent: Double?,
     val historyCount: Int
@@ -209,9 +236,25 @@ internal class MoexDividendHistoryClient {
             annualCoverageVerified = false
             throw e
         }
+        val splitsPayload = requestJson(
+            "https://iss.moex.com/iss/statistics/engines/stock/splits/$normalized.json?iss.meta=off"
+        )
+        val splits = table(splitsPayload, "splits").mapNotNull { row ->
+            val splitDate = runCatching { LocalDate.parse(row.optString("tradedate")) }.getOrNull()
+                ?: return@mapNotNull null
+            val before = row.optDouble("before", Double.NaN)
+            val after = row.optDouble("after", Double.NaN)
+            if (!before.isFinite() || !after.isFinite() || before <= 0.0 || after <= 0.0) {
+                return@mapNotNull null
+            }
+            HistoricalSplit(normalized, splitDate, before, after)
+        }
+        val splitAdjusted = adjustHistoricalDividendsForSplits(
+            result.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}" },
+            splits
+        )
         return DividendHistoryFetchResult(
-            result.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}" }
-                .sortedBy { it.recordDate },
+            splitAdjusted.sortedBy { it.recordDate },
             annualCoverageVerified
         )
     }
