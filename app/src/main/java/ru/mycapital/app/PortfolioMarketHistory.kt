@@ -151,7 +151,8 @@ internal suspend fun buildPortfolioMarketHistory(
         var hasUnpricedHolding = false
 
         supported.forEach { (ticker, asset) ->
-            val futureTradeDelta = operationsByTicker[ticker].orEmpty().asSequence()
+            val tickerOperations = operationsByTicker[ticker].orEmpty()
+            val futureTradeDelta = tickerOperations.asSequence()
                 .filter { it.operationDate >= endOfDay }
                 .sumOf { operation ->
                     when (operation.operationType) {
@@ -160,7 +161,23 @@ internal suspend fun buildPortfolioMarketHistory(
                         else -> 0.0
                     }
                 }
-            val quantityAtClose = asset.quantity - futureTradeDelta
+            // Full redemption is imported as a cash operation with quantity=1,
+            // not as the number of redeemed bonds. Reconstruct the outstanding
+            // position from trades immediately before each future redemption.
+            val futureRedeemedQuantity = tickerOperations.asSequence()
+                .filter { it.operationType == "Погашение" && it.operationDate >= endOfDay }
+                .sumOf { redemption ->
+                    tickerOperations.asSequence()
+                        .filter { it.operationDate < redemption.operationDate }
+                        .sumOf { trade ->
+                            when (trade.operationType) {
+                                "Покупка" -> trade.quantity
+                                "Продажа" -> -trade.quantity
+                                else -> 0.0
+                            }
+                        }.coerceAtLeast(0.0)
+                }
+            val quantityAtClose = asset.quantity - futureTradeDelta + futureRedeemedQuantity
             if (quantityAtClose < -0.0000001) {
                 unavailableConcurrent.add(ticker)
             }
