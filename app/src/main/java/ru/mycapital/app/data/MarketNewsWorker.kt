@@ -20,21 +20,26 @@ class MarketNewsWorker(
         setProgress(Data.Builder().putString("summary", "Загружаю новости Банка России и Московской биржи…").build())
         try {
             val client = MarketNewsClient()
-            val keyRateEvents = runCatching { client.getUpcomingKeyRateEvents() }
-                .getOrElse { error ->
-                    setProgress(Data.Builder().putString("summary", "Не удалось загрузить календарь Банка России: ${error.message}").build())
-                    emptyList()
-                }
-            val statisticsEvents = runCatching { client.getUpcomingStatisticsEvents() }
-                .getOrElse { error ->
-                    setProgress(Data.Builder().putString("summary", "Не удалось загрузить календарь статистики ЦБ: ${error.message}").build())
-                    emptyList()
-                }
-            val news = runCatching { client.getLatestNews(tickers) }
-                .getOrElse { error ->
-                    setProgress(Data.Builder().putString("summary", "Не удалось загрузить RSS-новости: ${error.message}").build())
-                    emptyList()
-                }
+            val keyRateResult = runCatching { client.getUpcomingKeyRateEvents() }
+            val statisticsResult = runCatching { client.getUpcomingStatisticsEvents() }
+            val newsResult = runCatching { client.getLatestNews(tickers) }
+            val sourceErrors = listOfNotNull(
+                keyRateResult.exceptionOrNull(),
+                statisticsResult.exceptionOrNull(),
+                newsResult.exceptionOrNull()
+            )
+            keyRateResult.exceptionOrNull()?.let { error ->
+                setProgress(Data.Builder().putString("summary", "Не удалось загрузить календарь Банка России: ${error.message}").build())
+            }
+            statisticsResult.exceptionOrNull()?.let { error ->
+                setProgress(Data.Builder().putString("summary", "Не удалось загрузить календарь статистики ЦБ: ${error.message}").build())
+            }
+            newsResult.exceptionOrNull()?.let { error ->
+                setProgress(Data.Builder().putString("summary", "Не удалось загрузить RSS-новости: ${error.message}").build())
+            }
+            val keyRateEvents = keyRateResult.getOrDefault(emptyList())
+            val statisticsEvents = statisticsResult.getOrDefault(emptyList())
+            val news = newsResult.getOrDefault(emptyList())
             if (news.isEmpty() && keyRateEvents.isEmpty() && statisticsEvents.isEmpty()) {
                 throw java.io.IOException("Источники не вернули новостей и будущих событий")
             }
@@ -110,6 +115,13 @@ class MarketNewsWorker(
             }
             val entities = newsEntities + eventEntities + statisticsEntities
             dao.upsertMarketCalendarItems(entities)
+            // Successful sources may refresh their rows independently, but a partial
+            // failure must never prune older rows belonging to a temporarily unavailable source.
+            if (sourceErrors.isNotEmpty()) {
+                throw java.io.IOException(
+                    "Не все источники обновились: " + sourceErrors.joinToString { it.message ?: it.javaClass.simpleName }
+                )
+            }
             // Keep 180 days of news and preserve upcoming scheduled events.
             dao.deleteStaleMarketCalendarItems(now - 180L * 24 * 60 * 60 * 1000)
             val summary = "Загружено новостей: " + newsEntities.size +
