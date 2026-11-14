@@ -91,6 +91,38 @@ class PortfolioMarketHistoryTest {
         assertFalse(result.unavailableTickers.contains("SBER"))
     }
     @Test
+    fun fullyRedeemedBondRemainsInHistoricalHoldingsBeforeMaturity() = kotlinx.coroutines.runBlocking {
+        val buyDate = LocalDate.parse("2026-04-01")
+        val maturityDate = LocalDate.parse("2026-04-03")
+        val result = buildPortfolioMarketHistory(
+            assets = listOf(AssetEntity(
+                id = 2L, ticker = "SU26238RMFS4", name = "ОФЗ 26238", assetType = "Облигация",
+                quantity = 0.0, averagePrice = 0.0, currentPrice = 0.0
+            )),
+            operations = listOf(
+                operation(10, "Пополнение", "2026-03-31", 1.0, 1_000.0, ticker = "RUB"),
+                operation(11, "Покупка", "2026-04-01", 10.0, 100.0, ticker = "SU26238RMFS4"),
+                operation(12, "Погашение", "2026-04-03", 1.0, 1_000.0, ticker = "SU26238RMFS4")
+            ),
+            currentCash = 1_000.0,
+            range = PortfolioHistoryRange.ALL,
+            throughDate = maturityDate
+        ) { _, _, _, _ ->
+            listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(maturityDate, 100.0))
+        }
+
+        assertEquals(2, result.points.size)
+        assertEquals(10.0, result.points[0].quantities["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(1_000.0, result.points[0].assetValues["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(0.0, result.points[0].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[0].totalValue, 0.000001)
+        assertEquals(0.0, result.points[1].quantities["SU26238RMFS4"] ?: 0.0, 0.000001)
+        assertEquals(1_000.0, result.points[1].cashValue, 0.000001)
+        assertEquals(1_000.0, result.points[1].totalValue, 0.000001)
+        assertTrue(result.unavailableTickers.isEmpty())
+    }
+
+    @Test
     fun includesOfzDirtyRublePriceInPortfolioHistory() = kotlinx.coroutines.runBlocking {
         val buyDate = LocalDate.parse("2026-04-01")
         val result = buildPortfolioMarketHistory(
