@@ -140,7 +140,7 @@ internal suspend fun buildPortfolioMarketHistory(
     val points = mutableListOf<PortfolioMarketHistoryPoint>()
     var nav = 100.0
     var previousValue: Double? = null
-    var previousEndOfDay: Long? = null
+    var previousInvestedCapital: Double? = null
 
     dates.forEach { date ->
         val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -200,10 +200,13 @@ internal suspend fun buildPortfolioMarketHistory(
             .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers) }
 
         val priorValue = previousValue
-        if (priorValue != null && priorValue > 0.0) {
-            val periodFlow = orderedOperations.asSequence()
-                .filter { it.operationDate >= (previousEndOfDay ?: Long.MIN_VALUE) && it.operationDate < endOfDay }
-                .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers) }
+        val priorInvestedCapital = previousInvestedCapital
+        if (priorValue != null && priorValue > 0.0 && priorInvestedCapital != null) {
+            // Match the benchmark series convention exactly: calculate the
+            // external cash flow as the change in cumulative invested capital.
+            // This avoids a second, timestamp-window-based flow calculation
+            // drifting from the portfolio's daily cumulative flow ledger.
+            val periodFlow = externalFlow - priorInvestedCapital
             val valueBeforeFlow = totalValue - periodFlow
             if (valueBeforeFlow > 0.0) nav *= valueBeforeFlow / priorValue
         }
@@ -217,7 +220,7 @@ internal suspend fun buildPortfolioMarketHistory(
             assetValues = valuesAtClose.toMap()
         )
         previousValue = totalValue
-        previousEndOfDay = endOfDay
+        previousInvestedCapital = externalFlow
     }
 
     val latestDate = points.lastOrNull()?.let { LocalDate.parse(it.dateKey) }
