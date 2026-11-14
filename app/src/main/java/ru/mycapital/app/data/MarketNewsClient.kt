@@ -268,8 +268,12 @@ internal fun readBoundedResponseBody(body: okhttp3.ResponseBody, maxBytes: Int):
     if (maxBytes < 0) return null
     if (body.contentLength() > maxBytes.toLong()) return null
     return body.source().use { source ->
-        source.request(maxBytes.toLong() + 1L)
-        val bytes = source.buffer.readByteArray()
+        val limit = maxBytes.toLong() + 1L
+        source.request(limit)
+        // Read at most limit bytes even when Content-Length is unknown and the
+        // underlying source has buffered a larger network chunk.
+        val bytesToRead = minOf(source.buffer.size, limit)
+        val bytes = source.buffer.readByteArray(bytesToRead)
         bytes.takeIf { it.size <= maxBytes }
     }
 }
@@ -505,7 +509,10 @@ class MarketNewsClient {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Банк России: HTTP ${response.code}")
-            val html = response.body?.string() ?: throw IOException("Банк России вернул пустой календарь")
+            val body = response.body ?: throw IOException("Банк России вернул пустой календарь")
+            val bytes = readBoundedResponseBody(body, 512 * 1024)
+                ?: throw IOException("Календарь Банка России превышает лимит 512 КБ")
+            val html = String(bytes, Charsets.UTF_8)
             return parseCbrKeyRateCalendar(html, today)
         }
     }
@@ -517,7 +524,10 @@ class MarketNewsClient {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Календарь статистики Банка России: HTTP " + response.code)
-            val html = response.body?.string() ?: throw IOException("Банк России вернул пустой календарь статистики")
+            val body = response.body ?: throw IOException("Банк России вернул пустой календарь статистики")
+            val bytes = readBoundedResponseBody(body, 512 * 1024)
+                ?: throw IOException("Календарь статистики Банка России превышает лимит 512 КБ")
+            val html = String(bytes, Charsets.UTF_8)
             return parseCbrStatisticsCalendar(html, today)
         }
     }
@@ -622,8 +632,11 @@ class MarketNewsClient {
                     .build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                    val body = response.body?.string() ?: throw IOException("Пустой RSS-ответ")
-                    result += parseMarketNewsRss(body, feed.sourceName, feed.category, portfolioTickers)
+                    val responseBody = response.body ?: throw IOException("Пустой RSS-ответ")
+                    val bytes = readBoundedResponseBody(responseBody, 1024 * 1024)
+                        ?: throw IOException("RSS-ответ " + feed.sourceName + " превышает лимит 1 МБ")
+                    val xml = String(bytes, Charsets.UTF_8)
+                    result += parseMarketNewsRss(xml, feed.sourceName, feed.category, portfolioTickers)
                 }
             } catch (error: Exception) {
                 errors += "${feed.sourceName}: ${error.message ?: error.javaClass.simpleName}"
