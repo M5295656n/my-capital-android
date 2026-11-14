@@ -110,7 +110,10 @@ class CorporateEventsWorker(
 
         // Build a separate, clearly labelled estimate from MOEX dividend history.
         // Only equity assets are eligible; funds, currencies and metals are not inferred.
-        val historyEquities = equities.filter { it.assetType.contains("акци", ignoreCase = true) }
+        val historyEquities = equities.filter {
+            it.assetType.contains("акци", ignoreCase = true) ||
+                normalizeDividendTicker(it.ticker) in setOf("T", "X5")
+        }
         val historyClient = MoexDividendHistoryClient()
         for (asset in historyEquities) {
             try {
