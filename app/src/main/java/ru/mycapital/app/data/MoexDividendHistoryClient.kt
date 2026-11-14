@@ -121,7 +121,7 @@ internal fun calculateForwardDividendYieldPercent(
 
 internal data class DividendHistoryFetchResult(
     val dividends: List<HistoricalDividend>,
-    // True only when the issuer ISIN lookup and every discovered security history loaded.
+    // True when the direct security history endpoint loaded successfully.
     // In that case, a year with no dividend records is a verified zero, not missing data.
     val annualCoverageVerified: Boolean
 )
