@@ -21,8 +21,20 @@ class MarketNewsClientTest {
     @Test
     fun acceptsUnknownLengthBodyExactlyAtTheConfiguredLimit() {
         val bytes = ByteArray(16) { it.toByte() }
-        val body = okhttp3.ResponseBody.create(null, bytes)
+        val body = unknownLengthBody(bytes)
         assertEquals(bytes.toList(), readBoundedResponseBody(body, 16)!!.toList())
+    }
+
+    @Test
+    fun rejectsUnknownLengthBodyLargerThanTheConfiguredLimit() {
+        val body = unknownLengthBody(ByteArray(32) { it.toByte() })
+        assertEquals(null, readBoundedResponseBody(body, 16))
+    }
+
+    private fun unknownLengthBody(bytes: ByteArray) = object : okhttp3.ResponseBody() {
+        override fun contentType(): okhttp3.MediaType? = null
+        override fun contentLength(): Long = -1L
+        override fun source(): okio.BufferedSource = okio.Buffer().write(bytes)
     }
 
     @Test
