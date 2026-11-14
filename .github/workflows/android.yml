@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
     branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history ]
