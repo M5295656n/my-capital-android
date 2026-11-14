@@ -122,50 +122,52 @@ object PortfolioBackup {
             val target = context.getDatabasePath(DATABASE_FILE)
             val rollback = File(context.cacheDir, "mycapital-before-restore.db")
             val candidate = File(target.parentFile, "mycapital-restore-candidate.db")
-            val currentDatabase = PortfolioDatabase.getInstance(context)
-            currentDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
-                check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
-                    "Не удалось подготовить текущую базу к восстановлению."
-                }
-            }
-            PortfolioDatabase.closeForRestore()
+            val currentDatabase = PortfolioDatabase.beginRestore()
             try {
-                val wal = File(target.absolutePath + "-wal")
-                check(!wal.exists() || wal.length() == 0L) {
-                    "Журнал базы данных остался активным. Повторите восстановление."
+                currentDatabase.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
+                    check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
+                        "Не удалось подготовить текущую базу к восстановлению."
+                    }
                 }
-                if (target.exists()) target.copyTo(rollback, overwrite = true)
-                // Validate a candidate on the database filesystem before replacing
-                // the live file. A failure before the atomic move leaves it untouched.
-                candidate.delete()
-                tempDb.copyTo(candidate, overwrite = true)
-                validateDatabase(candidate)
-                java.nio.file.Files.move(
-                    candidate.toPath(),
-                    target.toPath(),
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                )
-                File(target.absolutePath + "-wal").delete()
-                File(target.absolutePath + "-shm").delete()
-            } catch (error: Exception) {
-                if (rollback.exists()) {
-                    val rollbackCandidate = File(target.parentFile, "mycapital-rollback-candidate.db")
-                    rollbackCandidate.delete()
-                    rollback.copyTo(rollbackCandidate, overwrite = true)
+                PortfolioDatabase.closeForRestore()
+                try {
+                    val wal = File(target.absolutePath + "-wal")
+                    check(!wal.exists() || wal.length() == 0L) {
+                        "Журнал базы данных остался активным. Повторите восстановление."
+                    }
+                    if (target.exists()) target.copyTo(rollback, overwrite = true)
+                    candidate.delete()
+                    tempDb.copyTo(candidate, overwrite = true)
+                    validateDatabase(candidate)
                     java.nio.file.Files.move(
-                        rollbackCandidate.toPath(),
+                        candidate.toPath(),
                         target.toPath(),
                         java.nio.file.StandardCopyOption.ATOMIC_MOVE,
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING
                     )
+                    File(target.absolutePath + "-wal").delete()
+                    File(target.absolutePath + "-shm").delete()
+                } catch (error: Exception) {
+                    if (rollback.exists()) {
+                        val rollbackCandidate = File(target.parentFile, "mycapital-rollback-candidate.db")
+                        rollbackCandidate.delete()
+                        rollback.copyTo(rollbackCandidate, overwrite = true)
+                        java.nio.file.Files.move(
+                            rollbackCandidate.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                        )
+                    }
+                    File(target.absolutePath + "-wal").delete()
+                    File(target.absolutePath + "-shm").delete()
+                    throw error
+                } finally {
+                    candidate.delete()
+                    rollback.delete()
                 }
-                File(target.absolutePath + "-wal").delete()
-                File(target.absolutePath + "-shm").delete()
-                throw error
             } finally {
-                candidate.delete()
-                rollback.delete()
+                PortfolioDatabase.endRestore()
             }
             return BackupInfo(version, tempDb.length())
         } finally {
