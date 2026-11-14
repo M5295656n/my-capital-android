@@ -33,7 +33,8 @@ jobs:
           api-level: 35
           arch: x86_64
           target: google_apis
-          emulator-options: -no-window -no-audio -no-boot-anim
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect
+          emulator-boot-timeout: 900
           disable-animations: true
           script: gradle connectedDebugAndroidTest
       - name: Upload instrumented test results
