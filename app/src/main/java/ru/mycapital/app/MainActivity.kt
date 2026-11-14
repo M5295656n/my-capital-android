@@ -1555,28 +1555,9 @@ private fun AssetDetailScreen(
     }
     val price = candles.lastOrNull()?.close ?: asset.currentPrice
     val isDividendAsset = !(asset.assetType.contains("облиг", true) || asset.assetType.contains("офз", true) || asset.assetType.contains("bond", true))
-    var dividendForecast by remember(asset.ticker) {
-        mutableStateOf<List<ru.mycapital.app.data.DividendCalendarEvent>>(emptyList())
-    }
-
-    LaunchedEffect(asset.ticker, isDividendAsset) {
-        dividendForecast = if (isDividendAsset) {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                        val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
-                        ru.mycapital.app.data.mergeOfficialDividendAnnouncements(
-                            ru.mycapital.app.data.LongShortDividendClient().getUpcomingDividends(today),
-                            today
-                        )
-                    }
-                    .getOrDefault(emptyList())
-                    .filter { it.ticker.equals(asset.ticker, true) }
-            }
-        } else emptyList()
-    }
-    val forwardDividendYieldPercent = remember(dividendForecast, price, asset.ticker) {
+    val forwardDividendYieldPercent = remember(assetPayouts, price, asset.ticker) {
         ru.mycapital.app.data.calculateForwardDividendYieldPercent(
-            dividendForecast,
+            assetPayouts,
             asset.ticker,
             price,
             java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
@@ -1803,12 +1784,12 @@ private fun AssetDetailScreen(
                 Text("Нет данных об объявленных или ожидаемых дивидендах", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 upcomingDividendPayouts.take(5).forEach { payout ->
-                    AssetDetailMetric(dividendStatusLabel(payout.status), "${money(payout.totalAmount)} ₽")
+                    AssetDetailMetric(if (payout.sourceName == "MyCapital · история MOEX") "Прогноз MyCapital по истории" else dividendStatusLabel(payout.status), "${money(payout.totalAmount)} ₽")
                     AssetDetailMetric("На одну акцию", "${money(payout.amountPerUnit)} ₽")
                     payout.recordDate?.let { date ->
                         AssetDetailMetric("Дата отсечки", java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(date)))
                     }
-                    payout.expectedDate?.let { date ->
+                    payout.expectedDate?.takeIf { payout.sourceName != "MyCapital · история MOEX" }?.let { date ->
                         AssetDetailMetric("Ориентировочная дата выплаты", java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("ru", "RU")).format(java.util.Date(date)))
                     }
                 }
