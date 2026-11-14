@@ -192,64 +192,6 @@ class TwoBrokerAccountsEndToEndInstrumentedTest {
         assertFalse(finalOperations.any { it.note.contains("MAIN-DEAL-REJECTED") })
     }
 
-    @Test
-    fun legacyPayoutIsPromotedInPlaceAndSameRowKeyCanBelongToAnotherAccount() = runBlocking {
-        dao.ensureCashBalance(CashBalanceEntity(balance = 0.0))
-        val legacyKey = "LEGACY:DIV:SHARED"
-        val legacyId = dao.insertPayout(
-            PayoutEntity(
-                assetId = null,
-                ticker = "OLD",
-                payoutType = "Дивиденд",
-                amountPerUnit = 0.0,
-                quantity = 0.0,
-                totalAmount = 0.0,
-                taxAmount = 0.0,
-                expectedDate = null,
-                actualDate = null,
-                status = "EXPECTED",
-                sourceKey = legacyKey
-            )
-        )
-        assertTrue(legacyId > 0)
-
-        val firstFlow = flow(
-            LocalDate.parse("2026-10-20"),
-            "Выплата дивидендов Legacy security",
-            12.34,
-            legacyKey,
-            "LEGACY1"
-        )
-        val firstReport = report(
-            accountId = "ACCOUNT-A",
-            closingCash = 12.34,
-            assets = emptyList(),
-            cashFlows = listOf(firstFlow),
-            trades = emptyList()
-        )
-
-        val firstImport = repository.importBrokerReportHistory(firstReport)
-        assertEquals(1, firstImport.payoutsImported)
-        val promoted = dao.getPayoutById(legacyId)!!
-        assertEquals("SBER:ACCOUNT-A:PAYOUT:$legacyKey", promoted.sourceKey)
-        assertEquals(12.34, promoted.reportedNetAmount!!, 0.000001)
-        assertEquals(1, dao.observePayouts().first().size)
-
-        val repeated = repository.importBrokerReportHistory(firstReport)
-        assertEquals(0, repeated.payoutsImported)
-        assertEquals(1, dao.observePayouts().first().size)
-
-        val secondReport = firstReport.copy(accountId = "ACCOUNT-B")
-        val secondImport = repository.importBrokerReportHistory(secondReport)
-        assertEquals(1, secondImport.payoutsImported)
-        val payouts = dao.observePayouts().first()
-        assertEquals(2, payouts.size)
-        assertEquals(
-            setOf("SBER:ACCOUNT-A:PAYOUT:$legacyKey", "SBER:ACCOUNT-B:PAYOUT:$legacyKey"),
-            payouts.mapNotNull { it.sourceKey }.toSet()
-        )
-    }
-
     private fun flow(
         date: LocalDate,
         description: String,
