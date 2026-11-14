@@ -45,6 +45,7 @@ internal suspend fun buildPortfolioMarketHistory(
     range: PortfolioHistoryRange,
     throughDate: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow")),
     includeInternalTransfers: Boolean = false,
+    includedBrokerAccountIds: Set<String> = emptySet(),
     priceLoader: suspend (String, String, LocalDate, LocalDate) -> List<ru.mycapital.app.data.MoexDailyClose> = { ticker, type, from, till ->
         MoexSecurityHistoryClient().getDailyCloses(ticker, type, from, till)
     }
@@ -184,7 +185,7 @@ internal suspend fun buildPortfolioMarketHistory(
         // retain operationDate as their cash-effective date.
         val futureCashEffects = orderedOperations.asSequence()
             .filter { cashEffectiveTimestamp(it) >= endOfDay }
-            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers) }
+            .sumOf { portfolioOperationCashEffect(it, includeInternalTransfers, includedBrokerAccountIds) }
         val cashAtClose = currentCash - futureCashEffects
         // A trade changes economic ownership on trade date, while broker cash
         // settles later. Include the unsettled payable/receivable in NAV so the
@@ -197,7 +198,7 @@ internal suspend fun buildPortfolioMarketHistory(
         val totalValue = marketValue + cashAtClose + unsettledTradeAdjustment
         val externalFlow = orderedOperations.asSequence()
             .filter { it.operationDate < endOfDay }
-            .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers) }
+            .sumOf { portfolioExternalFlowEffect(it, includeInternalTransfers, includedBrokerAccountIds) }
 
         val priorValue = previousValue
         val priorInvestedCapital = previousInvestedCapital
@@ -244,31 +245,49 @@ private fun cashEffectiveTimestamp(operation: OperationEntity): Long =
 
 private fun portfolioExternalFlowEffect(
     operation: OperationEntity,
-    includeInternalTransfers: Boolean
+    includeInternalTransfers: Boolean,
+    includedBrokerAccountIds: Set<String>
 ): Double {
     val amount = operation.quantity * operation.price
     return when (operation.operationType) {
-        "Пополнение", "Внутренний перевод входящий" ->
-            if (operation.operationType == "Пополнение" || includeInternalTransfers) amount else 0.0
-        "Вывод", "Внутренний перевод исходящий" ->
-            if (operation.operationType == "Вывод" || includeInternalTransfers) -amount else 0.0
+        "Пополнение" -> amount
+        "Внутренний перевод входящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) amount else 0.0
+        "Вывод" -> -amount
+        "Внутренний перевод исходящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) -amount else 0.0
         else -> 0.0
     }
 }
 
 private fun portfolioOperationCashEffect(
     operation: OperationEntity,
-    includeInternalTransfers: Boolean
+    includeInternalTransfers: Boolean,
+    includedBrokerAccountIds: Set<String>
 ): Double {
     val amount = operation.quantity * operation.price
     return when (operation.operationType) {
         "Пополнение" -> amount
         "Вывод" -> -amount
-        "Внутренний перевод входящий" -> if (includeInternalTransfers) amount else 0.0
-        "Внутренний перевод исходящий" -> if (includeInternalTransfers) -amount else 0.0
+        "Внутренний перевод входящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) amount else 0.0
+        "Внутренний перевод исходящий" ->
+            if (includeInternalTransfers || !isTransferBetweenIncludedAccounts(operation, includedBrokerAccountIds)) -amount else 0.0
         "Покупка" -> -(amount + operation.commission)
         "Продажа" -> amount - operation.commission
         "Дивиденд", "Купон", "Амортизация", "Погашение" -> amount - operation.commission
         else -> 0.0
     }
+}
+
+private fun isTransferBetweenIncludedAccounts(
+    operation: OperationEntity,
+    includedBrokerAccountIds: Set<String>
+): Boolean {
+    if (includedBrokerAccountIds.isEmpty()) return false
+    val match = Regex("(?iu)с\\s+договора?\\s+([A-Z0-9-]+).*?на\\s+договора?\\s+([A-Z0-9-]+)")
+        .find(operation.note) ?: return false
+    val from = match.groupValues[1].uppercase()
+    val to = match.groupValues[2].uppercase()
+    return from in includedBrokerAccountIds && to in includedBrokerAccountIds
 }
