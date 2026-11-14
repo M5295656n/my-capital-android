@@ -33,22 +33,20 @@ object PortfolioBackup {
 
     fun export(context: Context, destination: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
-        val database = PortfolioDatabase.getInstance(context)
-        val source = context.getDatabasePath(DATABASE_FILE)
-        val tempDb = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.db")
-        val tempArchive = File(context.cacheDir, "mycapital-backup-${System.currentTimeMillis()}.zip")
+        var tempDb: File? = null
+        var tempArchive: File? = null
         try {
-            // Checkpoint WAL and require SQLite to report that all frames were checkpointed.
-            database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
-                check(cursor.moveToFirst() && cursor.getInt(0) == 0 && cursor.getInt(1) == cursor.getInt(2)) {
-                    "Не удалось безопасно сохранить журнал базы данных. Повторите попытку."
-                }
-            }
-            check(source.isFile && source.length() > 0L) { "Локальная база данных не найдена." }
-            source.copyTo(tempDb, overwrite = true)
-            val version = validateDatabase(tempDb)
-            val zip = ZipFile(tempArchive, password)
-            val manifest = File(context.cacheDir, "mycapital-manifest-${System.currentTimeMillis()}.txt")
+            val database = PortfolioDatabase.getInstance(context)
+            val snapshotFile = File.createTempFile("mycapital-backup-", ".db", context.cacheDir)
+            tempDb = snapshotFile
+            val archiveFile = File.createTempFile("mycapital-backup-", ".zip", context.cacheDir)
+            tempArchive = archiveFile
+            // VACUUM INTO creates a transactionally consistent snapshot while keeping
+            // the live Room instance open. Closing the singleton here would invalidate
+            // DAO/Flow instances already remembered by the Compose application.
+            val version = createConsistentSnapshot(database, snapshotFile)
+            val zip = ZipFile(archiveFile, password)
+            val manifest = File.createTempFile("mycapital-manifest-", ".txt", context.cacheDir)
             try {
                 manifest.writeText(
                     "MyCapital backup\nformat=2\ndatabaseVersion=$version\ncreatedAt=${System.currentTimeMillis()}\nencryption=AES-256\n",
@@ -61,29 +59,37 @@ object PortfolioBackup {
                     compressionMethod = CompressionMethod.DEFLATE
                 }
                 zip.addFile(manifest, parameters.apply { fileNameInZip = MANIFEST_ENTRY })
-                zip.addFile(tempDb, parameters.apply { fileNameInZip = BACKUP_ENTRY })
+                zip.addFile(snapshotFile, parameters.apply { fileNameInZip = BACKUP_ENTRY })
             } finally {
                 manifest.delete()
             }
             context.contentResolver.openOutputStream(destination, "w")?.use { output ->
-                tempArchive.inputStream().use { it.copyTo(output) }
+                archiveFile.inputStream().use { it.copyTo(output) }
             } ?: error("Не удалось записать файл резервной копии.")
-            return BackupInfo(version, tempDb.length())
+            return BackupInfo(version, snapshotFile.length())
         } finally {
             password.fill('\u0000')
-            tempDb.delete()
-            tempArchive.delete()
+            tempDb?.delete()
+            tempArchive?.delete()
         }
     }
 
     fun restore(context: Context, sourceUri: Uri, password: CharArray): BackupInfo {
         require(password.size >= 9) { "Пароль должен содержать не менее 9 символов." }
-        val archive = File(context.cacheDir, "mycapital-restore-${System.currentTimeMillis()}.zip")
-        val extractDir = File(context.cacheDir, "mycapital-restore-${System.currentTimeMillis()}")
-        val tempDb = File(extractDir, BACKUP_ENTRY)
+        var archive: File? = null
+        var extractDir: File? = null
+        var rollbackTemp: File? = null
+        var candidateTemp: File? = null
         try {
+            val archiveFile = File.createTempFile("mycapital-restore-", ".zip", context.cacheDir)
+            archive = archiveFile
+            val extractionDirectory = File.createTempFile("mycapital-restore-", ".dir", context.cacheDir).apply {
+                check(delete() && mkdirs()) { "Не удалось подготовить временную папку восстановления." }
+            }
+            extractDir = extractionDirectory
+            val tempDb = File(extractionDirectory, BACKUP_ENTRY)
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                archive.outputStream().use { output ->
+                archiveFile.outputStream().use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     var total = 0L
                     while (true) {
@@ -95,9 +101,8 @@ object PortfolioBackup {
                     }
                 }
             } ?: error("Не удалось открыть архив.")
-            check(archive.length() in 1..MAX_ARCHIVE_BYTES) { "Размер архива недопустим." }
-            extractDir.mkdirs()
-            val zip = ZipFile(archive, password)
+            check(archiveFile.length() in 1..MAX_ARCHIVE_BYTES) { "Размер архива недопустим." }
+            val zip = ZipFile(archiveFile, password)
             val headers = zip.fileHeaders
             check(headers.size == 2 && headers.all { it.isEncrypted } &&
                 headers.map { it.fileName }.toSet() == setOf(MANIFEST_ENTRY, BACKUP_ENTRY)) {
@@ -110,13 +115,13 @@ object PortfolioBackup {
                 "Размер распакованных данных недопустим."
             }
             // Extract only the two expected entries; never unpack arbitrary archive paths.
-            zip.extractFile(MANIFEST_ENTRY, extractDir.absolutePath)
-            zip.extractFile(BACKUP_ENTRY, extractDir.absolutePath)
-            check(File(extractDir, MANIFEST_ENTRY).length() in 1..MAX_MANIFEST_BYTES &&
+            zip.extractFile(MANIFEST_ENTRY, extractionDirectory.absolutePath)
+            zip.extractFile(BACKUP_ENTRY, extractionDirectory.absolutePath)
+            check(File(extractionDirectory, MANIFEST_ENTRY).length() in 1..MAX_MANIFEST_BYTES &&
                 tempDb.length() in 1..MAX_DATABASE_ENTRY_BYTES) {
                 "Фактический размер распакованных данных превышает допустимый предел."
             }
-            val manifest = File(extractDir, MANIFEST_ENTRY).readText(Charsets.UTF_8)
+            val manifest = File(extractionDirectory, MANIFEST_ENTRY).readText(Charsets.UTF_8)
             check(manifest.startsWith("MyCapital backup") && manifest.contains("format=2") &&
                 manifest.contains("encryption=AES-256")) {
                 "Файл не является зашифрованной резервной копией MyCapital."
@@ -125,8 +130,8 @@ object PortfolioBackup {
             check(manifest.contains("databaseVersion=$version")) { "Версия базы не совпадает с манифестом." }
 
             val target = context.getDatabasePath(DATABASE_FILE)
-            val rollback = File(context.cacheDir, "mycapital-before-restore.db")
-            val candidate = File(target.parentFile, "mycapital-restore-candidate.db")
+            val rollback = File.createTempFile("mycapital-before-restore-", ".db", context.cacheDir).also { rollbackTemp = it }
+            val candidate = File.createTempFile("mycapital-restore-candidate-", ".db", target.parentFile).also { candidateTemp = it }
             val currentDatabase = PortfolioDatabase.beginRestore()
             var databaseCloseAttempted = false
             try {
@@ -156,15 +161,18 @@ object PortfolioBackup {
                     File(target.absolutePath + "-shm").delete()
                 } catch (error: Exception) {
                     if (rollback.exists()) {
-                        val rollbackCandidate = File(target.parentFile, "mycapital-rollback-candidate.db")
-                        rollbackCandidate.delete()
-                        rollback.copyTo(rollbackCandidate, overwrite = true)
-                        java.nio.file.Files.move(
-                            rollbackCandidate.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        )
+                        val rollbackCandidate = File.createTempFile("mycapital-rollback-candidate-", ".db", target.parentFile)
+                        try {
+                            rollback.copyTo(rollbackCandidate, overwrite = true)
+                            java.nio.file.Files.move(
+                                rollbackCandidate.toPath(),
+                                target.toPath(),
+                                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                            )
+                        } finally {
+                            rollbackCandidate.delete()
+                        }
                     }
                     File(target.absolutePath + "-wal").delete()
                     File(target.absolutePath + "-shm").delete()
@@ -187,9 +195,32 @@ object PortfolioBackup {
             return BackupInfo(version, tempDb.length())
         } finally {
             password.fill('\u0000')
-            archive.delete()
-            extractDir.deleteRecursively()
+            archive?.delete()
+            extractDir?.deleteRecursively()
+            rollbackTemp?.delete()
+            candidateTemp?.delete()
         }
+    }
+
+    internal fun createConsistentSnapshot(database: PortfolioDatabase, destination: File): Int {
+        val liveDatabase = database.openHelper.writableDatabase
+        val sqliteVersion = liveDatabase.query("SELECT sqlite_version()").use { cursor ->
+            check(cursor.moveToFirst()) { "Не удалось определить версию SQLite." }
+            cursor.getString(0)
+        }
+        val versionParts = sqliteVersion.split(".").mapNotNull { it.toIntOrNull() }
+        val supported = versionParts.size >= 2 &&
+            (versionParts[0] > 3 || (versionParts[0] == 3 && versionParts[1] >= 27))
+        check(supported) {
+            "Для безопасного создания копии требуется SQLite 3.27 или новее. Текущая версия: $sqliteVersion."
+        }
+        destination.delete()
+        val escapedPath = destination.absolutePath.replace("'", "''")
+        liveDatabase.execSQL("VACUUM INTO '$escapedPath'")
+        check(destination.isFile && destination.length() > 0L) {
+            "SQLite не создала файл резервной копии."
+        }
+        return validateDatabase(destination)
     }
 
     private fun validateDatabase(file: File): Int {
