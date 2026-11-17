@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Debug
 import android.os.StatFs
 import android.os.SystemClock
@@ -330,10 +331,46 @@ class MainActivity : Activity() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                runtimeStatus.text = "Ошибка загрузки: " + (error.message ?: error.javaClass.simpleName)
+                runtimeStatus.text = formatLoadFailure(error, file)
                 loadButton.isEnabled = engine?.state?.value is InferenceEngine.State.Initialized
                 refreshDeviceStatus()
             }
+        }
+    }
+
+    /**
+     * The pinned llama.android wrapper discards the native load() return code
+     * and maps every non-zero result to an empty UnsupportedArchitectureException.
+     * Report facts available at the app boundary without guessing the underlying cause.
+     */
+    private fun formatLoadFailure(error: Throwable, file: File): String {
+        val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val memory = ActivityManager.MemoryInfo().also(manager::getMemoryInfo)
+        val nativeLibraries = File(applicationInfo.nativeLibraryDir)
+            .listFiles()
+            ?.filter { it.name.contains("llama", ignoreCase = true) || it.name.contains("ggml", ignoreCase = true) }
+            ?.joinToString { it.name }
+            .orEmpty()
+            .ifBlank { "не найдены по фильтру llama/ggml" }
+        val causes = generateSequence(error) { it.cause }
+            .take(5)
+            .joinToString(" -> ") { cause ->
+                cause.javaClass.simpleName + (cause.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
+            }
+        return buildString {
+            append("Не удалось загрузить GGUF.\n")
+            append("Тип ошибки: ").append(error.javaClass.simpleName).append("\n")
+            append("Цепочка причин: ").append(causes).append("\n")
+            append("Файл: ").append(file.name).append(" (").append(formatBytes(file.length())).append(")\n")
+            append("ABI устройства: ").append(Build.SUPPORTED_ABIS.joinToString()).append("\n")
+            append("ABI процесса: ").append(Build.CPU_ABI).append("\n")
+            append("Доступная RAM сейчас: ").append(formatBytes(memory.availMem)).append("\n")
+            append("Порог low-memory: ").append(formatBytes(memory.threshold)).append("\n")
+            append("Нативные библиотеки: ").append(nativeLibraries).append("\n\n")
+            append("Важно: используемая версия llama.android скрывает числовой код отказа llama_model_load_from_file() ")
+            append("и заменяет все ненулевые коды на UnsupportedArchitectureException. ")
+            append("Поэтому эта ошибка сама по себе не доказывает несовместимость архитектуры модели. ")
+            append("Сохраните этот диагностический текст для следующего этапа проверки.")
         }
     }
 
