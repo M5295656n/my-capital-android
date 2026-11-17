@@ -64,7 +64,6 @@ internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, d
     val ordered = remember(history) { history.sortedBy { it.dateKey } }
     var selectedPeriod by remember { mutableStateOf("Всё время") }
     val chartHistory = remember(ordered, selectedPeriod) {
-        val lastDate = ordered.lastOrNull()?.dateKey?.let(LocalDate::parse)
         val months = when (selectedPeriod) {
             "1 месяц" -> 1L
             "3 месяца" -> 3L
@@ -72,8 +71,7 @@ internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, d
             "1 год" -> 12L
             else -> null
         }
-        val cutoff = if (lastDate != null && months != null) lastDate.minusMonths(months) else null
-        if (cutoff == null) ordered else ordered.filter { !LocalDate.parse(it.dateKey).isBefore(cutoff) }
+        selectBenchmarkHistoryPeriod(ordered, months)
     }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
