@@ -17,6 +17,8 @@ internal object AssetLogoCatalog {
         "TCSG" to "logos/tbank.svg",
         "YDEX" to "logos/yandex.svg",
         "X5" to "logos/x5.svg",
+        "DOMRF" to "logos/domrf.svg",
+        "LSNGP" to "logos/lenenergo.svg",
         "MOEX" to "logos/moex.svg",
         "GMKN" to "logos/nornickel.svg",
         "NVTK" to "logos/novatek.png",

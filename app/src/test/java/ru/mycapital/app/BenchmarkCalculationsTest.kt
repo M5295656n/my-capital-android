@@ -100,4 +100,34 @@ class BenchmarkCalculationsTest {
         assertEquals(listOf("2026-01-01", "2026-01-02", "2026-01-03"), result.map { it.dateKey })
         assertTrue(buildCashFlowAdjustedBenchmarkSeries(history.take(1), index, index).isEmpty())
     }
+    @Test
+    fun benchmarkPeriodSelectorKeepsRollingMonthWindowAndAllTime() {
+        val history = listOf(
+            point("2026-01-01", 100.0, 0.0),
+            point("2026-06-17", 110.0, 0.0),
+            point("2026-09-17", 120.0, 0.0),
+            point("2026-10-17", 130.0, 0.0),
+            point("2026-11-17", 140.0, 0.0)
+        )
+
+        assertEquals(
+            listOf("2026-10-17", "2026-11-17"),
+            selectBenchmarkHistoryPeriod(history, 1).map { it.dateKey }
+        )
+        assertEquals(
+            listOf("2026-09-17", "2026-10-17", "2026-11-17"),
+            selectBenchmarkHistoryPeriod(history, 3).map { it.dateKey }
+        )
+        assertEquals(
+            listOf("2026-06-17", "2026-09-17", "2026-10-17", "2026-11-17"),
+            selectBenchmarkHistoryPeriod(history, 6).map { it.dateKey }
+        )
+        assertEquals(
+            history.map { it.dateKey },
+            selectBenchmarkHistoryPeriod(history, 12).map { it.dateKey }
+        )
+        assertEquals(history.map { it.dateKey }, selectBenchmarkHistoryPeriod(history, null).map { it.dateKey })
+    }
+
 }
+

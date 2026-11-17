@@ -1282,7 +1282,7 @@ private fun AssetsScreen(
     val assetsByTicker = remember(assets) { assets.associateBy { it.ticker.uppercase() } }
     val displayedAssets = remember(assets, accountAssets, selectedAccountId) {
         if (selectedAccountId == ALL_HISTORY_ACCOUNTS) {
-            assets
+            assets.filter { it.quantity > 0.0000001 }
         } else {
             accountAssets.asSequence()
                 .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
@@ -1300,7 +1300,10 @@ private fun AssetsScreen(
             .distinct()
             .sortedDescending()
     }
-    val soldAssets = remember(operations, selectedAccountId, selectedSoldYear, assets) {
+    val saleResultsByOperationId = remember(operations) {
+        calculateSaleLotResults(operations).associateBy { it.operationId }
+    }
+    val soldAssets = remember(operations, selectedAccountId, selectedSoldYear, assets, saleResultsByOperationId) {
         operations.asSequence()
             .filter { it.operationType == "Продажа" }
             .filter { operation ->
@@ -1317,21 +1320,25 @@ private fun AssetsScreen(
             }
             .groupBy({ it.first }, { it.second })
             .map { (ticker, sales) ->
-                val gross = sales.sumOf { (it.quantity * it.price).coerceAtLeast(0.0) }
-                val fees = sales.sumOf { it.commission.coerceAtLeast(0.0) }
+                val results = sales.mapNotNull { saleResultsByOperationId[it.id] }
+                val missingResultQuantity = sales
+                    .filterNot { saleResultsByOperationId.containsKey(it.id) }
+                    .sumOf { it.quantity.coerceAtLeast(0.0) }
+                val unmatched = results.sumOf { it.unmatchedQuantity } + missingResultQuantity
                 SoldAssetSummary(
                     ticker = ticker,
                     name = assets.firstOrNull { it.ticker.equals(ticker, true) }?.name ?: ticker,
                     quantity = sales.sumOf { it.quantity.coerceAtLeast(0.0) },
                     saleCount = sales.size,
-                    grossAmount = gross,
-                    netAmount = (gross - fees).coerceAtLeast(0.0)
+                    realizedProfit = results.sumOf { it.profit },
+                    matchedQuantity = results.sumOf { it.matchedQuantity },
+                    unmatchedQuantity = unmatched,
+                    hasCompleteCostBasis = results.size == sales.size && unmatched <= 0.0000001
                 )
             }
-            .sortedByDescending { it.grossAmount }
+            .sortedByDescending { kotlin.math.abs(it.realizedProfit) }
     }
-    val totalSaleAmount = soldAssets.sumOf { it.grossAmount }
-    val totalSaleNetAmount = soldAssets.sumOf { it.netAmount }
+    val totalRealizedProfit = soldAssets.sumOf { it.realizedProfit }
     val displayedCash = if (selectedAccountId == ALL_HISTORY_ACCOUNTS) cashBalance
         else accountCash.firstOrNull { it.accountId == selectedAccountId }?.balance ?: 0.0
 
@@ -1480,12 +1487,18 @@ private fun AssetsScreen(
                         if (soldAssets.isEmpty()) {
                             Text("За выбранный период продаж не было.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
-                            Text("Всего продано на ${money(totalSaleAmount)} ₽", fontWeight = FontWeight.Bold)
                             Text(
-                                "После комиссий: ${money(totalSaleNetAmount)} ₽",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                "${if (soldAssets.any { !it.hasCompleteCostBasis }) "Результат по сопоставленным лотам" else "Финансовый результат"}: ${if (totalRealizedProfit > 0.0) "+" else ""}${money(totalRealizedProfit)} ₽",
+                                fontWeight = FontWeight.Bold,
+                                color = if (totalRealizedProfit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
+                            if (soldAssets.any { !it.hasCompleteCostBasis }) {
+                                Text(
+                                    "По части продаж история покупок неполная. Прибыль показана только по сопоставленному количеству; недостающая себестоимость не оценивается.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             soldAssets.forEachIndexed { index, sold ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1496,10 +1509,29 @@ private fun AssetsScreen(
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                        if (!sold.hasCompleteCostBasis) {
+                                            Text(
+                                                "Не сопоставлено: ${quantity(sold.unmatchedQuantity)} шт.",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
                                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text("${money(sold.grossAmount)} ₽", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                        Text("После комиссии ${money(sold.netAmount)} ₽", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        if (sold.matchedQuantity > 0.0000001) {
+                                            Text(
+                                                "${if (sold.realizedProfit > 0.0) "+" else ""}${money(sold.realizedProfit)} ₽",
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (sold.realizedProfit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                            )
+                                            Text(
+                                                if (sold.hasCompleteCostBasis) "Прибыль / убыток" else "По сопоставленным лотам",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        } else {
+                                            Text("Нет данных о себестоимости", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                                 if (index != soldAssets.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -2321,8 +2353,10 @@ private data class SoldAssetSummary(
     val name: String,
     val quantity: Double,
     val saleCount: Int,
-    val grossAmount: Double,
-    val netAmount: Double
+    val realizedProfit: Double,
+    val matchedQuantity: Double,
+    val unmatchedQuantity: Double,
+    val hasCompleteCostBasis: Boolean
 )
 
 @Composable
