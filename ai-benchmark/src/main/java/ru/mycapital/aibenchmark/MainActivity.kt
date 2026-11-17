@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var expectedHashInput: EditText
     private lateinit var promptInput: EditText
     private lateinit var modelStatus: TextView
+    private lateinit var hashStatus: TextView
     private lateinit var runtimeStatus: TextView
     private lateinit var outputStatus: TextView
     private lateinit var deviceStatus: TextView
@@ -81,6 +82,8 @@ class MainActivity : Activity() {
             text = "Проверить контрольную сумму"
             setOnClickListener { verifyHash() }
         })
+        hashStatus = body("Проверка ещё не выполнена.")
+        content.addView(hashStatus)
 
         content.addView(title("3. Загрузка модели", 16f))
         loadButton = Button(this).apply {
@@ -167,6 +170,7 @@ class MainActivity : Activity() {
                     selectedModelFile = null
                     actualHash = null
                     modelStatus.text = "Не удалось подготовить файл: " + (it.message ?: it.javaClass.simpleName)
+                    hashStatus.text = "Проверка недоступна: файл не подготовлен."
                 }
         }
     }
@@ -207,12 +211,12 @@ class MainActivity : Activity() {
     private fun verifyHash() {
         val expected = expectedHashInput.text.toString().trim().lowercase(Locale.ROOT)
         val actual = actualHash
-        hashVerified = actual != null && expected.matches(Regex("[0-9a-f]{64}")) && expected == actual
+        hashVerified = Sha256Verifier.matches(expected, actual)
         loadButton.isEnabled = hashVerified
-        modelStatus.text = when {
+        hashStatus.text = when {
             actual == null -> "Сначала выберите GGUF-файл."
-            !expected.matches(Regex("[0-9a-f]{64}")) -> "SHA-256 должен содержать 64 hex-символа."
-            hashVerified -> "SHA-256 совпадает. Можно загружать модель."
+            !Sha256Verifier.isValid(expected) -> "ОШИБКА: ожидаемый SHA-256 должен содержать ровно 64 шестнадцатеричных символа."
+            hashVerified -> "УСПЕХ: SHA-256 совпадает. Загрузка модели разрешена."
             else -> "ОШИБКА: SHA-256 не совпадает. Загрузка заблокирована."
         }
     }
