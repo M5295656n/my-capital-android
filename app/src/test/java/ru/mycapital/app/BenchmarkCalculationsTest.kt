@@ -115,8 +115,16 @@ class BenchmarkCalculationsTest {
             selectBenchmarkHistoryPeriod(history, 1).map { it.dateKey }
         )
         assertEquals(
+            listOf("2026-10-17", "2026-11-17"),
+            selectBenchmarkHistoryPeriod(history, 3).map { it.dateKey }
+        )
+        assertEquals(
             listOf("2026-06-17", "2026-09-17", "2026-10-17", "2026-11-17"),
             selectBenchmarkHistoryPeriod(history, 6).map { it.dateKey }
+        )
+        assertEquals(
+            history.drop(1).map { it.dateKey },
+            selectBenchmarkHistoryPeriod(history, 12).map { it.dateKey }
         )
         assertEquals(history.map { it.dateKey }, selectBenchmarkHistoryPeriod(history, null).map { it.dateKey })
     }
