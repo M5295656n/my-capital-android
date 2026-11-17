@@ -23,6 +23,16 @@ class Sha256VerifierTest {
     }
 
     @Test
+    fun manualConfirmationAllowsLoadOnlyForSameAcknowledgedValues() {
+        assertTrue(Sha256Verifier.isLoadAllowed(validHash, validHash, false, null, null))
+        assertTrue(Sha256Verifier.isLoadAllowed(validHash, "0".repeat(64), true, validHash, "0".repeat(64)))
+        assertFalse(Sha256Verifier.isLoadAllowed(validHash, "0".repeat(64), true, "f".repeat(64), "0".repeat(64)))
+        assertFalse(Sha256Verifier.isLoadAllowed(validHash, "0".repeat(64), true, validHash, validHash))
+        assertFalse(Sha256Verifier.isLoadAllowed("invalid", "0".repeat(64), true, "invalid", "0".repeat(64)))
+        assertFalse(Sha256Verifier.isLoadAllowed(validHash, null, true, validHash, null))
+    }
+
+    @Test
     fun malformedExpectedHashIsRejected() {
         assertFalse(Sha256Verifier.matches("not-a-hash", validHash))
         assertFalse(Sha256Verifier.isValid("a".repeat(63)))
