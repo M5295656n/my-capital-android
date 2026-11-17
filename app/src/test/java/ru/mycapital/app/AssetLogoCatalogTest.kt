@@ -10,6 +10,7 @@ class AssetLogoCatalogTest {
         assertEquals("logos/tbank.svg", AssetLogoCatalog.assetPathFor("tcsg"))
         assertEquals("logos/yandex.svg", AssetLogoCatalog.assetPathFor("YDEX"))
         assertEquals("logos/x5.svg", AssetLogoCatalog.assetPathFor(" x5 "))
+        assertEquals("logos/domrf.svg", AssetLogoCatalog.assetPathFor(" domrf "))
         assertEquals("logos/moex.svg", AssetLogoCatalog.assetPathFor(" MOEX "))
         assertEquals("logos/nornickel.svg", AssetLogoCatalog.assetPathFor("gmkn"))
         assertEquals("logos/novatek.png", AssetLogoCatalog.assetPathFor(" NVTK "))
@@ -25,7 +26,7 @@ class AssetLogoCatalogTest {
     }
 
     @Test fun onlyVerifiedIssuerLogosAreMapped() {
-        listOf("SBER", "SBERP", "T", "TCSG", "YDEX", "X5", "MOEX", "GMKN", "NVTK", "TATN", "TATNP", "GAZP", "LKOH", "ROSN", "IRAO", "MDMG", "OZPH", "RTKM")
+        listOf("SBER", "SBERP", "T", "TCSG", "YDEX", "X5", "DOMRF", "MOEX", "GMKN", "NVTK", "TATN", "TATNP", "GAZP", "LKOH", "ROSN", "IRAO", "MDMG", "OZPH", "RTKM")
             .forEach { assertNotNull("$it should have a verified local logo", AssetLogoCatalog.assetPathFor(it)) }
     }
 
