@@ -109,6 +109,8 @@ class MainActivity : Activity() {
         expectedHashInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {
+                manualHashCheckbox.isEnabled = actualHash != null &&
+                    Sha256Verifier.isValid(text.toString().trim().lowercase(Locale.ROOT))
                 refreshHashAuthorization()
             }
             override fun afterTextChanged(editable: Editable?) = Unit
