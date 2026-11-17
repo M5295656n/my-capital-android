@@ -14,10 +14,9 @@
 
 ## Добавлены в локальную базу
 
-| DOMRF | ДОМ.РФ | `domrf.svg` | Логотип ПАО «ДОМ.РФ»: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dom.RF_Logo.svg), исходный бренд — https://дом.рф/about/ ; векторная версия адаптирована для квадратной карточки |
-
 | Тикер | Компания | Файл | Источник идентификации / атрибуция |
 |---|---|---|---|
+| DOMRF | ДОМ.РФ | `domrf.svg` | Логотип ПАО «ДОМ.РФ»: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dom.RF_Logo.svg), исходный бренд — https://дом.рф/about/ ; векторная версия адаптирована для квадратной карточки |
 | IRAO | Интер РАО | `interrao.svg` | Официальный сайт: https://www.interrao.ru/ ; фирменная версия основана на оранжевом солнечном знаке и синем наименовании группы |
 | MDMG | МД Медикал Груп («Мать и дитя») | `mdmg.svg` | Официальный сайт: https://www.mcclinics.com/ ; фирменная символика «Mother & Child» |
 | OZPH | Озон Фармацевтика | `ozph.svg` | Официальная символика и разрешение на добросовестное использование по CC BY 4.0: https://ozonpharm.ru/news/contacts/ ; исходная публикация: https://commons.wikimedia.org/wiki/File:OZON_MainLogo_RU_big.jpg |
