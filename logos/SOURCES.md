@@ -8,10 +8,9 @@ from text, initials, colored circles, or approximate geometry.
 
 ## Verified assets
 
-| `domrf.svg` | DOMRF | [Dom.RF Logo — Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dom.RF_Logo.svg), source: [official DOM.RF site](https://дом.рф/about/) | Square corporate mark, adapted from the published vector |
-
 | Asset | Tickers | Brand / source reference | Notes |
 |---|---|---|---|
+| `domrf.svg` | DOMRF | [Dom.RF Logo — Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dom.RF_Logo.svg), source: [official DOM.RF site](https://дом.рф/about/) | Square corporate mark, adapted from the published vector |
 | `sber.svg` | SBER, SBERP | [Sberbank Logo 2020 — Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Sberbank_Logo_2020.svg), source identified as Sberbank | Official 2020 symbol, vector |
 | `tbank.svg` | T, TCSG | [T‑Bank official brand materials](https://www.tbank.ru/about/brand/) | 2024 bear mark, vector; official brand page provides original logo downloads |
 | `yandex.svg` | YDEX | [Yandex logo rules](https://yandex.ru/company/rules/logotype) | Official red Я mark, vector |
