@@ -1,7 +1,7 @@
 name: Android CI
 
 concurrency:
-  group: android-ci-${{ github.event.pull_request.head.ref || github.ref }}
+  group: android-ci-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 on:
@@ -50,7 +50,7 @@ jobs:
           fi
 
           cat changed-files.txt
-          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^([^/]+/)?build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
+          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^app/build[.]gradle([.]kts)?$)|(^build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Data-layer or Android integration files changed: instrumented suite enabled."
           else
