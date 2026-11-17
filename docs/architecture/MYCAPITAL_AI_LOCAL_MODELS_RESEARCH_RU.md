@@ -36,7 +36,8 @@
 - можно ограничить контекст, число потоков и размер генерации, измерять RAM и время.
 
 Риски:
-- понадобится аккуратная интеграция JNI/NDK и управление жизненным циклом native-контекста;
+- upstream уже содержит Android Studio пример `examples/llama.android` с Kotlin facade, загрузкой GGUF из `ContentResolver`/private storage и выдачей токенов через Kotlin Flow; нужно изучить и адаптировать, а не писать JNI-обвязку с нуля;
+- native runtime всё равно требует аккуратного управления жизненным циклом контекста и памяти;
 - CPU/GPU ускорение зависит от устройства и конкретной сборки;
 - обновления native runtime требуют регрессионных тестов.
 
@@ -123,7 +124,8 @@
 - Gemma 3 model card: https://ai.google.dev/gemma/docs/core/model_card_3
 - LiteRT-LM: https://developers.google.com/edge/litert-lm
 - LiteRT Android: https://developers.google.com/edge/litert/android
-- llama.cpp Android build documentation: https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md
+- llama.cpp Android integration (Android Studio sample, Kotlin Flow, GGUF loading): https://github.com/ggml-org/llama.cpp/blob/master/docs/android.md
+- llama.cpp Android NDK build documentation: https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md
 
 ## 8. Следующий инженерный шаг
 
