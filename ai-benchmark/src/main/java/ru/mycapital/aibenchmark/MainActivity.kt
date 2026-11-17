@@ -114,10 +114,6 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_MODEL || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        contentResolver.takePersistableUriPermission(
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
         Thread {
             val result = runCatching { calculateSha256(uri) }
             runOnUiThread {
