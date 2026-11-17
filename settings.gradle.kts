@@ -13,4 +13,5 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "MyCapital"
-include(":app", ":ai-benchmark")
+include(":app", ":ai-benchmark", ":llama-android")
+project(":llama-android").projectDir = file("ai-benchmark/llama.cpp/examples/llama.android/lib")
