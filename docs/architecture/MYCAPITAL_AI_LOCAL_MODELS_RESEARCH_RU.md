@@ -25,9 +25,23 @@
 
 Важно: таблица — предварительный отбор по официальным карточкам и доступным форматам, а не сравнительный тест качества. Размеры и требования зависят от конкретной квантизации, длины контекста, KV-cache и runtime.
 
+## 2.1 Уточнение по источнику GGUF и квантизации
+
+Официальная карточка Qwen3-1.7B-GGUF подтверждает Apache-2.0 и совместимость с llama.cpp, но найденная официальная страница не подтверждает наличие официального Q4_K_M файла. Q4_K_M варианты на 1.28 GB обнаружены у сторонних квантовщиков (например, TensorBlock и bartowski). Это не меняет лицензию базовых весов, но добавляет отдельный риск цепочки поставки: сторонний файл нельзя автоматически считать официальным или проверенным производителем.
+
+Для первого теста:
+- предпочесть официальный GGUF-файл, если его точная квантизация и размер удовлетворяют тесту;
+- если нужен Q4_K_M от стороннего квантовщика, закрепить точный commit/revision, URL файла, размер и SHA-256 в manifest; перед использованием сверить исходную модель и репозиторий квантовщика;
+- не загружать файл по плавающему имени latest/main без фиксации revision;
+- SHA-256 защищает от повреждения/подмены после фиксации ожидаемого хеша, но сам по себе не доказывает доброкачественность модели.
+
 ## 3. Runtime
 
 ### llama.cpp (первый кандидат для прототипа)
+
+Важное ограничение официального GUI-примера: examples/llama.android/lib и demo app сейчас выставляют minSdk = 33; библиотека требует minCompileSdk = 35. В MyCapital minSdk = 26, compileSdk = 36. Поэтому нельзя подключать upstream Android library к основному app-модулю без повышения minSdk всего продукта.
+
+Безопасный путь проверки — отдельное standalone benchmark-приложение/модуль с minSdk 33, не включённое в production APK. Основной MyCapital остаётся minSdk 26. После теста можно отдельно решить, как доставлять runtime: условный feature/module с API-level gating, собственная portable NDK-сборка под API 28+ с минимальным Kotlin/JNI bridge, или оставить AI недоступным на старых устройствах. Ни один вариант пока не выбран.
 
 Плюсы:
 - поддерживает Android arm64-v8a через Android NDK;
@@ -59,11 +73,13 @@
 
 ## 4. Предварительное техническое решение
 
-1. Начать с прототипа Qwen3-1.7B-Instruct GGUF Q4 на llama.cpp Android arm64.
+1. Начать с отдельного standalone benchmark app на базе официального examples/llama.android (minSdk 33), без зависимости production app; тестовая модель — Qwen3-1.7B-Instruct GGUF Q4_K_M с зафиксированной версией/хешем.
 2. Параллельно проверить LiteRT-LM только как альтернативный runtime, если есть готовая официальная конвертация выбранной модели.
-3. Не интегрировать Phi-4-mini до измерения памяти и нагрева на целевом телефоне.
-4. Не выбирать Qwen3.5-0.8B для основного анализа без подтверждения качества на русском тест-наборе.
-5. Решение о runtime и модели принимать только после теста на реальном устройстве; до этого приложение не должно показывать, что генеративный анализ доступен.
+3. Не поднимать minSdk MyCapital выше 26. Тестовый модуль должен быть отдельным приложением/Gradle-модулем и не попадать в основной APK.
+4. До фактического теста узнать физическую RAM устройства (не считать RAM Plus физической памятью) и свободное место; у Galaxy A34 существуют разные конфигурации памяти, а точная комплектация SM-A346E по одному model code не установлена.
+5. Не интегрировать Phi-4-mini до измерения памяти и нагрева на целевом телефоне.
+6. Не выбирать Qwen3.5-0.8B для основного анализа без подтверждения качества на русском тест-наборе.
+7. Решение о runtime и модели принимать только после теста на реальном устройстве; до этого приложение не должно показывать, что генеративный анализ доступен.
 
 ## 5. Обязательный тест-набор качества
 
@@ -125,6 +141,9 @@
 - LiteRT-LM: https://developers.google.com/edge/litert-lm
 - LiteRT Android: https://developers.google.com/edge/litert/android
 - llama.cpp Android integration (Android Studio sample, Kotlin Flow, GGUF loading): https://github.com/ggml-org/llama.cpp/blob/master/docs/android.md
+- llama.cpp Android library Gradle config (minSdk 33, minCompileSdk 35): https://github.com/ggml-org/llama.cpp/blob/master/examples/llama.android/lib/build.gradle.kts
+- Official Qwen3-1.7B-GGUF model card: https://huggingface.co/Qwen/Qwen3-1.7B-GGUF
+- Third-party TensorBlock Q4_K_M quantization listing (1.282 GB; not an official Qwen artifact): https://huggingface.co/tensorblock/Qwen_Qwen3-1.7B-GGUF
 - llama.cpp Android NDK build documentation: https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md
 
 ## 8. Следующий инженерный шаг
