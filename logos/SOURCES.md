@@ -8,6 +8,8 @@ from text, initials, colored circles, or approximate geometry.
 
 ## Verified assets
 
+| `domrf.svg` | DOMRF | [Dom.RF Logo — Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dom.RF_Logo.svg), source: [official DOM.RF site](https://дом.рф/about/) | Square corporate mark, adapted from the published vector |
+
 | Asset | Tickers | Brand / source reference | Notes |
 |---|---|---|---|
 | `sber.svg` | SBER, SBERP | [Sberbank Logo 2020 — Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Sberbank_Logo_2020.svg), source identified as Sberbank | Official 2020 symbol, vector |
