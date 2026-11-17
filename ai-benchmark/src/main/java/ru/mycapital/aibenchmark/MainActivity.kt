@@ -71,7 +71,7 @@ class MainActivity : Activity() {
         })
         expectedHashInput = EditText(this).apply {
             hint = "Ожидаемый SHA-256 (64 hex-символа)"
-            singleLine = true
+            setSingleLine(true)
             textSize = 13f
         }
         content.addView(expectedHashInput, matchWidth())
