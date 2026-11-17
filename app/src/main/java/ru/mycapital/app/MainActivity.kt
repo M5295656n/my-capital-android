@@ -1321,13 +1321,17 @@ private fun AssetsScreen(
             .groupBy({ it.first }, { it.second })
             .map { (ticker, sales) ->
                 val results = sales.mapNotNull { saleResultsByOperationId[it.id] }
-                val unmatched = results.sumOf { it.unmatchedQuantity }
+                val missingResultQuantity = sales
+                    .filterNot { saleResultsByOperationId.containsKey(it.id) }
+                    .sumOf { it.quantity.coerceAtLeast(0.0) }
+                val unmatched = results.sumOf { it.unmatchedQuantity } + missingResultQuantity
                 SoldAssetSummary(
                     ticker = ticker,
                     name = assets.firstOrNull { it.ticker.equals(ticker, true) }?.name ?: ticker,
                     quantity = sales.sumOf { it.quantity.coerceAtLeast(0.0) },
                     saleCount = sales.size,
                     realizedProfit = results.sumOf { it.profit },
+                    matchedQuantity = results.sumOf { it.matchedQuantity },
                     unmatchedQuantity = unmatched,
                     hasCompleteCostBasis = results.size == sales.size && unmatched <= 0.0000001
                 )
@@ -1484,7 +1488,7 @@ private fun AssetsScreen(
                             Text("За выбранный период продаж не было.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
                             Text(
-                                "Финансовый результат: ${if (totalRealizedProfit > 0.0) "+" else ""}${money(totalRealizedProfit)} ₽",
+                                "${if (soldAssets.any { !it.hasCompleteCostBasis }) "Результат по сопоставленным лотам" else "Финансовый результат"}: ${if (totalRealizedProfit > 0.0) "+" else ""}${money(totalRealizedProfit)} ₽",
                                 fontWeight = FontWeight.Bold,
                                 color = if (totalRealizedProfit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
@@ -1514,16 +1518,20 @@ private fun AssetsScreen(
                                         }
                                     }
                                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text(
-                                            "${if (sold.realizedProfit > 0.0) "+" else ""}${money(sold.realizedProfit)} ₽",
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (sold.realizedProfit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                        )
-                                        Text(
-                                            if (sold.hasCompleteCostBasis) "Прибыль / убыток" else "По сопоставленным лотам",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        if (sold.matchedQuantity > 0.0000001) {
+                                            Text(
+                                                "${if (sold.realizedProfit > 0.0) "+" else ""}${money(sold.realizedProfit)} ₽",
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (sold.realizedProfit >= 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                            )
+                                            Text(
+                                                if (sold.hasCompleteCostBasis) "Прибыль / убыток" else "По сопоставленным лотам",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        } else {
+                                            Text("Нет данных о себестоимости", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                                 if (index != soldAssets.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -2346,6 +2354,7 @@ private data class SoldAssetSummary(
     val quantity: Double,
     val saleCount: Int,
     val realizedProfit: Double,
+    val matchedQuantity: Double,
     val unmatchedQuantity: Double,
     val hasCompleteCostBasis: Boolean
 )
