@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +62,19 @@ private object IndexBenchmarkMemoryCache {
 @Composable
 internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, dao: PortfolioDao) {
     val ordered = remember(history) { history.sortedBy { it.dateKey } }
+    var selectedPeriod by remember { mutableStateOf("Всё время") }
+    val chartHistory = remember(ordered, selectedPeriod) {
+        val lastDate = ordered.lastOrNull()?.dateKey?.let(LocalDate::parse)
+        val months = when (selectedPeriod) {
+            "1 месяц" -> 1L
+            "3 месяца" -> 3L
+            "6 месяцев" -> 6L
+            "1 год" -> 12L
+            else -> null
+        }
+        val cutoff = if (lastDate != null && months != null) lastDate.minusMonths(months) else null
+        if (cutoff == null) ordered else ordered.filter { !LocalDate.parse(it.dateKey).isBefore(cutoff) }
+    }
     val from = ordered.firstOrNull()?.dateKey
     val till = ordered.lastOrNull()?.dateKey
     val cacheKey = if (from != null && till != null) "$from|$till" else null
@@ -153,9 +169,26 @@ internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, d
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Сравнение с индексами Мосбиржи", style = MaterialTheme.typography.titleLarge)
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf("1 месяц", "3 месяца", "6 месяцев", "1 год", "Всё время").forEach { period ->
+                FilterChip(
+                    selected = selectedPeriod == period,
+                    onClick = { selectedPeriod = period },
+                    label = { Text(period, maxLines = 1) }
+                )
+            }
+        }
         when {
             ordered.size < 2 -> Text(
                 "Сравнение появится после восстановления как минимум двух торговых дней истории операций и котировок.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            chartHistory.size < 2 -> Text(
+                "За выбранный период пока недостаточно торговых дней для сравнения.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -163,7 +196,7 @@ internal fun IndexBenchmarkSection(history: List<PortfolioMarketHistoryPoint>, d
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Text("Загружаю исторические данные MOEX…", style = MaterialTheme.typography.bodySmall)
             }
-            imoex.isNotEmpty() && mcftr.isNotEmpty() -> BenchmarkChart(ordered, imoex, mcftr)
+            imoex.isNotEmpty() && mcftr.isNotEmpty() -> BenchmarkChart(chartHistory, imoex, mcftr)
             else -> Text(error ?: "Исторические ряды пока недоступны.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
