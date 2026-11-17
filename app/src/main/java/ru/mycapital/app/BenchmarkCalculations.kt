@@ -69,3 +69,17 @@ internal fun buildCashFlowAdjustedBenchmarkSeries(
     }
     return result
 }
+
+
+/** Returns the portfolio valuations inside a rolling window ending at the latest available date. */
+internal fun selectBenchmarkHistoryPeriod(
+    history: List<PortfolioMarketHistoryPoint>,
+    months: Long?
+): List<PortfolioMarketHistoryPoint> {
+    val ordered = history.sortedBy { it.dateKey }
+    if (months == null) return ordered
+    require(months > 0) { "Период должен быть положительным" }
+    val lastDate = ordered.lastOrNull()?.dateKey?.let(java.time.LocalDate::parse) ?: return emptyList()
+    val cutoff = lastDate.minusMonths(months)
+    return ordered.filter { !java.time.LocalDate.parse(it.dateKey).isBefore(cutoff) }
+}
