@@ -8,8 +8,8 @@ androidx-junit = "1.3.0"
 coroutines = "1.10.2"
 
 [plugins]
-android-library = { id = "com.android.library", version.ref = "agp" }
-jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+android-library = { id = "com.android.library" }
+jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android" }
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
