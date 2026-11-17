@@ -10,6 +10,7 @@ import android.os.StatFs
 import android.os.SystemClock
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -38,6 +39,7 @@ class MainActivity : Activity() {
     private lateinit var promptInput: EditText
     private lateinit var modelStatus: TextView
     private lateinit var hashStatus: TextView
+    private lateinit var manualHashCheckbox: CheckBox
     private lateinit var runtimeStatus: TextView
     private lateinit var outputStatus: TextView
     private lateinit var deviceStatus: TextView
@@ -50,6 +52,8 @@ class MainActivity : Activity() {
     private var selectedModelFile: File? = null
     private var actualHash: String? = null
     private var hashVerified = false
+    private var manualAcknowledgedExpectedHash: String? = null
+    private var manualAcknowledgedActualHash: String? = null
     private var engine: InferenceEngine? = null
     private var stateObserver: Job? = null
     private var generationJob: Job? = null
@@ -84,6 +88,22 @@ class MainActivity : Activity() {
         })
         hashStatus = body("Проверка ещё не выполнена.")
         content.addView(hashStatus)
+        manualHashCheckbox = CheckBox(this).apply {
+            text = "Я вручную сверил SHA-256 и подтверждаю совпадение"
+            isEnabled = false
+            setOnCheckedChangeListener { _, checked ->
+                if (checked) {
+                    manualAcknowledgedExpectedHash = expectedHashInput.text.toString().trim().lowercase(Locale.ROOT)
+                    manualAcknowledgedActualHash = actualHash
+                } else {
+                    manualAcknowledgedExpectedHash = null
+                    manualAcknowledgedActualHash = null
+                }
+                refreshHashAuthorization()
+            }
+        }
+        content.addView(manualHashCheckbox)
+        content.addView(body("Ручное подтверждение не является проверкой приложения. Перед отметкой самостоятельно сравните ожидаемый SHA-256 с рассчитанным приложением значением выше."))
 
         content.addView(title("3. Загрузка модели", 16f))
         loadButton = Button(this).apply {
@@ -155,6 +175,8 @@ class MainActivity : Activity() {
         if (requestCode != REQUEST_MODEL || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         hashVerified = false
+        manualHashCheckbox.isChecked = false
+        manualHashCheckbox.isEnabled = false
         loadButton.isEnabled = false
         modelStatus.text = "Копирование в приватный кэш и расчёт SHA-256…"
         activityScope.launch {
@@ -163,12 +185,16 @@ class MainActivity : Activity() {
                     selectedModelFile?.takeIf { it != result.first }?.delete()
                     selectedModelFile = result.first
                     actualHash = result.second
+                    manualHashCheckbox.isEnabled = Sha256Verifier.isValid(expectedHashInput.text.toString().trim().lowercase(Locale.ROOT))
+                    refreshHashAuthorization()
                     modelStatus.text = "Файл: " + result.first.name + "\nРазмер: " +
                         formatBytes(result.third) + "\nSHA-256: " + result.second
                 }
                 .onFailure {
                     selectedModelFile = null
                     actualHash = null
+                    manualHashCheckbox.isChecked = false
+                    manualHashCheckbox.isEnabled = false
                     modelStatus.text = "Не удалось подготовить файл: " + (it.message ?: it.javaClass.simpleName)
                     hashStatus.text = "Проверка недоступна: файл не подготовлен."
                 }
@@ -212,12 +238,37 @@ class MainActivity : Activity() {
         val expected = expectedHashInput.text.toString().trim().lowercase(Locale.ROOT)
         val actual = actualHash
         hashVerified = Sha256Verifier.matches(expected, actual)
-        loadButton.isEnabled = hashVerified
+        if (hashVerified) {
+            manualHashCheckbox.isChecked = false
+            manualAcknowledgedExpectedHash = null
+            manualAcknowledgedActualHash = null
+        }
+        manualHashCheckbox.isEnabled = actual != null && Sha256Verifier.isValid(expected)
+        refreshHashAuthorization()
         hashStatus.text = when {
             actual == null -> "Сначала выберите GGUF-файл."
             !Sha256Verifier.isValid(expected) -> "ОШИБКА: ожидаемый SHA-256 должен содержать ровно 64 шестнадцатеричных символа."
             hashVerified -> "УСПЕХ: SHA-256 совпадает. Загрузка модели разрешена."
             else -> "ОШИБКА: SHA-256 не совпадает. Загрузка заблокирована."
+        }
+    }
+
+    private fun refreshHashAuthorization() {
+        val expected = expectedHashInput.text.toString().trim().lowercase(Locale.ROOT)
+        val actual = actualHash
+        val manualConfirmed = manualHashCheckbox.isChecked &&
+            manualAcknowledgedExpectedHash == expected &&
+            manualAcknowledgedActualHash == actual &&
+            actual != null && Sha256Verifier.isValid(expected)
+        val automaticMatch = Sha256Verifier.matches(expected, actual)
+        hashVerified = automaticMatch || manualConfirmed
+        loadButton.isEnabled = hashVerified
+        hashStatus.text = when {
+            actual == null -> "Сначала выберите GGUF-файл."
+            !Sha256Verifier.isValid(expected) -> "Введите ожидаемый SHA-256: ровно 64 шестнадцатеричных символа."
+            automaticMatch -> "УСПЕХ: приложение проверило SHA-256. Загрузка разрешена."
+            manualConfirmed -> "ВНИМАНИЕ: приложение не подтвердило совпадение. Загрузка разрешена по вашему ручному подтверждению."
+            else -> "SHA-256 не подтверждён. Выполните встроенную проверку или вручную сверьте оба значения и подтвердите совпадение."
         }
     }
 
