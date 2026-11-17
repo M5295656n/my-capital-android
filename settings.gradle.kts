@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "MyCapital"
-include(":app")
+include(":app", ":ai-benchmark")
