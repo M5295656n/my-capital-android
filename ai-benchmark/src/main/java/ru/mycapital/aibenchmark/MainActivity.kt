@@ -223,8 +223,18 @@ class MainActivity : Activity() {
             runtimeStatus.text = "Сначала выберите GGUF и подтвердите SHA-256."
             return
         }
+        val memoryManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo().also(memoryManager::getMemoryInfo)
+        val requiredHeadroom = (file.length() * MIN_FREE_RAM_FACTOR).toLong() + MIN_FREE_RAM_RESERVE_BYTES
+        if (memoryInfo.lowMemory || memoryInfo.availMem < requiredHeadroom) {
+            runtimeStatus.text = "Загрузка заблокирована: доступно " + formatBytes(memoryInfo.availMem) +
+                ", ориентировочно требуется не менее " + formatBytes(requiredHeadroom) +
+                ". Это предварительная оценка, а не гарантия отсутствия OOM."
+            refreshDeviceStatus()
+            return
+        }
         loadButton.isEnabled = false
-        runtimeStatus.text = "Инициализация нативного движка…"
+        runtimeStatus.text = "Проверка памяти пройдена. Инициализация нативного движка…"
         activityScope.launch {
             try {
                 val activeEngine = engine ?: AiChat.getInferenceEngine(applicationContext).also {
@@ -279,20 +289,20 @@ class MainActivity : Activity() {
         runtimeStatus.text = "Генерация…"
         generationJob = activityScope.launch {
             val started = SystemClock.elapsedRealtime()
-            var firstToken = 0L
-            var count = 0
+            var firstChunk = 0L
+            var chunkCount = 0
             try {
-                activeEngine.sendUserPrompt(prompt, MAX_GENERATED_TOKENS).collect { token ->
-                    if (firstToken == 0L) firstToken = SystemClock.elapsedRealtime()
-                    count++
-                    outputStatus.append(token)
+                activeEngine.sendUserPrompt(prompt, MAX_GENERATED_TOKENS).collect { chunk ->
+                    if (firstChunk == 0L) firstChunk = SystemClock.elapsedRealtime()
+                    chunkCount++
+                    outputStatus.append(chunk)
                 }
                 val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
-                val ttft = if (firstToken == 0L) "нет" else (firstToken - started).toString() + " мс"
-                val speed = count * 1000.0 / elapsed
+                val ttft = if (firstChunk == 0L) "нет" else (firstChunk - started).toString() + " мс"
+                val speed = chunkCount * 1000.0 / elapsed
                 runtimeStatus.text = String.format(
-                    Locale.ROOT, "Готово · токенов: %d · TTFT: %s · поток: %.2f токен/с · время: %.2f с",
-                    count, ttft, speed, elapsed / 1000.0
+                    Locale.ROOT, "Готово · фрагментов потока: %d · время до первого фрагмента: %s · скорость потока: %.2f фрагм./с · время: %.2f с",
+                    chunkCount, ttft, speed, elapsed / 1000.0
                 )
                 refreshDeviceStatus()
             } catch (error: CancellationException) {
@@ -458,5 +468,8 @@ class MainActivity : Activity() {
         private const val REQUEST_MODEL = 41
         private const val MAX_PROMPT_LENGTH = 6_000
         private const val MAX_GENERATED_TOKENS = 256
+        // Conservative preflight heuristic only; native runtime overhead varies by model.
+        private const val MIN_FREE_RAM_FACTOR = 1.5
+        private const val MIN_FREE_RAM_RESERVE_BYTES = 512L * 1024L * 1024L
     }
 }
