@@ -27,4 +27,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
+    implementation(project(":llama-android"))
+    implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
 }

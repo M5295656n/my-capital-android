@@ -1,7 +1,7 @@
 name: Android CI
 
 concurrency:
-  group: android-ci-${{ github.ref }}
+  group: android-ci-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 on:
@@ -9,7 +9,7 @@ on:
     branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-ai-news-analysis-2026-11-17, feature/ai-local-benchmark-harness ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, feature/mycapital-ai-news-analysis-2026-11-17 ]
+    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, feature/mycapital-ai-news-analysis-2026-11-17, feature/ai-local-benchmark-harness ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 
@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
       - name: Decide whether Android instrumented tests are required
         id: filter
         env:
@@ -49,7 +50,7 @@ jobs:
           fi
 
           cat changed-files.txt
-          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^([^/]+/)?build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
+          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^app/build[.]gradle([.]kts)?$)|(^build[.]gradle([.]kts)?$)' changed-files.txt; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Data-layer or Android integration files changed: instrumented suite enabled."
           else
@@ -64,6 +65,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -71,6 +74,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
       - name: Enable KVM for hardware-accelerated Android Emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -90,7 +95,7 @@ jobs:
             set -eu
             adb wait-for-device
             READY=0; for attempt in $(seq 1 36); do BOOT="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"; ACTIVITY="$(adb shell service check activity 2>/dev/null || true)"; PACKAGE="$(adb shell service check package 2>/dev/null || true)"; if [ "$BOOT" = "1" ] && echo "$ACTIVITY" | grep -q found && echo "$PACKAGE" | grep -q found; then READY=1; break; fi; echo "Android framework services are not ready yet (attempt $attempt/36)."; sleep 5; done; if [ "$READY" -ne 1 ]; then echo "Android framework did not become healthy; collecting diagnostics."; adb shell getprop || true; adb shell service list || true; exit 1; fi; echo "Android framework is ready; starting instrumented tests."
-            gradle connectedDebugAndroidTest --stacktrace
+            gradle :app:connectedDebugAndroidTest --stacktrace
       - name: Upload instrumented test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -104,6 +109,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -111,6 +118,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+      - name: Accept Android SDK licenses and install llama.cpp toolchain
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.13113456" "cmake;3.31.6"
       - name: Restore release signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -119,6 +130,17 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/my-capital-signing.jks
       - name: Build isolated AI benchmark app
         run: gradle :ai-benchmark:assembleDebug :ai-benchmark:assembleRelease --stacktrace
+      - name: Verify isolated benchmark APK output
+        run: |
+          test -s ai-benchmark/build/outputs/apk/debug/ai-benchmark-debug.apk
+          ls -lh ai-benchmark/build/outputs/apk/debug/ai-benchmark-debug.apk
+      - name: Upload isolated AI benchmark debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mycapital-ai-benchmark-debug-apk
+          path: ai-benchmark/build/outputs/apk/debug/ai-benchmark-debug.apk
+          if-no-files-found: error
       - name: Run unit tests
         run: gradle testDebugUnitTest
       - name: Build signed release APK
