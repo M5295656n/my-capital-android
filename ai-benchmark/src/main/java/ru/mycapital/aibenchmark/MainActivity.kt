@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Debug
 import android.os.StatFs
 import android.os.SystemClock
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
@@ -104,6 +106,13 @@ class MainActivity : Activity() {
         }
         content.addView(manualHashCheckbox)
         content.addView(body("Ручное подтверждение не является проверкой приложения. Перед отметкой самостоятельно сравните ожидаемый SHA-256 с рассчитанным приложением значением выше."))
+        expectedHashInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {
+                refreshHashAuthorization()
+            }
+            override fun afterTextChanged(editable: Editable?) = Unit
+        })
 
         content.addView(title("3. Загрузка модели", 16f))
         loadButton = Button(this).apply {
@@ -256,18 +265,18 @@ class MainActivity : Activity() {
     private fun refreshHashAuthorization() {
         val expected = expectedHashInput.text.toString().trim().lowercase(Locale.ROOT)
         val actual = actualHash
-        val manualConfirmed = manualHashCheckbox.isChecked &&
-            manualAcknowledgedExpectedHash == expected &&
-            manualAcknowledgedActualHash == actual &&
-            actual != null && Sha256Verifier.isValid(expected)
+        val manualConfirmed = manualHashCheckbox.isChecked
         val automaticMatch = Sha256Verifier.matches(expected, actual)
-        hashVerified = automaticMatch || manualConfirmed
+        hashVerified = Sha256Verifier.isLoadAllowed(
+            expected, actual, manualConfirmed, manualAcknowledgedExpectedHash, manualAcknowledgedActualHash
+        )
+        val manualAccepted = hashVerified && !automaticMatch
         loadButton.isEnabled = hashVerified
         hashStatus.text = when {
             actual == null -> "Сначала выберите GGUF-файл."
             !Sha256Verifier.isValid(expected) -> "Введите ожидаемый SHA-256: ровно 64 шестнадцатеричных символа."
             automaticMatch -> "УСПЕХ: приложение проверило SHA-256. Загрузка разрешена."
-            manualConfirmed -> "ВНИМАНИЕ: приложение не подтвердило совпадение. Загрузка разрешена по вашему ручному подтверждению."
+            manualAccepted -> "ВНИМАНИЕ: приложение не подтвердило совпадение. Загрузка разрешена по вашему ручному подтверждению."
             else -> "SHA-256 не подтверждён. Выполните встроенную проверку или вручную сверьте оба значения и подтвердите совпадение."
         }
     }
