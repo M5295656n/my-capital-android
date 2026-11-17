@@ -1,7 +1,7 @@
 name: Android CI
 
 concurrency:
-  group: android-ci-${{ github.ref }}
+  group: android-ci-${{ github.event.pull_request.head.ref || github.ref }}
   cancel-in-progress: true
 
 on:
@@ -74,10 +74,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Accept Android SDK licenses and install llama.cpp toolchain
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.13113456" "cmake;3.31.6"
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
       - name: Enable KVM for hardware-accelerated Android Emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -97,7 +95,7 @@ jobs:
             set -eu
             adb wait-for-device
             READY=0; for attempt in $(seq 1 36); do BOOT="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"; ACTIVITY="$(adb shell service check activity 2>/dev/null || true)"; PACKAGE="$(adb shell service check package 2>/dev/null || true)"; if [ "$BOOT" = "1" ] && echo "$ACTIVITY" | grep -q found && echo "$PACKAGE" | grep -q found; then READY=1; break; fi; echo "Android framework services are not ready yet (attempt $attempt/36)."; sleep 5; done; if [ "$READY" -ne 1 ]; then echo "Android framework did not become healthy; collecting diagnostics."; adb shell getprop || true; adb shell service list || true; exit 1; fi; echo "Android framework is ready; starting instrumented tests."
-            gradle connectedDebugAndroidTest --stacktrace
+            gradle :app:connectedDebugAndroidTest --stacktrace
       - name: Upload instrumented test results
         if: always()
         uses: actions/upload-artifact@v4
