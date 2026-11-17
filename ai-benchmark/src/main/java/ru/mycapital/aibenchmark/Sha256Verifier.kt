@@ -8,4 +8,16 @@ internal object Sha256Verifier {
 
     fun matches(expected: String, actual: String?): Boolean =
         actual != null && isValid(expected) && expected == actual
+
+    fun isLoadAllowed(
+        expected: String,
+        actual: String?,
+        manualConfirmed: Boolean,
+        acknowledgedExpected: String?,
+        acknowledgedActual: String?
+    ): Boolean {
+        if (matches(expected, actual)) return true
+        return manualConfirmed && actual != null && isValid(expected) &&
+            acknowledgedExpected == expected && acknowledgedActual == actual
+    }
 }
