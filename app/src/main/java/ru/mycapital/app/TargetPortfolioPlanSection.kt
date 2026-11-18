@@ -192,7 +192,6 @@ private fun TargetPortfolioPositionDialog(
     var ticker by remember(initial?.ticker) { mutableStateOf(initial?.ticker.orEmpty()) }
     var name by remember(initial?.ticker) { mutableStateOf(initial?.name.orEmpty()) }
     var weight by remember(initial?.ticker) { mutableStateOf(initial?.targetWeight?.let(::targetWeightText)?.replace("%", "") ?: "") }
-    var validationError by remember { mutableStateOf<String?>(null) }
     val normalizedTicker = ticker.trim().uppercase()
     val parsedWeight = parseDecimalInput(weight)
     val duplicate = existing.any { it.ticker != initial?.ticker && it.ticker.equals(normalizedTicker, true) }
@@ -203,11 +202,10 @@ private fun TargetPortfolioPositionDialog(
         title = { Text(if (initial == null) "Добавить акцию" else "Изменить ${initial.ticker}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(ticker, { ticker = it; validationError = null }, label = { Text("Тикер") }, singleLine = true)
+                OutlinedTextField(ticker, { ticker = it }, label = { Text("Тикер") }, singleLine = true)
                 OutlinedTextField(name, { name = it }, label = { Text("Название компании") }, singleLine = true)
-                OutlinedTextField(weight, { weight = it; validationError = null }, label = { Text("Целевой вес, %") }, singleLine = true)
+                OutlinedTextField(weight, { weight = it }, label = { Text("Целевой вес, %") }, singleLine = true)
                 if (duplicate) Text("Такая акция уже есть в плане.", color = MaterialTheme.colorScheme.error)
-                validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
