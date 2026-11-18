@@ -965,78 +965,87 @@ val annualizedReturn = remember(history) {
                     val investedValues = history.map { it.investedCapital.coerceAtLeast(0.0) }
                     val maxValue = (portfolioValues + investedValues).maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
                     val span = maxValue
-                    val axisValues = (0..3).map { maxValue - span * it / 3.0 }
-                    val portfolioColor = Color(0xFF2698FF)
-                    val investedColor = Color(0xFF8798B5)
-                    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
+                    val portfolioColor = Color(0xFF168BFF)
+                    val investedColor = Color(0xFFAEB7C4)
+                    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
                     val axisColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val chartDates = listOf(0, history.lastIndex / 3, history.lastIndex * 2 / 3, history.lastIndex).distinct()
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(
-                            Modifier.width(43.dp).height(174.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            axisValues.forEach { value ->
-                                Text(money(value).substringBefore(','), fontSize = 9.sp, color = axisColor, maxLines = 1)
-                            }
+                    Canvas(Modifier.fillMaxWidth().height(174.dp)) {
+                        val left = 0f
+                        val right = size.width
+                        val top = 7f
+                        val bottom = size.height - 7f
+                        for (i in 0..4) {
+                            val y = top + (bottom - top) * i / 4f
+                            drawLine(
+                                gridColor,
+                                Offset(left, y),
+                                Offset(right, y),
+                                1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 5.dp.toPx()))
+                            )
                         }
-                        Canvas(Modifier.weight(1f).height(174.dp)) {
-                            val left = 2f
-                            val right = size.width - 2f
-                            val top = 7f
-                            val bottom = size.height - 7f
-                            for (i in 0..4) {
-                                val y = top + (bottom - top) * i / 4f
-                                drawLine(gridColor, Offset(left, y), Offset(right, y), 1.dp.toPx())
-                            }
-                            for (i in 0..5) {
-                                val x = left + (right - left) * i / 5f
-                                drawLine(gridColor.copy(alpha = 0.55f), Offset(x, top), Offset(x, bottom), 1.dp.toPx())
-                            }
-                            fun makePath(series: List<Double>): Path {
-                                return Path().apply {
-                                    series.forEachIndexed { index, value ->
-                                        val x = left + (right - left) * index / (series.size - 1).coerceAtLeast(1).toFloat()
-                                        val y = bottom - (value / span).toFloat() * (bottom - top)
-                                        if (index == 0) moveTo(x, y) else lineTo(x, y)
-                                    }
-                                }
-                            }
-                            if (portfolioValues.size >= 2) {
-                                val area = makePath(portfolioValues).apply {
-                                    lineTo(right, bottom)
-                                    lineTo(left, bottom)
-                                    close()
-                                }
-                                drawPath(
-                                    area,
-                                    brush = Brush.verticalGradient(
-                                        colors = listOf(portfolioColor.copy(alpha = 0.25f), portfolioColor.copy(alpha = 0.015f)),
-                                        startY = top,
-                                        endY = bottom
-                                    )
+                        fun makePath(series: List<Double>): Path {
+                            val points = series.mapIndexed { index, value ->
+                                Offset(
+                                    left + (right - left) * index / (series.size - 1).coerceAtLeast(1).toFloat(),
+                                    bottom - (value / span).toFloat() * (bottom - top)
                                 )
                             }
-                            fun drawSeries(series: List<Double>, color: Color, dashed: Boolean) {
-                                if (series.size < 2) return
-                                drawPath(
-                                    makePath(series),
-                                    color = color,
-                                    style = Stroke(
-                                        width = if (dashed) 2.dp.toPx() else 3.dp.toPx(),
-                                        cap = StrokeCap.Round,
-                                        pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx())) else null
+                            return Path().apply {
+                                if (points.isEmpty()) return@apply
+                                moveTo(points.first().x, points.first().y)
+                                for (index in 0 until points.lastIndex) {
+                                    val previous = points.getOrElse(index - 1) { points[index] }
+                                    val current = points[index]
+                                    val next = points[index + 1]
+                                    val following = points.getOrElse(index + 2) { next }
+                                    val dx = next.x - current.x
+                                    cubicTo(
+                                        current.x + (next.x - previous.x) / 6f,
+                                        current.y + (next.y - previous.y) / 6f,
+                                        next.x - (following.x - current.x) / 6f,
+                                        next.y - (following.y - current.y) / 6f,
+                                        next.x,
+                                        next.y
                                     )
-                                )
+                                }
                             }
-                            drawSeries(investedValues, investedColor, true)
-                            drawSeries(portfolioValues, portfolioColor, false)
-                            val portfolioY = bottom - (portfolioValues.last() / span).toFloat() * (bottom - top)
-                            drawCircle(portfolioColor, 4.dp.toPx(), Offset(right, portfolioY))
                         }
+                        if (portfolioValues.size >= 2) {
+                            val area = makePath(portfolioValues).apply {
+                                lineTo(right, bottom)
+                                lineTo(left, bottom)
+                                close()
+                            }
+                            drawPath(
+                                area,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(portfolioColor.copy(alpha = 0.22f), portfolioColor.copy(alpha = 0.01f)),
+                                    startY = top,
+                                    endY = bottom
+                                )
+                            )
+                        }
+                        fun drawSeries(series: List<Double>, color: Color, dashed: Boolean) {
+                            if (series.size < 2) return
+                            drawPath(
+                                makePath(series),
+                                color = color,
+                                style = Stroke(
+                                    width = if (dashed) 2.2.dp.toPx() else 3.6.dp.toPx(),
+                                    cap = StrokeCap.Round,
+                                    pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx())) else null
+                                )
+                            )
+                        }
+                        drawSeries(investedValues, investedColor, true)
+                        drawSeries(portfolioValues, portfolioColor, false)
+                        val portfolioY = bottom - (portfolioValues.last() / span).toFloat() * (bottom - top)
+                        drawCircle(portfolioColor, 4.5.dp.toPx(), Offset(right - 1.dp.toPx(), portfolioY))
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(start = 43.dp),
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         chartDates.forEach { index ->
