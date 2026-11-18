@@ -23,7 +23,7 @@ internal fun AppBottomNavigationBar(
     ) {
         listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.TargetPortfolio, Screen.Operations).forEach { screen ->
             NavigationBarItem(
-                selected = selected == screen || (screen == Screen.Operations && selected == Screen.Operations),
+                selected = selected == screen,
                 onClick = { onSelect(screen) },
                 icon = {
                     if (screen == Screen.Analytics) AnalyticsNavigationIcon()

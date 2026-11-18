@@ -50,5 +50,12 @@ internal fun AppMessageDialogs(
             confirmButton = { TextButton(onClick = { onDismissImportError() }) { Text("Понятно") } }
         )
     }
-
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = onDismissError,
+            title = { Text("Операция не выполнена") },
+            text = { Text(errorMessage) },
+            confirmButton = { TextButton(onClick = onDismissError) { Text("Понятно") } }
+        )
+    }
 }

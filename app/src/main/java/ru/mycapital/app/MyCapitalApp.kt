@@ -506,14 +506,6 @@ internal fun MyCapitalApp() {
             }
         }
     }
-    if (errorMessage != null) {
-        AlertDialog(
-            onDismissRequest = { errorMessage = null },
-            title = { Text("Операция не выполнена") },
-            text = { Text(errorMessage.orEmpty()) },
-            confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("Понятно") } }
-        )
-    }
     if (assetToDelete != null) {
         val target = assetToDelete!!
         AlertDialog(
