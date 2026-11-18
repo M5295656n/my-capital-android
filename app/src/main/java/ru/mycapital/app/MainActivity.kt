@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
 private fun MyCapitalApp() {
     val context = LocalContext.current
     val dao = remember { PortfolioDatabase.getInstance(context).portfolioDao() }

@@ -26,8 +26,6 @@ internal enum class Screen(val title: String, val icon: androidx.compose.ui.grap
 }
 
 @Composable
-
-@Composable
 internal fun AnalyticsNavigationIcon() {
     val tint = LocalContentColor.current
     Canvas(Modifier.size(24.dp)) {
@@ -62,5 +60,3 @@ internal fun AnalyticsNavigationIcon() {
         )
     }
 }
-
-@Composable
