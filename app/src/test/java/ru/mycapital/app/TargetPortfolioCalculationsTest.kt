@@ -57,7 +57,7 @@ class TargetPortfolioCalculationsTest {
     @Test
     fun targetWeightMustTotalExactlyOneHundredPercent() {
         assertTrue(isTargetPortfolioWeightTotalValid(100.0))
-        assertTrue(isTargetPortfolioWeightTotalValid(99.9995))
+        assertFalse(isTargetPortfolioWeightTotalValid(99.9995))
         assertFalse(isTargetPortfolioWeightTotalValid(99.0))
         assertFalse(isTargetPortfolioWeightTotalValid(101.0))
     }
