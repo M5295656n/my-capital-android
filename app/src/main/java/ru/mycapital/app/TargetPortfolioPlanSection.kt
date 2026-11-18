@@ -85,7 +85,7 @@ internal fun TargetPortfolioPlanSection(assets: List<AssetEntity>) {
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Стоимость всех акций", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${money(summary.equityValue)} ₽", fontWeight = FontWeight.Bold)
+                    Text("${targetMoney(summary.equityValue)} ₽", fontWeight = FontWeight.Bold)
                 }
             }
             Box(Modifier.fillMaxWidth().height(7.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
@@ -220,3 +220,5 @@ private fun TargetPortfolioPositionDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
 }
+
+private fun targetMoney(value: Double): String = String.format(Locale("ru", "RU"), "%,.0f", value)
