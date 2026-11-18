@@ -216,13 +216,13 @@ class PortfolioMarketHistoryTest {
     }
 
     @Test
-    fun fullySoldInstrumentWithoutStoredTypeIsReportedUnavailableInsteadOfAssumedShare() = kotlinx.coroutines.runBlocking {
+    fun fullySoldInstrumentWithoutStoredTypeIsResolvedByMarketHistoryLoader() = kotlinx.coroutines.runBlocking {
         val buyDate = LocalDate.parse("2026-02-02")
         val sellDate = LocalDate.parse("2026-02-03")
         var priceLoaderCalled = false
         val result = buildPortfolioMarketHistory(
-            // A fully sold instrument is absent from current assets; operation rows
-            // do not retain assetType, so the history builder must not guess.
+            // Operations do not persist assetType. The real MOEX loader resolves
+            // the instrument from exchange metadata/candles instead of guessing.
             assets = emptyList(),
             operations = listOf(
                 operation(1, "Пополнение", "2026-02-01", 1.0, 500.0, ticker = "RUB"),
@@ -232,14 +232,15 @@ class PortfolioMarketHistoryTest {
             currentCash = 518.0,
             range = PortfolioHistoryRange.ALL,
             throughDate = sellDate
-        ) { _, _, _, _ ->
+        ) { _, type, _, _ ->
             priceLoaderCalled = true
+            assertEquals("Неизвестно", type)
             listOf(MoexDailyClose(buyDate, 100.0), MoexDailyClose(sellDate, 110.0))
         }
 
-        assertFalse(priceLoaderCalled)
-        assertTrue(result.points.isEmpty())
-        assertTrue(result.unavailableTickers.contains("SBER"))
+        assertTrue(priceLoaderCalled)
+        assertFalse(result.points.isEmpty())
+        assertFalse(result.unavailableTickers.contains("SBER"))
     }
 
     @Test
