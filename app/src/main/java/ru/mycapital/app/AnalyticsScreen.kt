@@ -21,6 +21,7 @@ import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.PortfolioCompositionSnapshotEntity
 import ru.mycapital.app.data.PortfolioDao
 import ru.mycapital.app.data.PortfolioSnapshotEntity
+import ru.mycapital.app.data.calculateReceivedPayoutTotals
 
 @Composable
 internal fun AnalyticsScreen(
@@ -104,11 +105,11 @@ internal fun AnalyticsScreen(
     val invested = analyticsAssets.sumOf { it.quantity * it.averagePrice }
     val unrealized = analyticsMarketValue - invested
     val realizedResult = calculateRealizedTradingResult(analyticsOperations)
-    val receivedPayouts = analyticsPayouts.filter { it.status == "RECEIVED" }
-    val receivedDividends = receivedPayouts.filter { it.payoutType == "Дивиденд" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
-    val receivedCoupons = receivedPayouts.filter { it.payoutType == "Купон" }.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
-    val payoutIncome = receivedDividends + receivedCoupons
-    val totalInvestmentResult = unrealized + realizedResult.profit + payoutIncome
+    val receivedPayoutTotals = calculateReceivedPayoutTotals(analyticsPayouts)
+    val receivedDividends = receivedPayoutTotals.dividends
+    val receivedCoupons = receivedPayoutTotals.coupons
+    val receivedPrincipalReturns = receivedPayoutTotals.returnedPrincipal
+    val totalInvestmentResult = unrealized + realizedResult.profit + receivedPayoutTotals.totalNetAmount
     val totalValue = analyticsMarketValue + analyticsCash
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     LazyColumn(
@@ -196,6 +197,10 @@ internal fun AnalyticsScreen(
                         Text("Купоны")
                         Text("${money(receivedCoupons)} ₽", fontWeight = FontWeight.SemiBold)
                     }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Возврат номинала облигаций")
+                        Text("${money(receivedPrincipalReturns)} ₽", fontWeight = FontWeight.SemiBold)
+                    }
                     HorizontalDivider()
                     Text("Общий результат с учётом продаж и выплат", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
@@ -204,7 +209,7 @@ internal fun AnalyticsScreen(
                         fontWeight = FontWeight.Bold,
                         color = if (totalInvestmentResult >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
-                    Text("Сумма нереализованного результата по текущим остаткам, реализованного результата по FIFO и полученных выплат после налога. Если история покупок неполная, итог по сделкам также неполный. Не включает налоги и расходы, не отражённые в операциях.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Сумма нереализованного результата по текущим остаткам, реализованного результата по FIFO, полученных дивидендов и купонов после налога, а также возвращённого номинала облигаций. Погашение и амортизация не считаются доходом, но учитываются в общем денежном результате. Если история покупок неполная, итог по сделкам также неполный.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

@@ -28,7 +28,7 @@ import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
 import ru.mycapital.app.data.PortfolioSnapshotEntity
-import ru.mycapital.app.data.isIncomePayoutType
+import ru.mycapital.app.data.calculateReceivedPayoutTotals
 
 @Composable
 internal fun OverviewScreen(
@@ -66,9 +66,8 @@ internal fun OverviewScreen(
         }
     }
     // Redemption and amortization return invested principal; they are not income.
-    val receivedPayouts = payouts.filter {
-        it.status == "RECEIVED" && isIncomePayoutType(it.payoutType)
-    }.sumOf { (it.reportedNetAmount ?: (it.totalAmount - it.taxAmount)).coerceAtLeast(0.0) }
+    // For lifetime P/L without a deposit ledger, include both income and returned bond principal.
+    val receivedPayouts = calculateReceivedPayoutTotals(payouts).totalNetAmount
     val realized = calculateRealizedTradingResult(operations).profit
     val openCost = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = total - openCost

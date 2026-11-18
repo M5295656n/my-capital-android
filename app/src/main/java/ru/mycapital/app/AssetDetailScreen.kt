@@ -73,7 +73,7 @@ import ru.mycapital.app.data.PortfolioDatabase
 import ru.mycapital.app.data.PortfolioBackup
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
-import ru.mycapital.app.data.isIncomePayoutType
+import ru.mycapital.app.data.calculateReceivedPayoutTotals
 import ru.mycapital.app.data.PortfolioRepository
 import ru.mycapital.app.data.PortfolioSnapshotEntity
 import ru.mycapital.app.data.BrokerAccountEntity
@@ -121,7 +121,11 @@ internal fun AssetDetailScreen(
             error = e.message ?: "Не удалось загрузить котировки"
         } finally { loading = false }
     }
-    val price = candles.lastOrNull()?.close ?: asset.currentPrice
+    // Portfolio valuation uses the same current quote as the asset list and dashboard.
+    // Historical MOEX closes remain the fallback only when no usable current quote exists.
+    val price = asset.currentPrice.takeIf { it.isFinite() && it > 0.0 }
+        ?: candles.lastOrNull()?.close?.takeIf { it.isFinite() && it > 0.0 }
+        ?: 0.0
     val forwardDividendYieldPercent = remember(assetPayouts, price, asset.ticker) {
         ru.mycapital.app.data.calculateForwardDividendYieldPercentFromPayouts(
             assetPayouts,
@@ -139,7 +143,7 @@ internal fun AssetDetailScreen(
         if (op.quantity > 0.0) remaining / op.quantity * (op.quantity * op.price + op.commission) else 0.0
     }
     val actual = assetPayouts.filter { it.actualDate != null || it.status.equals("RECEIVED", true) }
-    val received = actual.sumOf { it.reportedNetAmount ?: (it.totalAmount - it.taxAmount) }
+    val received = calculateReceivedPayoutTotals(assetPayouts).totalNetAmount
     val fees = trades.sumOf { it.commission }
     val value = asset.quantity * price
     val sales = trades.filter { it.operationType == "Продажа" }.sumOf { it.quantity * it.price - it.commission }
