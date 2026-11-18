@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.BrokerAccountEntity
@@ -23,7 +24,7 @@ private fun operationQuantity(value: Double): String =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AccountHistoryFilter(
+internal fun AccountHistoryFilter(
     accounts: List<ru.mycapital.app.data.BrokerAccountEntity>,
     selectedAccountId: String,
     includeUnassigned: Boolean = true,
