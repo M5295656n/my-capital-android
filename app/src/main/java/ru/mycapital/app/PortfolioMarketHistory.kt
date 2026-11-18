@@ -96,7 +96,8 @@ internal suspend fun buildPortfolioMarketHistory(
         val type = asset.assetType.lowercase()
         type.contains("акци") || type.contains("фонд") || type.contains("пай") ||
             type.contains("облиг") || type.contains("офз") ||
-            type.contains("золот") || type.contains("драгмет")
+            type.contains("золот") || type.contains("драгмет") ||
+            type.contains("другое") || type.contains("неизвест")
     }
     val unavailable = relevant.map { it.first }.filter { ticker ->
         supported.none { it.first == ticker }
