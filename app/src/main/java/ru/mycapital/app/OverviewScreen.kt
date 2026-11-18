@@ -68,19 +68,22 @@ internal fun OverviewScreen(
     // Redemption and amortization return invested principal; they are not income.
     // For lifetime P/L without a deposit ledger, include both income and returned bond principal.
     val receivedPayouts = calculateReceivedPayoutTotals(payouts).totalNetAmount
+    val redeemedCostBasis = calculateRedeemedPositionCostBasis(assets, operations, payouts)
     val realized = calculateRealizedTradingResult(operations).profit
     val openCost = assets.sumOf { it.quantity * it.averagePrice }
     val unrealized = total - openCost
+    val resultWithoutExternalFlowLedger = unrealized + realized + receivedPayouts - redeemedCostBasis
     val totalProfit = if (operations.any { it.operationType == "Пополнение" || it.operationType == "Вывод" }) {
         portfolioTotal - netContributions
     } else {
         // Without a recorded funding history, avoid presenting cost-basis-only
         // unrealized P/L as lifetime profit.
-        unrealized + realized + receivedPayouts
+        resultWithoutExternalFlowLedger
     }
     val profitPercent = when {
         netContributions > 0.0 -> totalProfit / netContributions * 100.0
-        openCost > 0.0 -> (unrealized + realized + receivedPayouts) / openCost * 100.0
+        openCost + redeemedCostBasis > 0.0 ->
+            resultWithoutExternalFlowLedger / (openCost + redeemedCostBasis) * 100.0
         else -> null
     }
     val history = historyResult.points
