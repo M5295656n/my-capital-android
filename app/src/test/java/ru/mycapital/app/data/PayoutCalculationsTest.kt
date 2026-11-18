@@ -48,8 +48,8 @@ class PayoutCalculationsTest {
             )
         )
 
-        assertEquals(1246.0, totals.totalNetAmount, 0.000001)
-        assertEquals(36.0, totals.investmentIncome, 0.000001)
+        assertEquals(1226.0, totals.totalNetAmount, 0.000001)
+        assertEquals(26.0, totals.investmentIncome, 0.000001)
         assertEquals(9.0, totals.dividends, 0.000001)
         assertEquals(17.0, totals.coupons, 0.000001)
         assertEquals(1200.0, totals.returnedPrincipal, 0.000001)
