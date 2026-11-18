@@ -157,6 +157,10 @@ internal fun MyCapitalApp() {
     var backupCreatePasswordConfirm by remember { mutableStateOf("") }
     var backupRestorePassword by remember { mutableStateOf("") }
     var backupResultMessage by remember { mutableStateOf<String?>(null) }
+    val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
+    val brokerReportImportCoordinator = remember(repository, context) {
+        BrokerReportImportCoordinator(context.contentResolver, repository)
+    }
     val reportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             isParsingReport = true
@@ -206,10 +210,6 @@ internal fun MyCapitalApp() {
     }
     val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) pendingBackupRestore = uri
-    }
-    val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
-    val brokerReportImportCoordinator = remember(repository, context) {
-        BrokerReportImportCoordinator(context.contentResolver, repository)
     }
     // Keep dashboard data at the app level: OverviewScreen is removed from composition
     // when another tab is opened. A screen-scoped coroutine used to be cancelled on tab
