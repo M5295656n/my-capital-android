@@ -48,7 +48,6 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.mycapital.app.data.SberBrokerReport
-import ru.mycapital.app.data.SberBrokerReportParser
 import ru.mycapital.app.data.isImportableBrokerTrade
 import ru.mycapital.app.data.MarketCalendarItemEntity
 import java.time.YearMonth
@@ -163,11 +162,7 @@ internal fun MyCapitalApp() {
             isParsingReport = true
             scope.launch {
                 try {
-                    val parsed = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            SberBrokerReportParser.parse(input)
-                        } ?: error("Не удалось открыть выбранный файл.")
-                    }
+                    val parsed = brokerReportImportCoordinator.parseBrokerReport(uri)
                     importedReport = parsed
                     importError = null
                 } catch (error: Exception) {
@@ -213,6 +208,9 @@ internal fun MyCapitalApp() {
         if (uri != null) pendingBackupRestore = uri
     }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
+    val brokerReportImportCoordinator = remember(repository, context) {
+        BrokerReportImportCoordinator(context.contentResolver, repository)
+    }
     // Keep dashboard data at the app level: OverviewScreen is removed from composition
     // when another tab is opened. A screen-scoped coroutine used to be cancelled on tab
     // changes, leaving quotes and movers intermittently blank until the next recomposition.
@@ -314,9 +312,7 @@ internal fun MyCapitalApp() {
                 isImportingReport = true
                 scope.launch {
                     try {
-                        val result = withContext(Dispatchers.IO) {
-                            repository.importAndReconcileBrokerReport(reportToImport)
-                        }
+                        val result = brokerReportImportCoordinator.importAndReconcile(reportToImport)
                         val snapshot = result.reconciliation
                         val history = result.history
                         importResultMessage =
