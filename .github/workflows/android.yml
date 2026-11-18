@@ -64,6 +64,91 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Verify live MOEX history for affected instruments
+        run: |
+          python3 - <<'PY'
+          import json
+          import time
+          from urllib.request import Request, urlopen
+          
+          BASE = "https://iss.moex.com/iss"
+          INSTRUMENTS = {
+              "EQMX": ("shares", ["TQTF", "TQBR", "TQTD"]),
+              "SBGD": ("shares", ["TQTF", "TQBR", "TQTD"]),
+              "SBMM": ("shares", ["TQTF", "TQBR", "TQTD"]),
+              "SU26244RMFS2": ("bonds", ["TQOB", "TQCB"]),
+          }
+          
+          def get_json(url):
+              last_error = None
+              for attempt in range(3):
+                  try:
+                      request = Request(url, headers={"Accept": "application/json", "User-Agent": "MyCapital-CI/1.0"})
+                      with urlopen(request, timeout=20) as response:
+                          return json.loads(response.read().decode("utf-8"))
+                  except Exception as exc:
+                      last_error = exc
+                      if attempt < 2:
+                          time.sleep(2 * (attempt + 1))
+              raise RuntimeError(f"ISS request failed: {url}: {last_error}")
+          
+          failures = []
+          for ticker, (market, fallback_boards) in INSTRUMENTS.items():
+              meta_url = f"{BASE}/securities/{ticker}.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary,market"
+              metadata = get_json(meta_url)
+              block = metadata.get("boards", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.lower(): i for i, name in enumerate(columns)}
+              candidates = []
+              for row in rows:
+                  board_i = indexes.get("boardid")
+                  if board_i is None or row[board_i] is None:
+                      continue
+                  market_i = indexes.get("market")
+                  board_market = row[market_i] if market_i is not None else None
+                  if board_market and board_market.lower() != market:
+                      continue
+                  candidates.append((bool(row[indexes["is_primary"]]) if indexes.get("is_primary") is not None else False, row[board_i]))
+              boards = [board for _, board in sorted(candidates, reverse=True)]
+              boards += [board for board in fallback_boards if board not in boards]
+              found = None
+              for board in boards:
+                  url = (f"{BASE}/engines/stock/markets/{market}/boards/{board}/securities/{ticker}/candles.json"
+                         "?from=2020-01-01&till=2026-11-18&interval=24&start=0&limit=500&candles.limit=500"
+                         "&iss.meta=off&iss.only=candles&candles.columns=begin,close")
+                  try:
+                      payload = get_json(url)
+                      candles = payload.get("candles", {})
+                      candle_rows = candles.get("data", [])
+                      if candle_rows:
+                          found = (board, candle_rows)
+                          break
+                  except Exception:
+                      continue
+              if not found:
+                  failures.append(f"{ticker}: no daily candles on boards {boards}")
+                  continue
+              board, candle_rows = found
+              dates = [str(row[0])[:10] for row in candle_rows if row and row[0]]
+              print(f"{ticker}: board={board}, candles_first_page={len(candle_rows)}, range={min(dates)}..{max(dates)}")
+              if ticker == "SU26244RMFS2":
+                  description = get_json(f"{BASE}/securities/{ticker}.json?iss.meta=off&iss.only=description&description.columns=name,value")
+                  fields = {str(row[0]).upper(): row[1] for row in description.get("description", {}).get("data", []) if len(row) >= 2}
+                  if not fields.get("FACEVALUE") and not fields.get("INITIALFACEVALUE"):
+                      failures.append(f"{ticker}: face value missing from ISS description")
+                  if not fields.get("FACEUNIT"):
+                      failures.append(f"{ticker}: face unit missing from ISS description")
+                  schedule = get_json(f"{BASE}/securities/{ticker}/bondization.json?iss.meta=off&iss.only=coupons,amortizations&limit=unlimited")
+                  coupons = schedule.get("coupons", {}).get("data", [])
+                  if not coupons:
+                      failures.append(f"{ticker}: coupon schedule missing from ISS bondization")
+                  else:
+                      print(f"{ticker}: coupon_schedule_rows={len(coupons)}")
+          if failures:
+              raise SystemExit("\n".join(failures))
+          print("MOEX live-history smoke check passed for all four instruments.")
+          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
