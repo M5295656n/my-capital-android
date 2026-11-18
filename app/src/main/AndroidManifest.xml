@@ -3,8 +3,8 @@
     <application
         android:allowBackup="true"
         android:label="Мой капитал"
-        android:icon="@drawable/ic_launcher"
-        android:roundIcon="@drawable/ic_launcher"
+        android:icon="@drawable/file_00000000b56081f491c1681143d5b91c"
+        android:roundIcon="@drawable/file_00000000b56081f491c1681143d5b91c"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
