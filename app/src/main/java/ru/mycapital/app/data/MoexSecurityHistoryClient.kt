@@ -109,7 +109,7 @@ class MoexSecurityHistoryClient {
         // The board-less route may resolve to the default board (e.g. TQBR),
         // which returns no candles for ETFs (TQTF) and OFZ (TQOB).
         // Resolve the instrument's actual boards and try the primary board first.
-        val metadataUrl = "https://iss.moex.com/iss/securities/$safeTicker.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary"
+        val metadataUrl = "https://iss.moex.com/iss/securities/$safeTicker.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary,market"
         val boards = runCatching { parseTradingBoards(getJson(metadataUrl), market) }
             .getOrDefault(emptyList())
         val candidates = (boards + when (market) {
