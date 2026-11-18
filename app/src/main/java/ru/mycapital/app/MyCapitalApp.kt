@@ -266,39 +266,7 @@ internal fun MyCapitalApp() {
                     }
                 }
             },
-            bottomBar = { if (selectedAssetDetail == null) {
-                NavigationBar(
-                    containerColor = androidx.compose.ui.graphics.Color(0xFF0B1422),
-                    contentColor = androidx.compose.ui.graphics.Color(0xFFAAB9D0),
-                    tonalElevation = 0.dp
-                ) {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.TargetPortfolio, Screen.Operations).forEach { screen ->
-                        NavigationBarItem(
-                            selected = selected == screen || (screen == Screen.Operations && selected == Screen.Operations),
-                            onClick = { selected = screen },
-                            icon = {
-                                if (screen == Screen.Analytics) AnalyticsNavigationIcon()
-                                else Icon(screen.icon, contentDescription = screen.title)
-                            },
-                            label = {
-                                Text(
-                                    screen.title,
-                                    fontSize = if (screen == Screen.Analytics) 8.5.sp else 9.sp,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = androidx.compose.ui.graphics.Color(0xFF4B9BFF),
-                                selectedTextColor = androidx.compose.ui.graphics.Color(0xFF69AFFF),
-                                indicatorColor = androidx.compose.ui.graphics.Color(0xFF1B3555),
-                                unselectedIconColor = androidx.compose.ui.graphics.Color(0xFF8797AD),
-                                unselectedTextColor = androidx.compose.ui.graphics.Color(0xFF8797AD)
-                            )
-                        )
-                    }
-                }
-            } }
+            bottomBar = { if (selectedAssetDetail == null) AppBottomNavigationBar(selected) { selected = it } }
         ) { padding ->
             if (selectedAssetDetail != null) {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
@@ -463,38 +431,18 @@ internal fun MyCapitalApp() {
             dismissButton = { TextButton(enabled = !isRestoringBackup, onClick = { pendingBackupRestore = null; backupRestorePassword = "" }) { Text("Отмена") } }
         )
     }
-    if (backupResultMessage != null) {
-        AlertDialog(
-            onDismissRequest = { backupResultMessage = null },
-            title = { Text("Резервная копия") },
-            text = { Text(backupResultMessage.orEmpty()) },
-            confirmButton = { TextButton(onClick = { backupResultMessage = null }) { Text("Готово") } }
-        )
-    }
-    if (exportResultMessage != null) {
-        AlertDialog(
-            onDismissRequest = { exportResultMessage = null },
-            title = { Text("Экспорт завершён") },
-            text = { Text(exportResultMessage.orEmpty()) },
-            confirmButton = { TextButton(onClick = { exportResultMessage = null }) { Text("Готово") } }
-        )
-    }
-    if (importResultMessage != null) {
-        AlertDialog(
-            onDismissRequest = { importResultMessage = null },
-            title = { Text("Импорт завершён") },
-            text = { Text(importResultMessage.orEmpty()) },
-            confirmButton = { TextButton(onClick = { importResultMessage = null }) { Text("Готово") } }
-        )
-    }
-    if (importError != null) {
-        AlertDialog(
-            onDismissRequest = { importError = null },
-            title = { Text("Не удалось прочитать отчёт") },
-            text = { Text(importError.orEmpty()) },
-            confirmButton = { TextButton(onClick = { importError = null }) { Text("Понятно") } }
-        )
-    }
+    AppMessageDialogs(
+        backupResultMessage = backupResultMessage,
+        exportResultMessage = exportResultMessage,
+        importResultMessage = importResultMessage,
+        importError = importError,
+        errorMessage = errorMessage,
+        onDismissBackup = { backupResultMessage = null },
+        onDismissExport = { exportResultMessage = null },
+        onDismissImport = { importResultMessage = null },
+        onDismissImportError = { importError = null },
+        onDismissError = { errorMessage = null }
+    )
     if (payoutToConfirm != null) {
         ReceivePayoutDialog(
             payout = payoutToConfirm!!,
