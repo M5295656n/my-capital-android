@@ -301,22 +301,26 @@ internal fun parseTradingBoards(json: JSONObject, expectedMarket: String): List<
     val boardIndex = indexes["boardid"] ?: return emptyList()
     val primaryIndex = indexes["is_primary"]
     val marketIndex = indexes["market"]
-    return (0 until rows.length()).mapNotNull { index ->
+    val entries = (0 until rows.length()).mapNotNull { index ->
         val row = rows.optJSONArray(index) ?: return@mapNotNull null
-        if (marketIndex != null && !row.isNull(marketIndex)) {
-            val actualMarket = row.optString(marketIndex)
-            if (actualMarket.isNotBlank() && !actualMarket.equals(expectedMarket, ignoreCase = true)) {
-                return@mapNotNull null
-            }
-        }
         if (row.isNull(boardIndex)) return@mapNotNull null
-        row.optString(boardIndex).takeIf { it.matches(Regex("[A-Z0-9]{2,8}")) }
-            ?.let { board ->
-                val primary = primaryIndex != null && !row.isNull(primaryIndex) && row.optInt(primaryIndex) == 1
-                primary to board
-            }
-    }.sortedByDescending { it.first }.map { it.second }.distinct()
+        val market = marketIndex?.takeIf { !row.isNull(it) }?.let { row.optString(it) }
+        val primary = primaryIndex != null && !row.isNull(primaryIndex) && row.optInt(primaryIndex) == 1
+        Triple(row.optString(boardIndex), primary, market)
+    }
+    return orderTradingBoards(entries, expectedMarket)
 }
+
+internal fun orderTradingBoards(
+    entries: List<Triple<String, Boolean, String?>>,
+    expectedMarket: String
+): List<String> = entries.asSequence()
+    .filter { (_, _, market) -> market.isNullOrBlank() || market.equals(expectedMarket, ignoreCase = true) }
+    .filter { (board, _, _) -> board.matches(Regex("[A-Z0-9]{2,8}")) }
+    .sortedByDescending { it.second }
+    .map { it.first }
+    .distinct()
+    .toList()
 
 internal fun parseDailyCandles(json: JSONObject): List<MoexDailyClose> {
     val candles = json.optJSONObject("candles")
