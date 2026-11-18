@@ -96,4 +96,13 @@ class MoexSecurityHistoryClientTest {
         assertEquals(null, calculateBondAccruedInterest(LocalDate.parse("2026-08-01"), coupons))
     }
 
+    @Test
+    fun parsesPrimaryTradingBoardBeforeSecondaryBoards() {
+        val json = org.json.JSONObject(
+            """{"boards":{"columns":["boardid","is_primary","market"],"data":[["TQBR",1,"shares"],["TQTF",0,"shares"],["TQOB",1,"bonds"]]}}"""
+        )
+        assertEquals(listOf("TQBR", "TQTF"), parseTradingBoards(json, "shares"))
+        assertEquals(listOf("TQOB"), parseTradingBoards(json, "bonds"))
+    }
+
 }
