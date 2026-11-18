@@ -813,27 +813,6 @@ private fun sectorForTicker(ticker: String): String = when (ticker.uppercase()) 
     else -> "Прочие акции"
 }
 
-@Composable
-private fun OverviewMetricCard(
-    title: String,
-    value: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    valueColor: androidx.compose.ui.graphics.Color
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-    ) {
-        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, minLines = 1)
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = valueColor, maxLines = 2)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
 internal data class SoldAssetSummary(
     val ticker: String,
     val name: String,
@@ -844,18 +823,6 @@ internal data class SoldAssetSummary(
     val unmatchedQuantity: Double,
     val hasCompleteCostBasis: Boolean
 )
-
-@Composable
-private fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-            Spacer(Modifier.height(6.dp))
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 19.sp)
-        }
-    }
-}
-
 
 internal fun money(value: Double): String = String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
 
