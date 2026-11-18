@@ -30,6 +30,26 @@ internal data class ReceivedPayoutTotals(
 )
 
 /**
+ * Returns the validated net cash amount for a payout that was actually received.
+ * An explicitly reported broker net amount takes precedence because the source
+ * may not disclose the gross/tax split. Otherwise both gross and tax are validated.
+ */
+internal fun calculateReceivedPayoutNetAmount(payout: PayoutEntity): Double? {
+    if (!payout.status.equals("RECEIVED", ignoreCase = true) && payout.actualDate == null) return null
+
+    payout.reportedNetAmount?.let { reported ->
+        return reported.takeIf { it.isFinite() && it >= 0.0 }
+    }
+
+    val gross = payout.totalAmount
+    val tax = payout.taxAmount
+    if (!gross.isFinite() || gross < 0.0 || !tax.isFinite() || tax < 0.0 || tax > gross) {
+        return null
+    }
+    return (gross - tax).takeIf { it.isFinite() && it >= 0.0 }
+}
+
+/**
  * One shared definition of cash actually received from payouts.
  * Returned bond principal is included in total cash received and total investment
  * result, but kept separate from investment income.
@@ -41,11 +61,8 @@ internal fun calculateReceivedPayoutTotals(payouts: List<PayoutEntity>): Receive
     var coupons = 0.0
     var principal = 0.0
 
-    payouts.asSequence()
-        .filter { it.status.equals("RECEIVED", ignoreCase = true) || it.actualDate != null }
-        .forEach { payout ->
-            val amount = (payout.reportedNetAmount ?: (payout.totalAmount - payout.taxAmount))
-                .takeIf { it.isFinite() && it >= 0.0 } ?: return@forEach
+    payouts.forEach { payout ->
+            val amount = calculateReceivedPayoutNetAmount(payout) ?: return@forEach
             val nextTotal = total + amount
             if (!nextTotal.isFinite()) return@forEach
             total = nextTotal

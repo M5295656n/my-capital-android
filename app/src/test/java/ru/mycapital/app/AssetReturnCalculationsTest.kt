@@ -197,4 +197,23 @@ class AssetReturnCalculationsTest {
         assertEquals(0.0, calculateRedeemedPositionCostBasis(listOf(asset), operations, payouts), 0.000001)
     }
 
+    @Test
+    fun cashFlowsIgnoreReceivedPayoutWithInvalidTax() {
+        val invalidPayout = PayoutEntity(
+            assetId = 1L,
+            ticker = "RU000A",
+            payoutType = "Купон",
+            amountPerUnit = 100.0,
+            quantity = 1.0,
+            totalAmount = 100.0,
+            taxAmount = -10.0,
+            actualDate = 100L,
+            status = "RECEIVED"
+        )
+
+        assertEquals(emptyList<Pair<Long, Double>>(), buildAssetReturnCashFlows(
+            emptyList(), listOf(invalidPayout), 0.0, 200L
+        ))
+    }
+
 }

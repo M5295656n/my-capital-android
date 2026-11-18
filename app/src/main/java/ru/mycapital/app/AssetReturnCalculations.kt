@@ -3,6 +3,7 @@ package ru.mycapital.app
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
+import ru.mycapital.app.data.calculateReceivedPayoutNetAmount
 
 /**
  * Builds dated cash flows for an individual asset's money-weighted return.
@@ -30,12 +31,11 @@ internal fun buildAssetReturnCashFlows(
             flows += operation.operationDate to amount
         }
     }
-    payouts.filter { it.actualDate != null || it.status.equals("RECEIVED", ignoreCase = true) }
-        .forEach { payout ->
-            val date = payout.actualDate ?: payout.expectedDate ?: return@forEach
-            val amount = payout.reportedNetAmount ?: (payout.totalAmount - payout.taxAmount)
-            if (amount.isFinite() && amount != 0.0) flows += date to amount
-        }
+    payouts.forEach { payout ->
+        val date = payout.actualDate ?: payout.expectedDate ?: return@forEach
+        val amount = calculateReceivedPayoutNetAmount(payout) ?: return@forEach
+        if (amount != 0.0) flows += date to amount
+    }
     if (currentValue.isFinite() && currentValue > 0.0) {
         flows += valuationDate to currentValue
     }
@@ -95,7 +95,7 @@ internal fun calculateRedeemedPositionCostBasis(
             val type = payout.payoutType.trim().lowercase(java.util.Locale.ROOT)
             belongsToAsset &&
                 (type == "погашение" || type == "амортизация") &&
-                (payout.status.equals("RECEIVED", ignoreCase = true) || payout.actualDate != null)
+                (calculateReceivedPayoutNetAmount(payout) ?: 0.0) > 0.0
         }
         if (!hasReceivedPrincipalReturn) return@forEach
 

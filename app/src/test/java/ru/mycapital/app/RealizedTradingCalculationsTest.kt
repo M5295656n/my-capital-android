@@ -165,4 +165,21 @@ class RealizedTradingCalculationsTest {
         operationDate = date,
         sourceKey = sourceKey
     )
+    @Test
+    fun saleLotCalculationRejectsNegativeCommissionWithoutConsumingFifoLot() {
+        val operations = listOf(
+            trade("Покупка", 1.0, 100.0, date = 1L).copy(id = 1L),
+            trade("Продажа", 1.0, 150.0, commission = -1.0, date = 2L).copy(id = 2L),
+            trade("Продажа", 1.0, 150.0, date = 3L).copy(id = 3L)
+        )
+
+        val results = calculateSaleLotResults(operations)
+
+        assertEquals(2, results.size)
+        assertEquals(0.0, results[0].matchedQuantity, 0.000001)
+        assertEquals(1.0, results[0].unmatchedQuantity, 0.000001)
+        assertEquals(1.0, results[1].matchedQuantity, 0.000001)
+        assertEquals(50.0, results[1].profit, 0.000001)
+    }
+
 }

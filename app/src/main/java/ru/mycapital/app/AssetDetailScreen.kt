@@ -140,21 +140,36 @@ internal fun AssetDetailScreen(
         val remaining = fifo.remainingByOperationId[op.id] ?: 0.0
         if (op.quantity > 0.0) remaining / op.quantity * (op.quantity * op.price + op.commission) else 0.0
     }
-    val actual = assetPayouts.filter { it.actualDate != null || it.status.equals("RECEIVED", true) }
-    val received = calculateReceivedPayoutTotals(assetPayouts).totalNetAmount
+    val receivedPayoutTotals = calculateReceivedPayoutTotals(assetPayouts)
+    val received = receivedPayoutTotals.totalNetAmount
     val fees = trades.sumOf { it.commission }
     val value = asset.quantity * price
     val sales = trades.filter { it.operationType == "Продажа" }.sumOf { it.quantity * it.price - it.commission }
     val purchases = trades.filter { it.operationType == "Покупка" }.sumOf { it.quantity * it.price + it.commission }
     val tradedQuantity = trades.sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
-    val quantityMatchesHistory = kotlin.math.abs(tradedQuantity - asset.quantity) <= maxOf(0.000001, asset.quantity * 0.00001)
-    val fullyRedeemed = asset.quantity in -0.000001..0.000001 && actual.any {
-        it.payoutType.equals("Погашение", ignoreCase = true) ||
-            it.payoutType.equals("Амортизация", ignoreCase = true)
+    val quantityMatchesHistory = tradedQuantity.isFinite() &&
+        kotlin.math.abs(tradedQuantity - asset.quantity) <= maxOf(0.000001, asset.quantity * 0.00001)
+    val fullyRedeemed = asset.quantity in -0.000001..0.000001 &&
+        receivedPayoutTotals.returnedPrincipal > 0.0
+    val validTradeHistory = trades.all { operation ->
+        val gross = operation.quantity * operation.price
+        val netProceeds = gross - operation.commission
+        operation.quantity.isFinite() && operation.quantity > 0.0 &&
+            operation.price.isFinite() && operation.price >= 0.0 &&
+            operation.commission.isFinite() && operation.commission >= 0.0 &&
+            gross.isFinite() && (gross + operation.commission).isFinite() &&
+            netProceeds.isFinite() &&
+            (operation.operationType != "Продажа" || netProceeds >= 0.0)
     }
-    val historyComplete = trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001 && (quantityMatchesHistory || fullyRedeemed)
-    val profit = if (historyComplete) value + sales + received - purchases else null
-    val totalReturn = if (historyComplete && purchases > 0.0) profit!! / purchases * 100.0 else null
+    val profitCandidate = value + sales + received - purchases
+    val historyComplete = trades.isNotEmpty() && validTradeHistory &&
+        purchases.isFinite() && sales.isFinite() && value.isFinite() && received.isFinite() &&
+        fifo.unmatchedSaleQuantity.isFinite() && fifo.unmatchedSaleQuantity < 0.000001 &&
+        profitCandidate.isFinite() && (quantityMatchesHistory || fullyRedeemed)
+    val profit = profitCandidate.takeIf { historyComplete }
+    val totalReturn = profit?.takeIf { purchases.isFinite() && purchases > 0.0 }
+        ?.let { it / purchases * 100.0 }
+        ?.takeIf { it.isFinite() }
     val cashFlows = buildAssetReturnCashFlows(
         operations = assetOperations,
         payouts = assetPayouts,
