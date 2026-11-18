@@ -165,7 +165,7 @@ internal fun TargetPortfolioPlanSection(assets: List<AssetEntity>) {
 
     if (adding || editing != null) {
         val initial = editing
-        TargetPortfolioPositionDialog(initial, plan, onDismiss = { adding = false; editing = null }) { position ->
+        TargetPortfolioPositionDialog(initial, onDismiss = { adding = false; editing = null }) { position ->
             val updated = if (initial == null) plan + position else plan.map { if (it.ticker == initial.ticker) position else it }
             persist(updated)
             adding = false
@@ -185,7 +185,6 @@ internal fun TargetPortfolioPlanSection(assets: List<AssetEntity>) {
 @Composable
 private fun TargetPortfolioPositionDialog(
     initial: TargetPortfolioPosition?,
-    existing: List<TargetPortfolioPosition>,
     onDismiss: () -> Unit,
     onSave: (TargetPortfolioPosition) -> Unit
 ) {
