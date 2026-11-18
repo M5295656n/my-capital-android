@@ -1,7 +1,9 @@
 package ru.mycapital.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.mycapital.app.data.OperationEntity
 
@@ -45,6 +47,82 @@ class RealizedTradingCalculationsTest {
 
         assertEquals(56.0, result.profit, 0.000001)
         assertEquals(0.0, result.unmatchedQuantity, 0.000001)
+    }
+
+    @Test
+    fun ignoresNonFiniteBuyAndReportsFollowingSaleAsUnmatched() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 1.0, Double.NaN, date = 1L),
+                trade("Продажа", 1.0, 150.0, date = 2L)
+            )
+        )
+
+        assertEquals(0.0, result.profit, 0.000001)
+        assertEquals(1.0, result.unmatchedQuantity, 0.000001)
+        assertTrue(result.profit.isFinite())
+    }
+
+    @Test
+    fun rejectsNonFiniteSaleValuesWithoutContaminatingProfit() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 2.0, 100.0, date = 1L),
+                trade("Продажа", 1.0, Double.POSITIVE_INFINITY, date = 2L)
+            )
+        )
+
+        assertEquals(0.0, result.profit, 0.000001)
+        assertEquals(1.0, result.unmatchedQuantity, 0.000001)
+        assertTrue(result.profit.isFinite())
+    }
+
+    @Test
+    fun skipsTradeWhoseFiniteInputsOverflowDuringCalculation() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 2.0, Double.MAX_VALUE, date = 1L),
+                trade("Продажа", 1.0, 100.0, date = 2L)
+            )
+        )
+
+        assertEquals(0.0, result.profit, 0.000001)
+        assertEquals(1.0, result.unmatchedQuantity, 0.000001)
+        assertFalse(result.profit.isNaN())
+        assertFalse(result.profit.isInfinite())
+    }
+
+    @Test
+    fun overflowingSaleDoesNotPartiallyConsumeEarlierFifoLots() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Покупка", 1.0, 0.0, date = 1L),
+                trade("Продажа", 1.0, Double.MAX_VALUE / 2.0, date = 2L),
+                trade("Покупка", 1.0, 0.0, date = 3L),
+                trade("Покупка", 1.0, Double.MAX_VALUE / 4.0, date = 4L),
+                trade("Продажа", 2.0, Double.MAX_VALUE / 2.0, date = 5L),
+                // This must still match the first lot, proving the overflowing
+                // two-unit sale did not consume any part of its FIFO allocation.
+                trade("Продажа", 1.0, 0.0, date = 6L)
+            )
+        )
+
+        assertEquals(Double.MAX_VALUE / 2.0, result.profit, 0.0)
+        assertEquals(2.0, result.unmatchedQuantity, 0.000001)
+        assertTrue(result.profit.isFinite())
+    }
+
+    @Test
+    fun unmatchedQuantitySaturatesInsteadOfOverflowing() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Продажа", Double.MAX_VALUE, 0.0, date = 1L),
+                trade("Продажа", Double.MAX_VALUE, 0.0, date = 2L)
+            )
+        )
+
+        assertEquals(Double.MAX_VALUE, result.unmatchedQuantity, 0.0)
+        assertTrue(result.unmatchedQuantity.isFinite())
     }
 
     @Test
