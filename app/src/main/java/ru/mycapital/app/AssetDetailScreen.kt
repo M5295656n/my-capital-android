@@ -121,11 +121,9 @@ internal fun AssetDetailScreen(
             error = e.message ?: "Не удалось загрузить котировки"
         } finally { loading = false }
     }
-    // Portfolio valuation uses the same current quote as the asset list and dashboard.
-    // Historical MOEX closes remain the fallback only when no usable current quote exists.
-    val price = asset.currentPrice.takeIf { it.isFinite() && it > 0.0 }
-        ?: candles.lastOrNull()?.close?.takeIf { it.isFinite() && it > 0.0 }
-        ?: 0.0
+    // Position valuation must use the same current quote as the asset list and dashboard.
+    // Historical closes are used only for chart dynamics, never as a substitute valuation.
+    val price = asset.currentPrice.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
     val forwardDividendYieldPercent = remember(assetPayouts, price, asset.ticker) {
         ru.mycapital.app.data.calculateForwardDividendYieldPercentFromPayouts(
             assetPayouts,
