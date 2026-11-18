@@ -140,6 +140,7 @@ internal fun AssetDetailScreen(
         val remaining = fifo.remainingByOperationId[op.id] ?: 0.0
         if (op.quantity > 0.0) remaining / op.quantity * (op.quantity * op.price + op.commission) else 0.0
     }
+    val actual = assetPayouts.filter { it.actualDate != null || it.status.equals("RECEIVED", true) }
     val receivedPayoutTotals = calculateReceivedPayoutTotals(assetPayouts)
     val received = receivedPayoutTotals.totalNetAmount
     val fees = trades.sumOf { it.commission }
@@ -162,7 +163,7 @@ internal fun AssetDetailScreen(
             (operation.operationType != "Продажа" || netProceeds >= 0.0)
     }
     val profitCandidate = value + sales + received - purchases
-    val historyComplete = trades.isNotEmpty() && validTradeHistory &&
+    val historyComplete = trades.isNotEmpty() && validTradeHistory && tradedQuantity.isFinite() &&
         purchases.isFinite() && sales.isFinite() && value.isFinite() && received.isFinite() &&
         fifo.unmatchedSaleQuantity.isFinite() && fifo.unmatchedSaleQuantity < 0.000001 &&
         profitCandidate.isFinite() && (quantityMatchesHistory || fullyRedeemed)
