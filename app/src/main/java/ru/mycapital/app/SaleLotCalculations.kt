@@ -32,7 +32,7 @@ internal fun calculateSaleLotResults(
             ) return@forEach
 
             val key = BookKey(
-                brokerAccountIdFromTradeSourceKey(operation.sourceKey),
+                operation.accountId?.takeIf { it.isNotBlank() } ?: brokerAccountIdFromTradeSourceKey(operation.sourceKey),
                 ticker
             )
             val lots = lotsByBook.getOrPut(key) { ArrayDeque() }

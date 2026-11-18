@@ -133,6 +133,21 @@ class RealizedTradingCalculationsTest {
         assertNull(brokerAccountIdFromTradeSourceKey("SBER:MAIN-001:CASH:123"))
     }
 
+
+    @Test
+    fun fifoUsesOperationIdToBreakSameTimestampTies() {
+        val result = calculateRealizedTradingResult(
+            listOf(
+                trade("Продажа", 1.0, 150.0, date = 10L).copy(id = 3L),
+                trade("Покупка", 1.0, 200.0, date = 10L).copy(id = 2L),
+                trade("Покупка", 1.0, 100.0, date = 10L).copy(id = 1L)
+            )
+        )
+
+        assertEquals(50.0, result.profit, 0.000001)
+        assertEquals(0.0, result.unmatchedQuantity, 0.000001)
+    }
+
     private fun trade(
         type: String,
         quantity: Double,

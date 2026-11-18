@@ -33,7 +33,7 @@ internal fun calculateRealizedTradingResult(
 
     operations.asSequence()
         .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
-        .sortedBy { it.operationDate }
+        .sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
         .forEach { operation ->
             val ticker = operation.ticker?.trim()?.uppercase().orEmpty()
             if (ticker.isBlank()) return@forEach
@@ -51,7 +51,7 @@ internal fun calculateRealizedTradingResult(
             }
 
             val key = TradeBookKey(
-                accountId = brokerAccountIdFromTradeSourceKey(operation.sourceKey),
+                accountId = operation.accountId?.takeIf { it.isNotBlank() } ?: brokerAccountIdFromTradeSourceKey(operation.sourceKey),
                 ticker = ticker
             )
             val lots = lotsByBook.getOrPut(key) { ArrayDeque() }

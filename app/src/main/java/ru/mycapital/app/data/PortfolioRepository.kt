@@ -18,47 +18,75 @@ internal fun resolveImportedAssetType(existingType: String, reportedType: String
 
 
 /**
- * Calculates weighted-average acquisition cost from a complete buy/sell history.
- * Returns null when the available operations do not explain the current holding
- * (for example, when the report omits purchases made before its start date).
+ * Calculates the remaining acquisition cost using the same FIFO lot convention
+ * as sale history and realized-profit calculations. Books are isolated by
+ * brokerage account and ticker. Returns null when the recorded trades do not
+ * fully explain the current aggregate position.
  */
 internal fun calculateAverageCostFromCompleteHistory(
     operations: List<OperationEntity>,
     expectedQuantity: Double
 ): Double? {
     val epsilon = 0.0000001
-    var quantity = 0.0
-    var totalCost = 0.0
+    if (!expectedQuantity.isFinite() || expectedQuantity < 0.0) return null
+
+    data class BookKey(val accountId: String?, val ticker: String)
+    data class Lot(var quantity: Double, val unitCost: Double)
+    val lotsByBook = mutableMapOf<BookKey, ArrayDeque<Lot>>()
+
+    fun accountId(operation: OperationEntity): String? {
+        operation.accountId?.takeIf { it.isNotBlank() }?.let { return it }
+        val parts = operation.sourceKey?.split(':', limit = 3) ?: return null
+        if (parts.size < 3 || parts[0] != "SBER") return null
+        return parts[1].takeIf {
+            it.isNotBlank() && it.uppercase(java.util.Locale.ROOT) !in setOf("TRADE", "CASH", "PAYOUT")
+        }
+    }
 
     operations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
         .forEach { operation ->
-            when (operation.operationType) {
-                "Покупка" -> {
-                    if (operation.quantity <= 0.0 || operation.price < 0.0 || operation.commission < 0.0) {
-                        return null
-                    }
-                    quantity += operation.quantity
-                    totalCost += operation.quantity * operation.price + operation.commission
-                }
-                "Продажа" -> {
-                    if (operation.quantity <= 0.0 || quantity + epsilon < operation.quantity) {
-                        return null
-                    }
-                    val averageBeforeSale = if (quantity > epsilon) totalCost / quantity else 0.0
-                    quantity -= operation.quantity
-                    totalCost = averageBeforeSale * quantity
-                    if (quantity <= epsilon) {
-                        quantity = 0.0
-                        totalCost = 0.0
-                    }
+            if (operation.operationType != "Покупка" && operation.operationType != "Продажа") return@forEach
+            val ticker = operation.ticker?.trim()?.uppercase(java.util.Locale.ROOT).orEmpty()
+            val quantity = operation.quantity
+            val price = operation.price
+            val commission = operation.commission
+            if (ticker.isBlank() || !quantity.isFinite() || quantity <= 0.0 ||
+                !price.isFinite() || price < 0.0 ||
+                !commission.isFinite() || commission < 0.0
+            ) return null
+
+            val lots = lotsByBook.getOrPut(BookKey(accountId(operation), ticker)) { ArrayDeque() }
+            if (operation.operationType == "Покупка") {
+                val grossCost = quantity * price
+                val totalCost = grossCost + commission
+                val unitCost = totalCost / quantity
+                if (!grossCost.isFinite() || !totalCost.isFinite() || !unitCost.isFinite()) return null
+                lots.addLast(Lot(quantity, unitCost))
+            } else {
+                val grossProceeds = quantity * price
+                val netProceeds = grossProceeds - commission
+                if (!grossProceeds.isFinite() || !netProceeds.isFinite() || netProceeds < 0.0) return null
+                val available = lots.sumOf { it.quantity }
+                if (!available.isFinite() || available + epsilon < quantity) return null
+
+                var remaining = quantity
+                while (remaining > epsilon && lots.isNotEmpty()) {
+                    val lot = lots.first()
+                    val matched = minOf(remaining, lot.quantity)
+                    lot.quantity -= matched
+                    remaining -= matched
+                    if (lot.quantity <= epsilon) lots.removeFirst()
                 }
             }
         }
 
-    if (kotlin.math.abs(quantity - expectedQuantity) > maxOf(epsilon, expectedQuantity * 0.000001)) {
+    val remainingQuantity = lotsByBook.values.sumOf { lots -> lots.sumOf { it.quantity } }
+    val remainingCost = lotsByBook.values.sumOf { lots -> lots.sumOf { it.quantity * it.unitCost } }
+    if (!remainingQuantity.isFinite() || !remainingCost.isFinite()) return null
+    if (kotlin.math.abs(remainingQuantity - expectedQuantity) > maxOf(epsilon, expectedQuantity * 0.000001)) {
         return null
     }
-    return if (quantity > epsilon) totalCost / quantity else 0.0
+    return if (remainingQuantity > epsilon) remainingCost / remainingQuantity else 0.0
 }
 
 class PortfolioRepository(private val database: PortfolioDatabase) {
@@ -433,21 +461,13 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             val nextQuantity = if (isBuy) asset.quantity + quantity else asset.quantity - quantity
             require(nextQuantity >= -0.0000001) { "Недостаточно бумаг для продажи" }
 
-            val nextAverage = when {
+            val fallbackAverage = when {
                 nextQuantity <= 0.0000001 -> 0.0
                 isBuy -> ((asset.quantity * asset.averagePrice) + grossAmount + commission) / nextQuantity
                 else -> asset.averagePrice
             }
 
             dao.updateCashBalance(nextCash)
-            dao.updateAsset(
-                asset.copy(
-                    quantity = nextQuantity.coerceAtLeast(0.0),
-                    averagePrice = nextAverage,
-                    currentPrice = price,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
             dao.insertOperation(
                 OperationEntity(
                     assetId = asset.id,
@@ -457,6 +477,22 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     price = price,
                     commission = commission,
                     note = note
+                )
+            )
+            // When the complete trade history is available, keep the stored
+            // average price aligned with the FIFO basis shown in asset details.
+            // For manually entered opening positions without full history, retain
+            // the existing basis and its established weighted update behavior.
+            val fifoAverage = calculateAverageCostFromCompleteHistory(
+                dao.getOperationsForAsset(asset.id),
+                nextQuantity.coerceAtLeast(0.0)
+            )
+            dao.updateAsset(
+                asset.copy(
+                    quantity = nextQuantity.coerceAtLeast(0.0),
+                    averagePrice = fifoAverage ?: fallbackAverage,
+                    currentPrice = price,
+                    updatedAt = System.currentTimeMillis()
                 )
             )
         }
