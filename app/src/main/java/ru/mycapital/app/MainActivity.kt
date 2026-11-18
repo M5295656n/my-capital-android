@@ -3231,6 +3231,9 @@ private fun AnalyticsScreen(
             )
         }
         item {
+            TargetPortfolioPlanSection(assets = analyticsAssets)
+        }
+        item {
             Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Стоимость капитала", color = MaterialTheme.colorScheme.onSurfaceVariant)
