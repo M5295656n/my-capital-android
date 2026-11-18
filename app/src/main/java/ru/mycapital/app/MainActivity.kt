@@ -2614,6 +2614,7 @@ private fun PayoutsScreen(
     }
 }
 
+@Composable
 private fun ReceivePayoutDialog(
     payout: PayoutEntity,
     onDismiss: () -> Unit,
