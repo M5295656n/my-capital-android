@@ -165,7 +165,7 @@ internal fun TargetPortfolioPlanSection(
                 if (summary.rows.isEmpty()) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.PieChart, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                        Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(34.dp))
                         Text("Пока нет позиций", fontWeight = FontWeight.SemiBold)
                         Text("Добавьте компании и распределите между ними 100% целевого веса.",
@@ -222,7 +222,7 @@ internal fun TargetPortfolioPlanSection(
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
                 Text("Фактические доли обновляются автоматически при изменении состава портфеля и котировок.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
