@@ -123,9 +123,12 @@ class MoexSecurityHistoryClient {
             "bonds" -> listOf("TQOB", "TQCB")
             else -> listOf("TQTF", "TQBR", "TQTD")
         }).distinct()
+        // Merge every available board instead of stopping at the first non-empty one.
+        // Some securities have only a short recent history on the primary board while
+        // another board retains older candles. Primary-board values win on duplicate dates.
+        val merged = linkedMapOf<LocalDate, MoexDailyClose>()
         for (board in candidates) {
             val baseUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/boards/$board/securities/$safeTicker/candles.json"
-            val result = linkedMapOf<LocalDate, MoexDailyClose>()
             var start = 0
             for (pageIndex in 0 until 50) {
                 val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start&limit=500&candles.limit=500" +
@@ -136,12 +139,12 @@ class MoexSecurityHistoryClient {
                     break
                 }
                 if (page.isEmpty()) break
-                page.forEach { result[it.date] = it }
+                page.forEach { merged.putIfAbsent(it.date, it) }
                 if (page.size < 500) break
                 start += page.size
             }
-            if (result.isNotEmpty()) return result.values.sortedBy { it.date }
         }
+        if (merged.isNotEmpty()) return merged.values.sortedBy { it.date }
         // Last-resort compatibility path for securities whose board metadata
         // is incomplete in ISS.
         val fallbackUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker/candles.json"
