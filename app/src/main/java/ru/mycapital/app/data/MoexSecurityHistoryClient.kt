@@ -57,6 +57,13 @@ class MoexSecurityHistoryClient {
                 loadCandles(ticker, "shares", fromDate, tillDate)
             type.contains("облиг") || type.contains("офз") ->
                 loadBondCloses(ticker, fromDate, tillDate)
+            type.contains("другое") || type.contains("неизвест") -> {
+                // Fully sold instruments may exist only in the operation ledger,
+                // which has no assetType field. Resolve them from MOEX data rather
+                // than guessing from ticker prefixes: bonds first, then shares/funds.
+                runCatching { loadBondCloses(ticker, fromDate, tillDate) }
+                    .getOrElse { loadCandles(ticker, "shares", fromDate, tillDate) }
+            }
             else -> throw IllegalArgumentException("Тип актива не поддерживается историческим графиком")
         }
     }
