@@ -132,7 +132,7 @@ internal fun AssetDetailScreen(
             java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
         )
     }
-    val previous = candles.dropLast(1).lastOrNull()?.close
+    val previous = if (price > 0.0) candles.dropLast(1).lastOrNull()?.close else null
     val change = previous?.let { price - it }
     val changePct = previous?.takeIf { it != 0.0 }?.let { (price - it) / it * 100.0 }
     val fifo = remember(trades) { calculateRemainingPurchaseLots(trades) }
@@ -148,7 +148,10 @@ internal fun AssetDetailScreen(
     val purchases = trades.filter { it.operationType == "Покупка" }.sumOf { it.quantity * it.price + it.commission }
     val tradedQuantity = trades.sumOf { if (it.operationType == "Покупка") it.quantity else -it.quantity }
     val quantityMatchesHistory = kotlin.math.abs(tradedQuantity - asset.quantity) <= maxOf(0.000001, asset.quantity * 0.00001)
-    val fullyRedeemed = asset.quantity <= 0.000001 && actual.any { it.payoutType.equals("Погашение", ignoreCase = true) }
+    val fullyRedeemed = asset.quantity in -0.000001..0.000001 && actual.any {
+        it.payoutType.equals("Погашение", ignoreCase = true) ||
+            it.payoutType.equals("Амортизация", ignoreCase = true)
+    }
     val historyComplete = trades.isNotEmpty() && fifo.unmatchedSaleQuantity < 0.000001 && (quantityMatchesHistory || fullyRedeemed)
     val profit = if (historyComplete) value + sales + received - purchases else null
     val totalReturn = if (historyComplete && purchases > 0.0) profit!! / purchases * 100.0 else null
