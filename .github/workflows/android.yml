@@ -64,6 +64,46 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Enable KVM for hardware-accelerated Android Emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: Run Room and broker-account instrumented tests
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 3072 -cores 2
+          emulator-boot-timeout: 300
+          disable-animations: true
+          script: |
+            set -eu
+            adb wait-for-device
+            READY=0; for attempt in $(seq 1 36); do BOOT="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"; ACTIVITY="$(adb shell service check activity 2>/dev/null || true)"; PACKAGE="$(adb shell service check package 2>/dev/null || true)"; if [ "$BOOT" = "1" ] && echo "$ACTIVITY" | grep -q found && echo "$PACKAGE" | grep -q found; then READY=1; break; fi; echo "Android framework services are not ready yet (attempt $attempt/36)."; sleep 5; done; if [ "$READY" -ne 1 ]; then echo "Android framework did not become healthy; collecting diagnostics."; adb shell getprop || true; adb shell service list || true; exit 1; fi; echo "Android framework is ready; starting instrumented tests."
+            gradle connectedDebugAndroidTest --stacktrace
+      - name: Upload instrumented test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-test-results
+          path: app/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
       - name: Verify live MOEX history for affected instruments
         run: |
           python3 - <<'PY'
@@ -149,46 +189,6 @@ jobs:
               raise SystemExit("\n".join(failures))
           print("MOEX live-history smoke check passed for all four instruments.")
           PY
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
-      - name: Enable KVM for hardware-accelerated Android Emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          ls -l /dev/kvm
-      - name: Run Room and broker-account instrumented tests
-        uses: ReactiveCircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          target: google_apis
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 3072 -cores 2
-          emulator-boot-timeout: 300
-          disable-animations: true
-          script: |
-            set -eu
-            adb wait-for-device
-            READY=0; for attempt in $(seq 1 36); do BOOT="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"; ACTIVITY="$(adb shell service check activity 2>/dev/null || true)"; PACKAGE="$(adb shell service check package 2>/dev/null || true)"; if [ "$BOOT" = "1" ] && echo "$ACTIVITY" | grep -q found && echo "$PACKAGE" | grep -q found; then READY=1; break; fi; echo "Android framework services are not ready yet (attempt $attempt/36)."; sleep 5; done; if [ "$READY" -ne 1 ]; then echo "Android framework did not become healthy; collecting diagnostics."; adb shell getprop || true; adb shell service list || true; exit 1; fi; echo "Android framework is ready; starting instrumented tests."
-            gradle connectedDebugAndroidTest --stacktrace
-      - name: Upload instrumented test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: instrumented-test-results
-          path: app/build/outputs/androidTest-results/connected/
-          if-no-files-found: warn
-
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
