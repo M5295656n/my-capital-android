@@ -282,23 +282,32 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     // A credited broker-report row is evidence of receipt. The report
                     // supplies the net credit, but may not disclose gross or withheld tax.
                     // Keep that net amount separately instead of inventing a gross/tax split.
-                    val payoutId = dao.insertPayout(
-                        PayoutEntity(
-                            assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
-                            ticker = ticker ?: "—",
-                            payoutType = operationType,
-                            amountPerUnit = 0.0,
-                            quantity = 0.0,
-                            totalAmount = 0.0,
-                            taxAmount = 0.0,
-                            expectedDate = null,
-                            actualDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
-                            status = "RECEIVED",
-                            sourceKey = "SBER:${report.accountId}:PAYOUT:$scopedFlowKey",
-                            reportedNetAmount = amount
+                    // Payout identity has been account-scoped since this import path
+                    // was introduced. Never promote an unscoped parser key: it could
+                    // belong to an identical row from another brokerage account.
+                    val payoutSourceKey = "SBER:${report.accountId}:PAYOUT:$scopedFlowKey"
+                    val scopedPayout = dao.getPayoutBySourceKey(payoutSourceKey)
+                    if (scopedPayout == null) {
+                        val receivedAt = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                        val payoutAssetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id }
+                        val payoutId = dao.insertPayout(
+                            PayoutEntity(
+                                assetId = payoutAssetId,
+                                ticker = ticker ?: "—",
+                                payoutType = operationType,
+                                amountPerUnit = 0.0,
+                                quantity = 0.0,
+                                totalAmount = 0.0,
+                                taxAmount = 0.0,
+                                expectedDate = null,
+                                actualDate = receivedAt,
+                                status = "RECEIVED",
+                                sourceKey = payoutSourceKey,
+                                reportedNetAmount = amount
+                            )
                         )
-                    )
-                    if (payoutId != -1L) payoutsImported++
+                        if (payoutId != -1L) payoutsImported++
+                    }
                 }
                 val row = OperationEntity(
                     assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
