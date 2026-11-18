@@ -38,7 +38,6 @@ internal fun MyCapitalApp() {
     var selected by remember { mutableStateOf(Screen.Overview) }
     var selectedAssetDetail by remember { mutableStateOf<AssetEntity?>(null) }
     BackHandler(enabled = selectedAssetDetail != null) { selectedAssetDetail = null }
-    var moreDestination by remember { mutableStateOf(Screen.More) }
     var showAddAsset by remember { mutableStateOf(false) }
     var showAddPayout by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
@@ -140,7 +139,6 @@ internal fun MyCapitalApp() {
     val refreshDashboardMarketData = dashboardMarket.refresh
     val marketRefresh = rememberMarketRefreshState(assets)
     val isRefreshingMarketData = marketRefresh.isRefreshing
-    val refreshQuotes = marketRefresh.refreshQuotes
     val refreshEvents = marketRefresh.refreshEvents
     val refreshNews = marketRefresh.refreshNews
     val newsSyncMessage = marketRefresh.newsSyncMessage
