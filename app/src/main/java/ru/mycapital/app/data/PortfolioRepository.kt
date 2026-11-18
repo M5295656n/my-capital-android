@@ -10,6 +10,12 @@ import java.util.Locale
 internal fun isImportableBrokerTrade(status: String): Boolean =
     status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ", "ЗО")
 
+/** Prefer a recognized type from the latest broker security directory over stale local classification. */
+internal fun resolveImportedAssetType(existingType: String, reportedType: String?): String {
+    val reported = reportedType?.trim().orEmpty()
+    return if (reported.isNotBlank() && !reported.equals("Другое", ignoreCase = true)) reported else existingType
+}
+
 
 /**
  * Calculates weighted-average acquisition cost from a complete buy/sell history.
@@ -172,6 +178,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 dao.updateAsset(
                     asset.copy(
                         quantity = nextQuantity,
+                        assetType = resolveImportedAssetType(asset.assetType, reportRow?.assetType),
                         currentPrice = reportRow?.closingPrice?.takeIf { it > 0.0 } ?: asset.currentPrice,
                         updatedAt = System.currentTimeMillis()
                     )
