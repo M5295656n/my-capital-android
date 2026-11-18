@@ -2407,7 +2407,8 @@ private fun OperationsScreen(
                     }
                     val amountColor = when {
                         isBuy -> MaterialTheme.colorScheme.error
-                        isSell || isIncome -> MaterialTheme.colorScheme.primary
+                        isSell -> MaterialTheme.colorScheme.secondary
+                        isIncome -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.onSurface
                     }
                     Card(
@@ -2424,7 +2425,8 @@ private fun OperationsScreen(
                                 shape = RoundedCornerShape(13.dp),
                                 color = when {
                                     isBuy -> MaterialTheme.colorScheme.errorContainer
-                                    isSell || isIncome -> MaterialTheme.colorScheme.primaryContainer
+                                    isSell -> MaterialTheme.colorScheme.secondaryContainer
+                                    isIncome -> MaterialTheme.colorScheme.primaryContainer
                                     else -> MaterialTheme.colorScheme.surfaceVariant
                                 }
                             ) {
@@ -2439,7 +2441,8 @@ private fun OperationsScreen(
                                         contentDescription = null,
                                         tint = when {
                                             isBuy -> MaterialTheme.colorScheme.onErrorContainer
-                                            isSell || isIncome -> MaterialTheme.colorScheme.onPrimaryContainer
+                                            isSell -> MaterialTheme.colorScheme.onSecondaryContainer
+                                            isIncome -> MaterialTheme.colorScheme.onPrimaryContainer
                                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                                         }
                                     )
