@@ -174,26 +174,10 @@ internal fun MyCapitalApp() {
     val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) pendingBackupRestore = uri
     }
-    // Keep dashboard data at the app level: OverviewScreen is removed from composition
-    // when another tab is opened. A screen-scoped coroutine used to be cancelled on tab
-    // changes, leaving quotes and movers intermittently blank until the next recomposition.
-    val dashboardHeldTickers = remember(assets) {
-        assets.filter { it.quantity > 0.0 }.map { it.ticker.trim().uppercase() }.filter { it.isNotBlank() }.toSet()
-    }
-    var dashboardMarketData by remember { mutableStateOf(MarketOverviewData()) }
-    var dashboardMarketRefresh by remember { mutableIntStateOf(0) }
-    LaunchedEffect(dashboardHeldTickers, dashboardMarketRefresh) {
-        val result = runCatching {
-            kotlinx.coroutines.withTimeout(35_000L) {
-                withContext(Dispatchers.IO) { MarketOverviewClient().load(dashboardHeldTickers) }
-            }
-        }
-        dashboardMarketData = result.getOrElse { error ->
-            dashboardMarketData.copy(
-                error = error.message ?: "Не удалось обновить рыночные данные"
-            )
-        }
-    }
+    // Keep market state above navigation destinations so tab changes do not cancel requests.
+    val dashboardMarket = rememberDashboardMarketDataState(assets)
+    val dashboardMarketData = dashboardMarket.data
+    val refreshDashboardMarketData = dashboardMarket.refresh
     val marketRefresh = rememberMarketRefreshState(assets)
     val isRefreshingMarketData = marketRefresh.isRefreshing
     val refreshQuotes = marketRefresh.refreshQuotes
@@ -232,7 +216,7 @@ internal fun MyCapitalApp() {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, portfolioHistory.onRangeChange, historyResult, historyLoading, historyLoadError, portfolioHistory.refresh, dashboardMarketData, { dashboardMarketRefresh++ }, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, portfolioHistory.onRangeChange, historyResult, historyLoading, historyLoadError, portfolioHistory.refresh, dashboardMarketData, refreshDashboardMarketData, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, cashBalance ?: 0.0, brokerAccountCash, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
