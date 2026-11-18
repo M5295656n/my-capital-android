@@ -120,13 +120,13 @@ class MoexSecurityHistoryClient {
             val baseUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/boards/$board/securities/$safeTicker/candles.json"
             val result = linkedMapOf<LocalDate, MoexDailyClose>()
             var start = 0
-            repeat(50) {
+            for (pageIndex in 0 until 50) {
                 val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start" +
                     "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
                 val page = parseDailyCandles(getJson(url))
-                if (page.isEmpty()) return@repeat
+                if (page.isEmpty()) break
                 page.forEach { result[it.date] = it }
-                if (page.size < 500) return@repeat
+                if (page.size < 500) break
                 start += page.size
             }
             if (result.isNotEmpty()) return result.values.sortedBy { it.date }
@@ -136,13 +136,13 @@ class MoexSecurityHistoryClient {
         val fallbackUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker/candles.json"
         val fallback = linkedMapOf<LocalDate, MoexDailyClose>()
         var offset = 0
-        repeat(50) {
+        for (pageIndex in 0 until 50) {
             val url = "$fallbackUrl?from=$fromDate&till=$tillDate&interval=24&start=$offset" +
                 "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
             val page = parseDailyCandles(getJson(url))
-            if (page.isEmpty()) return@repeat
+            if (page.isEmpty()) break
             page.forEach { fallback[it.date] = it }
-            if (page.size < 500) return@repeat
+            if (page.size < 500) break
             offset += page.size
         }
         return fallback.values.sortedBy { it.date }
