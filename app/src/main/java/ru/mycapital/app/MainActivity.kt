@@ -92,7 +92,7 @@ private enum class Screen(val title: String, val icon: androidx.compose.ui.graph
     Assets("Портфель", Icons.Default.AccountBalanceWallet),
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
-    Events("События", Icons.Default.EventNote),
+    TargetPortfolio("План", Icons.Default.PieChart),
     More("Ещё", Icons.Default.MoreHoriz),
     Accounts("Счета", Icons.Default.AccountBalance),
     Operations("Операции", Icons.Default.SwapHoriz)
@@ -443,7 +443,7 @@ private fun MyCapitalApp() {
                     contentColor = androidx.compose.ui.graphics.Color(0xFFAAB9D0),
                     tonalElevation = 0.dp
                 ) {
-                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.Events, Screen.More).forEach { screen ->
+                    listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.TargetPortfolio, Screen.More).forEach { screen ->
                         NavigationBarItem(
                             selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
                             onClick = { selected = screen },
@@ -481,7 +481,7 @@ private fun MyCapitalApp() {
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
                 Screen.Payouts -> PayoutsScreen(operations, payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
-                Screen.Events -> EventsScreen(assets, cashBalance ?: 0.0, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
+                Screen.TargetPortfolio -> TargetPortfolioPlanSection(assets = assets, modifier = Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -3229,9 +3229,6 @@ private fun AnalyticsScreen(
                 selectedAccountId = selectedAccountId,
                 onAccountSelected = { selectedAccountId = it },
             )
-        }
-        item {
-            TargetPortfolioPlanSection(assets = analyticsAssets)
         }
         item {
             Card(shape = RoundedCornerShape(18.dp), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
