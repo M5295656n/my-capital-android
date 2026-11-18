@@ -446,7 +446,7 @@ private fun MyCapitalApp() {
                 ) {
                     listOf(Screen.Overview, Screen.Assets, Screen.Payouts, Screen.Analytics, Screen.TargetPortfolio, Screen.More).forEach { screen ->
                         NavigationBarItem(
-                            selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations)),
+                            selected = selected == screen || (screen == Screen.More && (selected == Screen.Accounts || selected == Screen.Operations || selected == Screen.Events)),
                             onClick = { selected = screen },
                             icon = {
                                 if (screen == Screen.Analytics) AnalyticsNavigationIcon()
