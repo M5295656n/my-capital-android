@@ -1756,26 +1756,6 @@ private fun AssetDetailScreen(
 }
 
 @Composable
-private fun AssetDetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            content()
-        }
-    }
-    Spacer(Modifier.height(10.dp))
-}
-
-@Composable
-private fun AssetDetailMetric(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.width(10.dp))
-        Text(value, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
 private fun DoubleHeadedEagleIcon() {
     val context = LocalContext.current
     AsyncImage(
