@@ -121,7 +121,7 @@ class MoexSecurityHistoryClient {
             val result = linkedMapOf<LocalDate, MoexDailyClose>()
             var start = 0
             for (pageIndex in 0 until 50) {
-                val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start" +
+                val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start&limit=500&candles.limit=500" +
                     "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
                 val page = try {
                     parseDailyCandles(getJson(url))
@@ -141,7 +141,7 @@ class MoexSecurityHistoryClient {
         val fallback = linkedMapOf<LocalDate, MoexDailyClose>()
         var offset = 0
         for (pageIndex in 0 until 50) {
-            val url = "$fallbackUrl?from=$fromDate&till=$tillDate&interval=24&start=$offset" +
+            val url = "$fallbackUrl?from=$fromDate&till=$tillDate&interval=24&start=$offset&limit=500&candles.limit=500" +
                 "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
             val page = try {
                 parseDailyCandles(getJson(url))
