@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18 ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18 ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
     branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14 ]
@@ -49,7 +49,7 @@ jobs:
           fi
 
           cat changed-files.txt
-          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^([^/]+/)?build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
+          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Data-layer or Android integration files changed: instrumented suite enabled."
           else
