@@ -443,59 +443,51 @@ internal fun MyCapitalApp() {
         onDismissImportError = { importError = null },
         onDismissError = { errorMessage = null }
     )
-    if (payoutToConfirm != null) {
-        ReceivePayoutDialog(
-            payout = payoutToConfirm!!,
-            onDismiss = { payoutToConfirm = null },
-            onConfirm = { tax ->
-                val payout = payoutToConfirm!!
-                scope.launch {
-                    try {
-                        val credited = withContext(Dispatchers.IO) {
-                            repository.confirmPayoutReceived(payout.id, tax)
-                        }
-                        if (!credited) errorMessage = "Эта выплата уже была подтверждена ранее."
-                        payoutToConfirm = null
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "Не удалось подтвердить выплату"
+    AppTransactionDialogs(
+        assets = assets,
+        payoutToConfirm = payoutToConfirm,
+        showAddPayout = showAddPayout,
+        showCashFlow = showCashFlow,
+        showAddOperation = showAddOperation,
+        onDismissPayoutConfirmation = { payoutToConfirm = null },
+        onConfirmPayout = { tax ->
+            val payout = payoutToConfirm!!
+            scope.launch {
+                try {
+                    val credited = withContext(Dispatchers.IO) {
+                        repository.confirmPayoutReceived(payout.id, tax)
                     }
+                    if (!credited) errorMessage = "Эта выплата уже была подтверждена ранее."
+                    payoutToConfirm = null
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось подтвердить выплату"
                 }
             }
-        )
-    }
-    if (showAddPayout) {
-        AddPayoutDialog(
-            assets = assets,
-            onDismiss = { showAddPayout = false },
-            onSave = { asset, payoutType, amountPerUnit, quantity, tax, received, expectedDate ->
-                scope.launch {
-                    try {
-                        repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received, expectedDate)
-                        showAddPayout = false
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "Не удалось сохранить выплату"
-                    }
+        },
+        onDismissAddPayout = { showAddPayout = false },
+        onSavePayout = { asset, payoutType, amountPerUnit, quantity, tax, received, expectedDate ->
+            scope.launch {
+                try {
+                    repository.recordPayout(asset?.id, asset?.ticker ?: "", payoutType, amountPerUnit, quantity, tax, received, expectedDate)
+                    showAddPayout = false
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось сохранить выплату"
                 }
             }
-        )
-    }
-    if (showCashFlow) {
-        CashFlowDialog(
-            onDismiss = { showCashFlow = false },
-            onSave = { isDeposit, amount ->
-                scope.launch {
-                    try {
-                        repository.recordCashFlow(isDeposit, amount)
-                        showCashFlow = false
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "Не удалось сохранить движение денег"
-                    }
+        },
+        onDismissCashFlow = { showCashFlow = false },
+        onSaveCashFlow = { isDeposit, amount ->
+            scope.launch {
+                try {
+                    repository.recordCashFlow(isDeposit, amount)
+                    showCashFlow = false
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось сохранить движение денег"
                 }
             }
-        )
-    }
-    if (showAddOperation) {
-        AddOperationDialog(assets, { showAddOperation = false }) { asset, isBuy, qty, price, fee ->
+        },
+        onDismissAddOperation = { showAddOperation = false },
+        onSaveOperation = { asset, isBuy, qty, price, fee ->
             scope.launch {
                 try {
                     repository.recordTrade(asset.id, isBuy, qty, price, fee)
@@ -505,7 +497,7 @@ internal fun MyCapitalApp() {
                 }
             }
         }
-    }
+    )
     AppAssetDialogs(
         assetToDelete = assetToDelete,
         assetToEdit = assetToEdit,
