@@ -98,11 +98,13 @@ class MoexSecurityHistoryClientTest {
 
     @Test
     fun parsesPrimaryTradingBoardBeforeSecondaryBoards() {
-        val json = org.json.JSONObject(
-            """{"boards":{"columns":["boardid","is_primary","market"],"data":[["TQBR",1,"shares"],["TQTF",0,"shares"],["TQOB",1,"bonds"]]}}"""
+        val entries = listOf(
+            Triple("TQBR", true, "shares"),
+            Triple("TQTF", false, "shares"),
+            Triple("TQOB", true, "bonds")
         )
-        assertEquals(listOf("TQBR", "TQTF"), parseTradingBoards(json, "shares"))
-        assertEquals(listOf("TQOB"), parseTradingBoards(json, "bonds"))
+        assertEquals(listOf("TQBR", "TQTF"), orderTradingBoards(entries, "shares"))
+        assertEquals(listOf("TQOB"), orderTradingBoards(entries, "bonds"))
     }
 
 }
