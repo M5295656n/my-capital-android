@@ -506,62 +506,48 @@ internal fun MyCapitalApp() {
             }
         }
     }
-    if (assetToDelete != null) {
-        val target = assetToDelete!!
-        AlertDialog(
-            onDismissRequest = { assetToDelete = null },
-            title = { Text("Удалить ${target.ticker}?") },
-            text = { Text("Будет удалена только карточка актива и её текущая позиция. История операций, дивиденды и купоны не удаляются. Если актив импортируется повторно из брокерского отчёта, он может появиться снова.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        try {
-                            dao.deleteAsset(target)
-                            assetToDelete = null
-                        } catch (error: Exception) {
-                            errorMessage = error.message ?: "Не удалось удалить актив."
-                            assetToDelete = null
-                        }
-                    }
-                }) { Text("Удалить") }
-            },
-            dismissButton = { TextButton(onClick = { assetToDelete = null }) { Text("Отмена") } }
-        )
-    }
-    if (assetToEdit != null) {
-        EditAssetDialog(
-            asset = assetToEdit!!,
-            onDismiss = { assetToEdit = null },
-            onSave = { updated ->
-                scope.launch {
-                    try {
-                        dao.updateAsset(updated)
-                        assetToEdit = null
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "Не удалось обновить актив."
-                    }
+    AppAssetDialogs(
+        assetToDelete = assetToDelete,
+        assetToEdit = assetToEdit,
+        showAddAsset = showAddAsset,
+        onDismissDelete = { assetToDelete = null },
+        onDismissEdit = { assetToEdit = null },
+        onDismissAdd = { showAddAsset = false },
+        onDelete = { target ->
+            scope.launch {
+                try {
+                    dao.deleteAsset(target)
+                    assetToDelete = null
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось удалить актив."
+                    assetToDelete = null
                 }
             }
-        )
-    }
-    if (showAddAsset) {
-        AddAssetDialog(
-            onDismiss = { showAddAsset = false },
-            onSave = { ticker, name, type, quantity, average, current ->
-                scope.launch {
-                    dao.insertAsset(
-                        AssetEntity(
-                            ticker = ticker.trim().uppercase(),
-                            name = name.trim(),
-                            assetType = type.trim().ifBlank { "Акция" },
-                            quantity = quantity,
-                            averagePrice = average,
-                            currentPrice = current
-                        )
+        },
+        onSaveEdit = { updated ->
+            scope.launch {
+                try {
+                    dao.updateAsset(updated)
+                    assetToEdit = null
+                } catch (error: Exception) {
+                    errorMessage = error.message ?: "Не удалось обновить актив."
+                }
+            }
+        },
+        onSaveAdd = { ticker, name, type, quantity, average, current ->
+            scope.launch {
+                dao.insertAsset(
+                    AssetEntity(
+                        ticker = ticker.trim().uppercase(),
+                        name = name.trim(),
+                        assetType = type.trim().ifBlank { "Акция" },
+                        quantity = quantity,
+                        averagePrice = average,
+                        currentPrice = current
                     )
-                    showAddAsset = false
-                }
+                )
+                showAddAsset = false
             }
-        )
-    }
+        }
+    )
 }
