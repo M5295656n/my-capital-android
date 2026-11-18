@@ -212,9 +212,7 @@ private fun TargetPortfolioPositionDialog(
         },
         confirmButton = {
             TextButton(enabled = valid, onClick = {
-                val proposed = existing.filterNot { it.ticker == initial?.ticker } + TargetPortfolioPosition(normalizedTicker, name.trim(), parsedWeight!!)
-                if (proposed.sumOf { it.targetWeight } > 100.001) validationError = "Сумма целевых весов не может превышать 100%."
-                else onSave(TargetPortfolioPosition(normalizedTicker, name.trim(), parsedWeight!!))
+                onSave(TargetPortfolioPosition(normalizedTicker, name.trim(), parsedWeight!!))
             }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
