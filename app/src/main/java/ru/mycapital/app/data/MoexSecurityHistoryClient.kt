@@ -123,7 +123,7 @@ class MoexSecurityHistoryClient {
             for (pageIndex in 0 until 50) {
                 val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start" +
                     "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
-                val page = parseDailyCandles(getJson(url))
+                val page = runCatching { parseDailyCandles(getJson(url)) }.getOrElse { break }
                 if (page.isEmpty()) break
                 page.forEach { result[it.date] = it }
                 if (page.size < 500) break
@@ -139,7 +139,7 @@ class MoexSecurityHistoryClient {
         for (pageIndex in 0 until 50) {
             val url = "$fallbackUrl?from=$fromDate&till=$tillDate&interval=24&start=$offset" +
                 "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
-            val page = parseDailyCandles(getJson(url))
+            val page = runCatching { parseDailyCandles(getJson(url)) }.getOrElse { break }
             if (page.isEmpty()) break
             page.forEach { fallback[it.date] = it }
             if (page.size < 500) break
