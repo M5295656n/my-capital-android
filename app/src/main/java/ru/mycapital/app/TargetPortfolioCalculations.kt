@@ -38,4 +38,4 @@ internal fun calculateTargetPortfolioSummary(
     return TargetPortfolioSummary(total, targetTotal, execution, rows)
 }
 
-internal fun isTargetPortfolioWeightTotalValid(total: Double): Boolean = total in 99.999..100.001
+internal fun isTargetPortfolioWeightTotalValid(total: Double): Boolean = total in 99.9999..100.0001
