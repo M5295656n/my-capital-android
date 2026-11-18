@@ -132,6 +132,25 @@ jobs:
                           time.sleep(2 * (attempt + 1))
               raise RuntimeError(f"ISS request failed: {url}: {last_error}")
           
+          def fetch_board_candles(ticker, market, board):
+              by_date = {}
+              offset = 0
+              for _ in range(50):
+                  url = (f"{BASE}/engines/stock/markets/{market}/boards/{board}/securities/{ticker}/candles.json"
+                         f"?from=2020-01-01&till=2026-11-18&interval=24&start={offset}&limit=500&candles.limit=500"
+                         "&iss.meta=off&iss.only=candles&candles.columns=begin,close")
+                  payload = get_json(url)
+                  rows = payload.get("candles", {}).get("data", [])
+                  if not rows:
+                      break
+                  for row in rows:
+                      if row and row[0]:
+                          by_date.setdefault(str(row[0])[:10], row)
+                  if len(rows) < 500:
+                      break
+                  offset += len(rows)
+              return by_date
+          
           failures = []
           for ticker, (market, fallback_boards) in INSTRUMENTS.items():
               meta_url = f"{BASE}/securities/{ticker}.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary,market"
@@ -149,29 +168,28 @@ jobs:
                   board_market = row[market_i] if market_i is not None else None
                   if board_market and board_market.lower() != market:
                       continue
-                  candidates.append((bool(row[indexes["is_primary"]]) if indexes.get("is_primary") is not None else False, row[board_i]))
-              boards = [board for _, board in sorted(candidates, reverse=True)]
+                  primary_i = indexes.get("is_primary")
+                  primary = str(row[primary_i]).lower() in ("1", "true") if primary_i is not None else False
+                  candidates.append((primary, row[board_i]))
+              boards = [board for _, board in sorted(candidates, key=lambda item: item[0], reverse=True)]
               boards += [board for board in fallback_boards if board not in boards]
-              found = None
+              merged = {}
               for board in boards:
-                  url = (f"{BASE}/engines/stock/markets/{market}/boards/{board}/securities/{ticker}/candles.json"
-                         "?from=2020-01-01&till=2026-11-18&interval=24&start=0&limit=500&candles.limit=500"
-                         "&iss.meta=off&iss.only=candles&candles.columns=begin,close")
                   try:
-                      payload = get_json(url)
-                      candles = payload.get("candles", {})
-                      candle_rows = candles.get("data", [])
-                      if candle_rows:
-                          found = (board, candle_rows)
-                          break
-                  except Exception:
+                      board_candles = fetch_board_candles(ticker, market, board)
+                  except Exception as exc:
+                      print(f"{ticker}: board={board} request failed: {exc}")
                       continue
-              if not found:
+                  if board_candles:
+                      dates = sorted(board_candles)
+                      print(f"{ticker}: board={board}, candles={len(board_candles)}, range={dates[0]}..{dates[-1]}")
+                      for date, candle in board_candles.items():
+                          merged.setdefault(date, candle)
+              if not merged:
                   failures.append(f"{ticker}: no daily candles on boards {boards}")
                   continue
-              board, candle_rows = found
-              dates = [str(row[0])[:10] for row in candle_rows if row and row[0]]
-              print(f"{ticker}: board={board}, candles_first_page={len(candle_rows)}, range={min(dates)}..{max(dates)}")
+              all_dates = sorted(merged)
+              print(f"{ticker}: merged_candles={len(merged)}, range={all_dates[0]}..{all_dates[-1]}")
               if ticker == "SU26244RMFS2":
                   description = get_json(f"{BASE}/securities/{ticker}.json?iss.meta=off&iss.only=description&description.columns=name,value")
                   fields = {str(row[0]).upper(): row[1] for row in description.get("description", {}).get("data", []) if len(row) >= 2}
