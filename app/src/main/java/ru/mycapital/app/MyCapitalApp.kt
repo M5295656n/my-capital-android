@@ -147,21 +147,7 @@ internal fun MyCapitalApp() {
     val eventSyncMessage = marketRefresh.eventSyncMessage
     val refreshAllMarketData = marketRefresh.refreshAll
 
-    MaterialTheme(colorScheme = darkColorScheme(
-        primary = androidx.compose.ui.graphics.Color(0xFF2588FF),
-        secondary = androidx.compose.ui.graphics.Color(0xFF55C99A),
-        background = androidx.compose.ui.graphics.Color(0xFF080F1B),
-        surface = androidx.compose.ui.graphics.Color(0xFF101C30),
-        surfaceVariant = androidx.compose.ui.graphics.Color(0xFF14243B),
-        secondaryContainer = androidx.compose.ui.graphics.Color(0xFF1B3555),
-        onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFB8D8FF),
-        tertiary = androidx.compose.ui.graphics.Color(0xFF4B9BFF),
-        tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF1B3555),
-        onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFB8D8FF),
-        onBackground = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
-        onSurface = androidx.compose.ui.graphics.Color(0xFFF4F5F8),
-        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFB3B7C4)
-    )) {
+    MyCapitalTheme {
         Scaffold(
             floatingActionButton = {
                 if (selectedAssetDetail == null && selected == Screen.Operations) {
