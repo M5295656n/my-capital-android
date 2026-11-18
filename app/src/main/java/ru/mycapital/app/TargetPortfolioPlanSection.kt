@@ -2,6 +2,9 @@ package ru.mycapital.app
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -15,6 +18,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,8 +57,18 @@ private fun saveTargetPlan(context: Context, plan: List<TargetPortfolioPosition>
 
 private fun targetWeightText(value: Double): String = String.format(Locale("ru", "RU"), "%.2f%%", value)
 
+
+private val targetChartColors = listOf(
+    Color(0xFF4B9BFF), Color(0xFF55C99A), Color(0xFFFFB454), Color(0xFFB58CFF),
+    Color(0xFFFF718B), Color(0xFF45C4D8), Color(0xFF9AA7B8), Color(0xFFD6C45A),
+    Color(0xFF8C9EFF), Color(0xFFDA8BFF)
+)
+
 @Composable
-internal fun TargetPortfolioPlanSection(assets: List<AssetEntity>) {
+internal fun TargetPortfolioPlanSection(
+    assets: List<AssetEntity>,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     var plan by remember(context) { mutableStateOf(readTargetPlan(context)) }
     var adding by remember { mutableStateOf(false) }
@@ -66,100 +81,151 @@ internal fun TargetPortfolioPlanSection(assets: List<AssetEntity>) {
         saveTargetPlan(context, next)
     }
 
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("План целевого портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("Только отдельные акции. Фонды, облигации, золото и деньги исключены.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                IconButton(onClick = { adding = true }) { Icon(Icons.Default.Add, contentDescription = "Добавить акцию") }
+    Column(
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Целевой портфель", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("Структура и исполнение инвестиционного плана", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text("Целевые веса", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(String.format(Locale("ru", "RU"), "%.2f%% / 100%%", summary.targetWeightTotal),
-                        fontWeight = FontWeight.Bold, color = if (validTotal) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("Стоимость всех акций", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${targetMoney(summary.equityValue)} ₽", fontWeight = FontWeight.Bold)
-                }
+            FilledIconButton(onClick = { adding = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Добавить позицию")
             }
-            Box(Modifier.fillMaxWidth().height(7.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
-                Box(Modifier.fillMaxWidth((summary.targetWeightTotal / 100.0).toFloat().coerceIn(0f, 1f)).height(7.dp)
-                    .background(if (validTotal) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, CircleShape))
-            }
-            if (!validTotal) {
-                val message = if (summary.targetWeightTotal < 100.0)
-                    "Осталось распределить ${targetWeightText(100.0 - summary.targetWeightTotal)}. Сумма должна быть ровно 100%."
-                else "Сумма целевых весов превышает 100%. Уменьшите веса."
-                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
-            if (plan.isEmpty()) {
-                Text("Добавьте акции и задайте целевые веса.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Акция", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Цель / факт", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                summary.rows.forEachIndexed { index, row ->
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f).clickable { editing = row.position }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(row.position.ticker, fontWeight = FontWeight.SemiBold)
-                                Text(row.position.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("РАСПРЕДЕЛЕНИЕ ЦЕЛЕВЫХ ДОЛЕЙ", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                Box(Modifier.size(224.dp), contentAlignment = Alignment.Center) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val stroke = Stroke(width = 25.dp.toPx(), cap = StrokeCap.Round)
+                        if (summary.rows.isEmpty() || summary.targetWeightTotal <= 0.0) {
+                            drawArc(color = Color(0xFF34445B), startAngle = -90f, sweepAngle = 360f,
+                                useCenter = false, style = stroke)
+                        } else {
+                            var angle = -90f
+                            summary.rows.forEachIndexed { index, row ->
+                                val sweep = (row.position.targetWeight / summary.targetWeightTotal * 360.0).toFloat()
+                                if (sweep > 0.8f) {
+                                    drawArc(color = targetChartColors[index % targetChartColors.size],
+                                        startAngle = angle, sweepAngle = (sweep - 1.2f).coerceAtLeast(0.5f),
+                                        useCenter = false, style = stroke)
+                                }
+                                angle += sweep
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("${targetWeightText(row.position.targetWeight)} / ${targetWeightText(row.actualWeight)}",
-                                    fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text((if (row.deltaPp > 0.005) "+" else "") + String.format(Locale("ru", "RU"), "%.2f п.п.", row.deltaPp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (row.deltaPp > 0.005) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("ИСПОЛНЕНИЕ", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        Text(if (validTotal) targetWeightText(summary.executionPercent) else "—",
+                            style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text("плана", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Целевой вес", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(targetWeightText(summary.targetWeightTotal), fontWeight = FontWeight.Bold)
+                    }
+                    Box(Modifier.width(1.dp).height(34.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Рыночная стоимость", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${targetMoney(summary.equityValue)} ₽", fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (!validTotal) {
+                    val message = if (summary.targetWeightTotal < 100.0)
+                        "Распределено ${targetWeightText(summary.targetWeightTotal)} — осталось ${targetWeightText(100.0 - summary.targetWeightTotal)}."
+                    else "Сумма целевых долей больше 100%. Скорректируйте веса."
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Состав портфеля", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    Text("${plan.size} поз.", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (summary.rows.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.PieChart, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(34.dp))
+                        Text("Пока нет позиций", fontWeight = FontWeight.SemiBold)
+                        Text("Добавьте компании и распределите между ними 100% целевого веса.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { adding = true }) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Добавить первую акцию")
+                        }
+                    }
+                } else {
+                    summary.rows.forEachIndexed { index, row ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(11.dp).background(targetChartColors[index % targetChartColors.size], CircleShape))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f).clickable { editing = row.position },
+                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(row.position.ticker, fontWeight = FontWeight.Bold)
+                                Text(row.position.name, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
-                            IconButton(onClick = { editing = row.position }, modifier = Modifier.size(34.dp)) {
+                            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(targetWeightText(row.position.targetWeight), fontWeight = FontWeight.SemiBold)
+                                Text("факт ${targetWeightText(row.actualWeight)}", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = { editing = row.position }, modifier = Modifier.size(36.dp)) {
                                 Icon(Icons.Default.Edit, contentDescription = "Изменить ${row.position.ticker}", modifier = Modifier.size(17.dp))
                             }
-                            IconButton(onClick = { deleting = row.position }, modifier = Modifier.size(34.dp)) {
+                            IconButton(onClick = { deleting = row.position }, modifier = Modifier.size(36.dp)) {
                                 Icon(Icons.Default.Delete, contentDescription = "Удалить ${row.position.ticker}", modifier = Modifier.size(17.dp))
                             }
                         }
-                        Box(Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
+                        Box(Modifier.fillMaxWidth().height(7.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
                             Box(Modifier.fillMaxWidth((row.position.targetWeight / 100.0).toFloat().coerceIn(0f, 1f))
-                                .height(6.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                                .height(7.dp).background(targetChartColors[index % targetChartColors.size].copy(alpha = 0.38f), CircleShape))
                             Box(Modifier.fillMaxWidth((row.actualWeight / 100.0).toFloat().coerceIn(0f, 1f))
-                                .height(6.dp).background(if (row.deltaPp > 0.005) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, CircleShape))
+                                .height(7.dp).background(targetChartColors[index % targetChartColors.size], CircleShape))
                         }
-                        when {
-                            row.actualWeight <= 0.0001 -> Text("Позиции нет — фактический вес 0%.",
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            row.deltaPp < -0.005 -> Text("Не хватает ${targetWeightText(-row.deltaPp)} до цели.",
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            row.deltaPp > 0.005 -> Text("Превышение цели на ${targetWeightText(row.deltaPp)}.",
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                        }
+                        val difference = row.deltaPp
+                        Text(when {
+                            row.actualWeight <= 0.0001 -> "Позиция ещё не сформирована"
+                            difference < -0.005 -> "До целевого веса: ${targetWeightText(-difference)}"
+                            difference > 0.005 -> "Выше цели на ${targetWeightText(difference)}"
+                            else -> "Целевой вес достигнут"
+                        }, style = MaterialTheme.typography.labelSmall,
+                            color = if (difference > 0.005) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (index != summary.rows.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
-                    if (index != summary.rows.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("Исполнение плана", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (validTotal) targetWeightText(summary.executionPercent) else "—",
-                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
-                Text(if (validTotal) "Доля выполненных целевых весов" else "После настройки суммы 100%",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(10.dp))
+                Text("Фактические доли обновляются автоматически при изменении состава портфеля и котировок.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Box(Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
-                Box(Modifier.fillMaxWidth((summary.executionPercent / 100.0).toFloat().coerceIn(0f, 1f))
-                    .height(8.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
-            }
-            Text("Фактический вес = стоимость акции / стоимость всех отдельных акций. Значения пересчитываются автоматически при изменении котировок и количества.",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 
