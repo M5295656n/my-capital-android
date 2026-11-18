@@ -93,6 +93,7 @@ private enum class Screen(val title: String, val icon: androidx.compose.ui.graph
     Payouts("Выплаты", Icons.Default.Payments),
     Analytics("Аналитика", Icons.Default.ShowChart),
     TargetPortfolio("План", Icons.Default.PieChart),
+    Events("События", Icons.Default.EventNote),
     More("Ещё", Icons.Default.MoreHoriz),
     Accounts("Счета", Icons.Default.AccountBalance),
     Operations("Операции", Icons.Default.SwapHoriz)
@@ -482,6 +483,7 @@ private fun MyCapitalApp() {
                 Screen.Payouts -> PayoutsScreen(operations, payouts, assets, brokerAccounts, brokerAccountAssets, selectedPayoutAccount, { selectedPayoutAccount = it }, onConfirmReceipt = { payoutToConfirm = it }, onRefreshEvents = refreshEvents, eventSyncMessage = eventSyncMessage, modifier = Modifier.padding(padding))
                 Screen.Analytics -> AnalyticsScreen(assets, total, cashBalance ?: 0.0, operations, payouts, portfolioSnapshots, portfolioCompositionSnapshots, brokerAccounts, brokerAccountAssets, brokerAccountCash, dao, Modifier.padding(padding))
                 Screen.TargetPortfolio -> TargetPortfolioPlanSection(assets = assets, modifier = Modifier.padding(padding))
+                Screen.Events -> EventsScreen(assets, cashBalance ?: 0.0, payouts, marketCalendarItems, brokerAccounts, brokerAccountAssets, brokerAccountCash, refreshNews, newsSyncMessage, Modifier.padding(padding))
                 Screen.More -> MoreScreen(
                     onAddAsset = { showAddAsset = true },
                     onAddPayout = { showAddPayout = true },
@@ -496,6 +498,7 @@ private fun MyCapitalApp() {
                     onExportData = { exportPicker.launch("my-capital-export.zip") },
                     onOpenAccounts = { selected = Screen.Accounts },
                     onOpenOperations = { selected = Screen.Operations },
+                    onOpenEvents = { selected = Screen.Events },
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -1182,6 +1185,7 @@ private fun MoreScreen(
     onExportData: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenOperations: () -> Unit,
+    onOpenEvents: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1208,6 +1212,17 @@ private fun MoreScreen(
                 Column(Modifier.weight(1f)) {
                     Text("История операций", fontWeight = FontWeight.SemiBold)
                     Text("Покупки, продажи, пополнения и выводы", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+        }
+        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenEvents)) {
+            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.EventNote, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("События и новости", fontWeight = FontWeight.SemiBold)
+                    Text("Рыночный календарь и новости компаний", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Icon(Icons.Default.ChevronRight, contentDescription = null)
             }
