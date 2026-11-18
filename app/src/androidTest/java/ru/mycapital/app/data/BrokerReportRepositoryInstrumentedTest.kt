@@ -132,7 +132,7 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
-    fun payoutImportsUseCreditedNetAmountsAndIgnoreInternalTransfers() = runBlocking {
+    fun payoutImportsUseCreditedNetAmountsAndRecordScopedInternalTransfers() = runBlocking {
         dao.ensureCashBalance(CashBalanceEntity(balance = 250.0))
         val report = report(
             cashFlows = listOf(
@@ -174,6 +174,9 @@ class BrokerReportRepositoryInstrumentedTest {
         assertEquals("T", operations.single { it.operationType == "Дивиденд" }.ticker)
         assertEquals("SU26228RMFS9", operations.single { it.operationType == "Купон" }.ticker)
         assertEquals(null, dao.getOperationBySourceKey("TRANSFER:1"))
+        val internalTransfer = dao.getOperationBySourceKey("SBER:403RY0J:CASH:TRANSFER:1")
+        assertNotNull(internalTransfer)
+        assertEquals("403RY0J", internalTransfer!!.accountId)
     }
 
 
@@ -198,6 +201,29 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
+    fun identicalPayoutRowsFromDifferentBrokerageAccountsRemainSeparate() = runBlocking {
+        val samePayout = BrokerReportCashFlow(
+            LocalDate.parse("2026-10-20"),
+            "Выплата дивидендов Т-Технологии. Налог удержан.",
+            8.40, 0.0, "DIV:SAME", "T"
+        )
+        val mainAccount = report(accountId = "403RY0J", cashFlows = listOf(samePayout))
+        val iisAccount = report(accountId = "S25F9ZU", cashFlows = listOf(samePayout))
+
+        val mainResult = repository.importBrokerReportHistory(mainAccount)
+        val iisResult = repository.importBrokerReportHistory(iisAccount)
+        val repeatedIisResult = repository.importBrokerReportHistory(iisAccount)
+
+        assertEquals(1, mainResult.payoutsImported)
+        assertEquals(1, iisResult.payoutsImported)
+        assertEquals(0, repeatedIisResult.payoutsImported)
+        assertEquals(1, repeatedIisResult.duplicates)
+        assertNotNull(dao.getPayoutBySourceKey("SBER:403RY0J:PAYOUT:DIV:SAME"))
+        assertNotNull(dao.getPayoutBySourceKey("SBER:S25F9ZU:PAYOUT:DIV:SAME"))
+        assertEquals(2, dao.observePayouts().first().size)
+    }
+
+    @Test
     fun legacyUnscopedImportKeyPreventsReimportAfterUpgrade() = runBlocking {
         dao.insertOperation(
             OperationEntity(
@@ -218,7 +244,7 @@ class BrokerReportRepositoryInstrumentedTest {
     }
 
     @Test
-    fun snapshotReconciliationSetsAbsoluteCashAndOnlyUpdatesMatchedAssets() = runBlocking {
+    fun snapshotReconciliationSetsAbsoluteCashAndCreatesPreviouslyUnknownHeldAssets() = runBlocking {
         val assetId = dao.insertAsset(
             AssetEntity(ticker = "ABC", name = "ABC", assetType = "Акция",
                 quantity = 2.0, averagePrice = 10.0, currentPrice = 11.0)
