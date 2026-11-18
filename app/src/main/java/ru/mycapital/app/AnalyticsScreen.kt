@@ -109,7 +109,13 @@ internal fun AnalyticsScreen(
     val receivedDividends = receivedPayoutTotals.dividends
     val receivedCoupons = receivedPayoutTotals.coupons
     val receivedPrincipalReturns = receivedPayoutTotals.returnedPrincipal
-    val totalInvestmentResult = unrealized + realizedResult.profit + receivedPayoutTotals.totalNetAmount
+    val redeemedCostBasis = calculateRedeemedPositionCostBasis(
+        analyticsHistoryAssets,
+        analyticsOperations,
+        analyticsPayouts
+    )
+    val totalInvestmentResult =
+        unrealized + realizedResult.profit + receivedPayoutTotals.totalNetAmount - redeemedCostBasis
     val totalValue = analyticsMarketValue + analyticsCash
     val returnPercent = if (invested > 0.0) unrealized / invested * 100.0 else 0.0
     LazyColumn(
@@ -209,7 +215,7 @@ internal fun AnalyticsScreen(
                         fontWeight = FontWeight.Bold,
                         color = if (totalInvestmentResult >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
-                    Text("Сумма нереализованного результата по текущим остаткам, реализованного результата по FIFO, полученных дивидендов и купонов после налога, а также возвращённого номинала облигаций. Погашение и амортизация не считаются доходом, но учитываются в общем денежном результате. Если история покупок неполная, итог по сделкам также неполный.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Сумма нереализованного результата по текущим остаткам, реализованного результата по FIFO, полученных выплат и возвращённого номинала облигаций за вычетом себестоимости полностью погашенных позиций. Погашение и амортизация не считаются доходом, но учитываются в общем денежном результате. Если история покупок неполная, итог по сделкам также неполный.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
