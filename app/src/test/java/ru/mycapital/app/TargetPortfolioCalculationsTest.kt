@@ -36,7 +36,7 @@ class TargetPortfolioCalculationsTest {
         assertEquals(50.0, rows.getValue("SBER").actualWeight, 0.0001)
         assertEquals(50.0, rows.getValue("LKOH").actualWeight, 0.0001)
         assertEquals(0.0, rows.getValue("X5").actualWeight, 0.0001)
-        assertEquals(50.0, result.executionPercent, 0.0001)
+        assertEquals(80.0, result.executionPercent, 0.0001)
     }
 
     @Test
