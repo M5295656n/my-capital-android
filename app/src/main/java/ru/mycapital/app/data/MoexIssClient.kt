@@ -55,7 +55,7 @@ internal fun moexMarketRoute(ticker: String, assetType: String): MoexMarketRoute
 }
 
 /** TOM is primary; TOD is a fallback only when TOM has no usable quote. */
-internal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
+internal fun selectSpotQuotePrice(last: Double?, weightedAverage: Double?): Double? =\n    last?.takeIf { it.isFinite() && it > 0.0 }\n        ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }\n\ninternal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
     "GLDRUB_TOM" -> listOf("GLDRUB_TOM", "GLDRUB_TOD")
     "GLDRUB_TOD" -> listOf("GLDRUB_TOD", "GLDRUB_TOM")
     else -> listOf(ticker.trim().uppercase())
@@ -168,6 +168,9 @@ class MoexIssClient {
                         weightedAverage = value(row, "WAPRICE"),
                         officialCurrent = value(row, "LCURRENTPRICE")
                     )
+                } else if (route.engine == "currency") {
+                    // Never use MARKETPRICE here: it is a previous-session reference, not a live quote.
+                    selectSpotQuotePrice(value(row, "LAST"), value(row, "WAPRICE"))
                 } else {
                     value(row, "LAST") ?: value(row, "WAPRICE") ?: value(row, "LCURRENTPRICE")
                 } ?: continue
