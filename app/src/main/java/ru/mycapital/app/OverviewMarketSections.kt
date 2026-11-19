@@ -223,86 +223,83 @@ internal class MarketOverviewClient {
     }
 }
 
-internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String): MarketQuoteRow? =
-    runCatching {
-        val table = JSONObject(json).optJSONObject("marketdata") ?: return@runCatching null
-        val columns = table.optJSONArray("columns") ?: return@runCatching null
-        val rows = table.optJSONArray("data") ?: return@runCatching null
-        val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
-        val secIdIndex = indexes["SECID"] ?: return@runCatching null
-        val candidates = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
-            .filter { it.optString(secIdIndex) == ticker }
-        val row = candidates.firstOrNull { candidate ->
-            indexes["BOARDID"]?.let { candidate.optString(it) == "CETS" } == true
-        } ?: candidates.firstOrNull() ?: return@runCatching null
-        fun value(column: String): Double? = indexes[column]
-            ?.takeIf { it < row.length() && !row.isNull(it) }
-            ?.let { row.optDouble(it, Double.NaN) }
-            ?.takeIf { it.isFinite() && it > 0.0 }
-        val last = value("LAST")
-        val marketPrice = value("MARKETPRICE")
-        val previous = value("PREVPRICE")
+private fun jsonColumnIndexes(columns: org.json.JSONArray): Map<String, Int> =
+    (0 until columns.length()).associate { columns.getString(it) to it }
+
+private fun jsonCellString(row: org.json.JSONArray, index: Int?): String? {
+    if (index == null || index !in 0 until row.length() || row.isNull(index)) return null
+    return runCatching { row.get(index).toString() }.getOrNull()?.takeIf { it.isNotBlank() && it != "null" }
+}
+
+private fun jsonCellNumber(row: org.json.JSONArray, indexes: Map<String, Int>, column: String): Double? {
+    val raw = jsonCellString(row, indexes[column]) ?: return null
+    return raw.toDoubleOrNull()?.takeIf { it.isFinite() }
+}
+
+internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String): MarketQuoteRow? {
+    return runCatching {
+        val table = JSONObject(json).getJSONObject("marketdata")
+        val columns = jsonColumnIndexes(table.getJSONArray("columns"))
+        val rows = table.getJSONArray("data")
+        val idIndex = columns["SECID"] ?: return@runCatching null
+        val candidates = (0 until rows.length()).mapNotNull { index ->
+            rows.optJSONArray(index)?.takeIf { jsonCellString(it, idIndex) == ticker }
+        }
+        val row = candidates.firstOrNull { jsonCellString(it, columns["BOARDID"]) == "CETS" }
+            ?: candidates.firstOrNull() ?: return@runCatching null
+        val last = jsonCellNumber(row, columns, "LAST")?.takeIf { it > 0.0 }
+        val marketPrice = jsonCellNumber(row, columns, "MARKETPRICE")?.takeIf { it > 0.0 }
+        val previous = jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
         val price = last ?: marketPrice ?: previous ?: return@runCatching null
-        val change = indexes["CHANGE"]
-            ?.takeIf { it < row.length() && !row.isNull(it) }
-            ?.let { row.optDouble(it, Double.NaN) }
-            ?.takeIf { it.isFinite() }
+        val reportedChange = jsonCellNumber(row, columns, "CHANGE")
         val changePercent = when {
             last != null && previous != null -> calculateQuoteChangePercent(last, previous)
-            last != null && change != null -> calculateQuoteChangePercent(last, last - change)
+            last != null && reportedChange != null -> calculateQuoteChangePercent(last, last - reportedChange)
             marketPrice != null && previous != null -> calculateQuoteChangePercent(marketPrice, previous)
             else -> null
         }
         MarketQuoteRow(ticker, label, price, changePercent)
     }.getOrNull()
+}
 
 internal fun parseMoexMoverQuoteJson(
     json: String,
     ticker: String,
     preferredBoards: List<String>
-): MarketMoverRow? = runCatching {
-    val root = JSONObject(json)
-    val securities = root.optJSONObject("securities")
-    val securityColumns = securities?.optJSONArray("columns")
-    val securityRows = securities?.optJSONArray("data")
-    val securityIndexes = securityColumns?.let { cols ->
-        (0 until cols.length()).associate { cols.optString(it) to it }
-    }.orEmpty()
-    val name = (0 until (securityRows?.length() ?: 0)).mapNotNull { index ->
-        val row = securityRows?.optJSONArray(index) ?: return@mapNotNull null
-        val idIndex = securityIndexes["SECID"] ?: return@mapNotNull null
-        if (row.optString(idIndex) != ticker) return@mapNotNull null
-        row.optString(securityIndexes["SHORTNAME"] ?: idIndex).takeIf { it.isNotBlank() }
-    }.firstOrNull() ?: ticker
+): MarketMoverRow? {
+    return runCatching {
+        val root = JSONObject(json)
+        val securities = root.optJSONObject("securities")
+        val securityColumns = securities?.optJSONArray("columns")
+        val securityRows = securities?.optJSONArray("data")
+        val securityIndexes = securityColumns?.let(::jsonColumnIndexes).orEmpty()
+        val name = (0 until (securityRows?.length() ?: 0)).firstNotNullOfOrNull { index ->
+            val row = securityRows?.optJSONArray(index) ?: return@firstNotNullOfOrNull null
+            if (jsonCellString(row, securityIndexes["SECID"]) != ticker) return@firstNotNullOfOrNull null
+            jsonCellString(row, securityIndexes["SHORTNAME"])
+        } ?: ticker
 
-    val table = root.optJSONObject("marketdata") ?: return@runCatching null
-    val columns = table.optJSONArray("columns") ?: return@runCatching null
-    val rows = table.optJSONArray("data") ?: return@runCatching null
-    val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
-    val idIndex = indexes["SECID"] ?: return@runCatching null
-    val candidates = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
-        .filter { it.optString(idIndex) == ticker }
-    val row = candidates.firstOrNull { candidate ->
-        indexes["BOARDID"]?.let { candidate.optString(it) in preferredBoards } == true
-    } ?: candidates.firstOrNull() ?: return@runCatching null
-    fun value(column: String): Double? = indexes[column]
-        ?.takeIf { it < row.length() && !row.isNull(it) }
-        ?.let { row.optDouble(it, Double.NaN) }
-        ?.takeIf { it.isFinite() && it > 0.0 }
-    val last = value("LAST")
-    val marketPrice = value("MARKETPRICE")
-    val previous = value("PREVPRICE")
-    val price = last ?: marketPrice ?: previous ?: return@runCatching null
-    val reportedChange = indexes["CHANGE"]
-        ?.takeIf { it < row.length() && !row.isNull(it) }
-        ?.let { row.optDouble(it, Double.NaN) }
-        ?.takeIf { it.isFinite() }
-    val change = reportedChange ?: previous?.let { price - it } ?: return@runCatching null
-    val previousPrice = previous ?: (price - change)
-    val changePercent = calculateQuoteChangePercent(price, previousPrice) ?: return@runCatching null
-    if (changePercent == 0.0) return@runCatching null
-    MarketMoverRow(ticker, name, price, change, changePercent)
-}.getOrNull()
+        val table = root.getJSONObject("marketdata")
+        val columns = jsonColumnIndexes(table.getJSONArray("columns"))
+        val rows = table.getJSONArray("data")
+        val idIndex = columns["SECID"] ?: return@runCatching null
+        val candidates = (0 until rows.length()).mapNotNull { index ->
+            rows.optJSONArray(index)?.takeIf { jsonCellString(it, idIndex) == ticker }
+        }
+        val row = candidates.firstOrNull { jsonCellString(it, columns["BOARDID"]) in preferredBoards }
+            ?: candidates.firstOrNull() ?: return@runCatching null
+        val last = jsonCellNumber(row, columns, "LAST")?.takeIf { it > 0.0 }
+        val marketPrice = jsonCellNumber(row, columns, "MARKETPRICE")?.takeIf { it > 0.0 }
+        val previous = jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
+        val price = last ?: marketPrice ?: previous ?: return@runCatching null
+        val reportedChange = jsonCellNumber(row, columns, "CHANGE")
+        val change = reportedChange ?: previous?.let { price - it } ?: return@runCatching null
+        val previousPrice = previous ?: (price - change)
+        val changePercent = calculateQuoteChangePercent(price, previousPrice) ?: return@runCatching null
+        if (changePercent == 0.0) return@runCatching null
+        MarketMoverRow(ticker, name, price, change, changePercent)
+    }.getOrNull()
+}
 
 internal fun calculateQuoteChangePercent(current: Double, previous: Double): Double? {
     if (!current.isFinite() || !previous.isFinite() || current <= 0.0 || previous <= 0.0) return null
