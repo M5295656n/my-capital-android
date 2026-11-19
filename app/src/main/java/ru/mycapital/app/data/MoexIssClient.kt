@@ -41,6 +41,26 @@ internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Dou
     return price * faceValue / 100.0 + accruedInterest
 }
 
+
+internal data class MoexMarketRoute(val engine: String, val market: String, val board: String? = null)
+
+/** Gold spot trades on the FX and Precious Metals market, board CETS. */
+internal fun moexMarketRoute(ticker: String, assetType: String): MoexMarketRoute {
+    val code = ticker.trim().uppercase()
+    if (code == "GLDRUB_TOM" || code == "GLDRUB_TOD") {
+        return MoexMarketRoute(engine = "currency", market = "selt", board = "CETS")
+    }
+    val market = if (assetType.contains("облигац", ignoreCase = true)) "bonds" else "shares"
+    return MoexMarketRoute(engine = "stock", market = market)
+}
+
+/** TOM is primary; TOD is a fallback only when TOM has no usable quote. */
+internal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
+    "GLDRUB_TOM" -> listOf("GLDRUB_TOM", "GLDRUB_TOD")
+    "GLDRUB_TOD" -> listOf("GLDRUB_TOD", "GLDRUB_TOM")
+    else -> listOf(ticker.trim().uppercase())
+}
+
 class MoexIssClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -49,9 +69,23 @@ class MoexIssClient {
         .build()
 
     fun getQuote(ticker: String, assetType: String): MoexQuote? {
-        val market = if (assetType.contains("облигац", ignoreCase = true)) "bonds" else "shares"
+        for (candidate in moexQuoteCandidates(ticker)) {
+            try {
+                val quote = getQuoteFromMoex(candidate, assetType)
+                if (quote != null) return quote.copy(ticker = ticker.trim().uppercase())
+            } catch (_: UnsupportedMoexInstrumentException) {
+                // Try the alternate settlement code for gold (TOM/TOD).
+            }
+        }
+        return null
+    }
+
+    private fun getQuoteFromMoex(ticker: String, assetType: String): MoexQuote? {
+        val route = moexMarketRoute(ticker, assetType)
+        val market = route.market
         val safeTicker = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
-        val url = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker.json" +
+        val boardPath = route.board?.let { "/boards/$it" } ?: ""
+        val url = "https://iss.moex.com/iss/engines/${route.engine}/markets/$market$boardPath/securities/$safeTicker.json" +
             "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE,ACCRUEDINT&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
         val request = Request.Builder()
             .url(url)
