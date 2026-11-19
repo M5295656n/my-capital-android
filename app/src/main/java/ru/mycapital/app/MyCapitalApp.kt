@@ -75,8 +75,6 @@ internal fun MyCapitalApp() {
     var isRestoringBackup by remember { mutableStateOf(false) }
     var pendingBackupRestore by remember { mutableStateOf<Uri?>(null) }
     var pendingBackupCreate by remember { mutableStateOf<Uri?>(null) }
-    var backupCreatePassword by remember { mutableStateOf("") }
-    var backupCreatePasswordConfirm by remember { mutableStateOf("") }
     var backupRestorePassword by remember { mutableStateOf("") }
     var backupResultMessage by remember { mutableStateOf<String?>(null) }
     val repository = remember { PortfolioRepository(PortfolioDatabase.getInstance(context)) }
@@ -124,11 +122,7 @@ internal fun MyCapitalApp() {
         }
     }
     val backupCreatePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
-        if (uri != null) {
-            pendingBackupCreate = uri
-            backupCreatePassword = ""
-            backupCreatePasswordConfirm = ""
-        }
+        if (uri != null) pendingBackupCreate = uri
     }
     val backupRestorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) pendingBackupRestore = uri
@@ -226,34 +220,21 @@ internal fun MyCapitalApp() {
     AppBackupDialogs(
         pendingBackupCreate = pendingBackupCreate,
         pendingBackupRestore = pendingBackupRestore,
-        createPassword = backupCreatePassword,
-        createPasswordConfirm = backupCreatePasswordConfirm,
         restorePassword = backupRestorePassword,
         isCreating = isCreatingBackup,
         isRestoring = isRestoringBackup,
-        onCreatePasswordChange = { backupCreatePassword = it },
-        onCreatePasswordConfirmChange = { backupCreatePasswordConfirm = it },
         onRestorePasswordChange = { backupRestorePassword = it },
-        onDismissCreate = {
-            if (!isCreatingBackup) {
-                pendingBackupCreate = null
-                backupCreatePassword = ""
-                backupCreatePasswordConfirm = ""
-            }
-        },
+        onDismissCreate = { if (!isCreatingBackup) pendingBackupCreate = null },
         onConfirmCreate = {
             val uri = pendingBackupCreate ?: return@AppBackupDialogs
-            val password = backupCreatePassword
             isCreatingBackup = true
             pendingBackupCreate = null
-            backupCreatePassword = ""
-            backupCreatePasswordConfirm = ""
             scope.launch {
                 try {
                     val info = withContext(Dispatchers.IO) {
-                        PortfolioBackup.export(context, uri, password.toCharArray())
+                        PortfolioBackup.export(context, uri)
                     }
-                    backupResultMessage = "Зашифрованная резервная копия AES-256 создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Пароль не сохранён — храните его отдельно."
+                    backupResultMessage = "Резервная копия без шифрования создана. Версия базы: ${info.databaseVersion}. Размер базы: ${info.databaseBytes / 1024} КБ. Храните ZIP-файл в безопасном месте."
                 } catch (error: Exception) {
                     errorMessage = error.message ?: "Не удалось создать резервную копию."
                 } finally {
@@ -275,13 +256,13 @@ internal fun MyCapitalApp() {
             scope.launch {
                 try {
                     val info = withContext(Dispatchers.IO) {
-                        PortfolioBackup.restore(context, uri, password.toCharArray())
+                        PortfolioBackup.restore(context, uri, password.takeIf { it.isNotEmpty() }?.toCharArray())
                     }
                     pendingBackupRestore = null
-                    backupResultMessage = "База успешно расшифрована, проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
+                    backupResultMessage = "Резервная копия проверена и восстановлена (версия ${info.databaseVersion}). Сейчас экран приложения будет перезапущен."
                     (context as? ComponentActivity)?.recreate()
                 } catch (error: Exception) {
-                    errorMessage = error.message ?: "Не удалось восстановить резервную копию. Проверьте пароль и целостность архива."
+                    errorMessage = error.message ?: "Не удалось восстановить резервную копию. Для старых архивов AES-256 проверьте пароль."
                 } finally {
                     isRestoringBackup = false
                 }
