@@ -137,7 +137,7 @@ internal class MarketOverviewClient {
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? {
         val urls = listOf(
-            "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE",
+            "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,CHANGE,PREVPRICE,MARKETPRICE",
             "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,CHANGE,PREVPRICE,MARKETPRICE"
         )
         urls.forEach { url ->
