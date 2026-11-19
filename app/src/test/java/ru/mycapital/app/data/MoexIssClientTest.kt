@@ -57,6 +57,14 @@ class MoexIssClientTest {
         assertEquals(listOf("SBER"), moexQuoteCandidates("SBER"))
     }
 
+    @Test fun goldFundUsesOfficialPreviousCloseOnlyWhenLiveQuoteIsUnavailable() {
+        assertEquals(2_623.5, selectGoldFundQuotePrice(2_637.0, 2_623.5)!!, 0.0001)
+        assertEquals(2_623.5, selectGoldFundQuotePrice(null, 2_623.5)!!, 0.0001)
+        assertEquals(2_623.5, selectGoldFundQuotePrice(0.0, 2_623.5)!!, 0.0001)
+        assertEquals(null, selectGoldFundQuotePrice(null, null))
+        assertEquals(null, selectGoldFundQuotePrice(null, -1.0))
+    }
+
     @Test fun spotGoldQuoteUsesLastThenWeightedAverageAndRejectsMissingValues() {
         assertEquals(10_250.0, selectSpotQuotePrice(10_250.0, 10_240.0)!!, 0.0001)
         assertEquals(10_240.0, selectSpotQuotePrice(null, 10_240.0)!!, 0.0001)

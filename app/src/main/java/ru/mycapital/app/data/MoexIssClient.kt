@@ -62,6 +62,11 @@ internal fun selectSpotQuotePrice(last: Double?, weightedAverage: Double?): Doub
     last?.takeIf { it.isFinite() && it > 0.0 }
         ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }
 
+/** GOLD PREVPRICE is the last official close, used only when no live quote exists. */
+internal fun selectGoldFundQuotePrice(livePrice: Double?, previousClose: Double?): Double? =
+    livePrice?.takeIf { it.isFinite() && it > 0.0 }
+        ?: previousClose?.takeIf { it.isFinite() && it > 0.0 }
+
 internal fun preferredMoexBoardsForRoute(route: MoexMarketRoute, assetType: String): List<String> =
     route.board?.let(::listOf) ?: preferredMoexBoards(assetType)
 
@@ -102,7 +107,7 @@ class MoexIssClient {
         val query = if (route.engine == "currency") {
             "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE"
         } else {
-            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE,ACCRUEDINT&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
+            "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE,ACCRUEDINT,PREVPRICE&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
         }
         val url = endpoint + query
         val request = Request.Builder()
@@ -142,6 +147,27 @@ class MoexIssClient {
             } else null to null
             val faceValue = securityFields.first
             val accruedFromSecurity = securityFields.second
+            // GOLD is an ETF on TQBR. Outside the trading session ISS may return
+            // PREVPRICE without a usable live marketdata price. This is the last
+            // official close, not a live trade; restrict the fallback to GOLD.
+            val goldPreviousClose = if (ticker == "GOLD") {
+                val securities = root.optJSONObject("securities")
+                val securityColumns = securities?.optJSONArray("columns")
+                val securityRows = securities?.optJSONArray("data")
+                val secidIndex = securityColumns?.let { cols ->
+                    (0 until cols.length()).firstOrNull { cols.optString(it) == "SECID" }
+                }
+                val previousPriceIndex = securityColumns?.let { cols ->
+                    (0 until cols.length()).firstOrNull { cols.optString(it) == "PREVPRICE" }
+                }
+                (0 until (securityRows?.length() ?: 0)).firstNotNullOfOrNull { index ->
+                    val row = securityRows?.optJSONArray(index) ?: return@firstNotNullOfOrNull null
+                    if (secidIndex != null && row.optString(secidIndex) != "GOLD") return@firstNotNullOfOrNull null
+                    val raw = previousPriceIndex?.takeIf { it < row.length() && !row.isNull(it) }
+                        ?.let { row.optDouble(it, Double.NaN) }
+                    raw?.takeIf { it.isFinite() && it > 0.0 }
+                }
+            } else null
             val table = root.optJSONObject("marketdata")
                 ?: throw IOException("В ответе MOEX ISS отсутствует таблица котировок")
             val columns = table.optJSONArray("columns")
@@ -198,6 +224,11 @@ class MoexIssClient {
                     throw IOException(error.message ?: "Не удалось пересчитать цену облигации", error)
                 }
                 return MoexQuote(ticker.trim().uppercase(), normalizedPrice, board)
+            }
+            // TQBR may have no LAST/WAPRICE outside the session. Use GOLD's
+            // official previous close instead of reporting a missing board quote.
+            if (ticker == "GOLD" && goldPreviousClose != null) {
+                return MoexQuote(ticker, goldPreviousClose, route.board)
             }
             return null
         }
