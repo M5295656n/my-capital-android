@@ -143,6 +143,7 @@ internal fun MyCapitalApp() {
     val refreshNews = marketRefresh.refreshNews
     val newsSyncMessage = marketRefresh.newsSyncMessage
     val eventSyncMessage = marketRefresh.eventSyncMessage
+    val quoteSyncMessage = marketRefresh.quoteSyncMessage
     val refreshAllMarketData = marketRefresh.refreshAll
 
     MyCapitalTheme {
@@ -160,7 +161,7 @@ internal fun MyCapitalApp() {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
             } else when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, portfolioHistory.onRangeChange, historyResult, historyLoading, historyLoadError, portfolioHistory.refresh, dashboardMarketData, refreshDashboardMarketData, refreshAllMarketData, isRefreshingMarketData, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, portfolioHistory.onRangeChange, historyResult, historyLoading, historyLoadError, portfolioHistory.refresh, dashboardMarketData, refreshDashboardMarketData, refreshAllMarketData, isRefreshingMarketData, quoteSyncMessage, onOpenSettings = { selected = Screen.More }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, cashBalance ?: 0.0, brokerAccountCash, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
