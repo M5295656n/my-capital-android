@@ -181,10 +181,13 @@ jobs:
                           valid.append((str(row[0]), close))
                   except (TypeError, ValueError):
                       pass
-              if not valid:
-                  raise RuntimeError("GLDRUB_TOM: no positive live price or daily candle close in last 30 days")
-              latest_date, latest_close = max(valid, key=lambda item: item[0])
-              print(f"GLDRUB_TOM/CETS daily candle price verified: {latest_close} (date {latest_date})")
+              if len(valid) < 2:
+                  raise RuntimeError("GLDRUB_TOM: need at least two positive daily closes to verify price change percentage")
+              valid.sort(key=lambda item: item[0])
+              previous_date, previous_close = valid[-2]
+              latest_date, latest_close = valid[-1]
+              daily_change_percent = (latest_close - previous_close) / previous_close * 100.0
+              print(f"GLDRUB_TOM/CETS daily close verified: {latest_close} (date {latest_date}); previous close: {previous_close} (date {previous_date}); change: {daily_change_percent:+.4f}%")
 
           verify_gold_cets_price()
 
