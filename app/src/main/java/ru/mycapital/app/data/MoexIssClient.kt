@@ -59,6 +59,9 @@ internal fun selectSpotQuotePrice(last: Double?, weightedAverage: Double?): Doub
     last?.takeIf { it.isFinite() && it > 0.0 }
         ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }
 
+internal fun preferredMoexBoardsForRoute(route: MoexMarketRoute, assetType: String): List<String> =
+    if (route.engine == "currency") listOf(route.board ?: "CETS") else preferredMoexBoards(assetType)
+
 internal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
     "GLDRUB_TOM" -> listOf("GLDRUB_TOM", "GLDRUB_TOD")
     "GLDRUB_TOD" -> listOf("GLDRUB_TOD", "GLDRUB_TOM")
@@ -157,7 +160,7 @@ class MoexIssClient {
                 val board = boardIndex?.let { row.optString(it).takeIf(String::isNotBlank) }
                 row to board
             }
-            val preferredBoards = preferredMoexBoards(assetType)
+            val preferredBoards = preferredMoexBoardsForRoute(route, assetType)
             // MOEX returns several market boards for one security. OFZ and corporate
             // bonds use different main boards (TQOB and TQCB respectively), so accept
             // either main bond board and rank them explicitly instead of rejecting
