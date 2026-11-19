@@ -24,6 +24,7 @@ internal data class MarketRefreshState(
     val isRefreshing: Boolean,
     val newsSyncMessage: String?,
     val eventSyncMessage: String,
+    val quoteSyncMessage: String?,
     val refreshQuotes: () -> Unit,
     val refreshEvents: () -> Unit,
     val refreshNews: () -> Unit
@@ -119,6 +120,21 @@ internal fun rememberMarketRefreshState(assets: List<AssetEntity>): MarketRefres
             "market_news_refresh_manual", ExistingWorkPolicy.REPLACE, request
         )
     }
+    val quoteSyncMessage = (
+        quoteWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
+            ?: quoteWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
+            ?: quoteWorkInfos.firstOrNull { it.state.isFinished }
+        )?.let { info ->
+            info.outputData.getString("summary")
+                ?: info.progress.getString("summary")
+                ?: when (info.state) {
+                    androidx.work.WorkInfo.State.RUNNING -> "Обновление котировок выполняется…"
+                    androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.BLOCKED -> "Обновление котировок ожидает подключения к сети…"
+                    androidx.work.WorkInfo.State.FAILED -> "Не удалось обновить котировки."
+                    androidx.work.WorkInfo.State.CANCELLED -> "Обновление котировок отменено."
+                    else -> null
+                }
+        }
     val newsSyncMessage = (
         newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.RUNNING }
             ?: newsWorkInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.ENQUEUED || it.state == androidx.work.WorkInfo.State.BLOCKED }
@@ -152,6 +168,7 @@ internal fun rememberMarketRefreshState(assets: List<AssetEntity>): MarketRefres
         isRefreshing = isRefreshingMarketData,
         newsSyncMessage = newsSyncMessage,
         eventSyncMessage = eventSyncMessage,
+        quoteSyncMessage = quoteSyncMessage,
         refreshQuotes = refreshQuotes,
         refreshEvents = refreshEvents,
         refreshNews = refreshNews
