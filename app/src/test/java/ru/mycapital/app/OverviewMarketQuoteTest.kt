@@ -58,6 +58,16 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun goldQuoteRemainsInDashboardWhenMoexHasNoUsablePrice() {
+        val quote = goldQuoteOrPlaceholder(null, null)
+
+        assertEquals("GLDRUB_TOM", quote.ticker)
+        assertEquals("Золото ₽/г", quote.label)
+        assertNull(quote.price)
+        assertNull(quote.changePercent)
+    }
+
+    @Test
     fun goldQuoteFallsBackToPreviousPublishedPriceWhenLastIsNull() {
         val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["GLDRUB_TOM","CETS",null,null,8123.5,null]]}}"""
 
