@@ -68,6 +68,16 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun goldQuoteUsesWeightedAverageWhenLastIsUnavailable() {
+        val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","WAPRICE","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["GLDRUB_TOM","CETS",null,8245.75,null,8200.0,8190.0]]}}"""
+
+        val quote = parseMoexGoldQuoteJson(json, "GLDRUB_TOM", "Золото ₽/г")
+
+        assertEquals(8245.75, quote?.price ?: Double.NaN, 0.000001)
+        assertEquals(0.5579268293, quote?.changePercent ?: Double.NaN, 0.000001)
+    }
+
+    @Test
     fun goldQuotePrefersCetsBoardAndLastPrice() {
         val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["GLDRUB_TOM","CNGD",8100.0,10.0,8090.0,8080.0],["GLDRUB_TOM","CETS",8200.0,20.0,8180.0,8170.0]]}}"""
 
