@@ -90,7 +90,7 @@ internal fun ImoexIndexChartScreen(
         error = null
         try {
             val today = LocalDate.now(ZoneId.of("Europe/Moscow"))
-            val from = selectedPeriod.days?.let { today.minusDays(it) } ?: LocalDate.of(2000, 1, 1)
+            val from = selectedPeriod.days?.let { today.minusDays(it + if (it <= 7) 3 else 0) } ?: LocalDate.of(2000, 1, 1)
             val loaded = withContext(Dispatchers.IO) {
                 MoexIndexCandlesClient().getCandles(
                     indexCode = "IMOEX",
