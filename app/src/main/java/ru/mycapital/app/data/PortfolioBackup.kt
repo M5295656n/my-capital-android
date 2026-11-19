@@ -18,7 +18,7 @@ object PortfolioBackup {
     private const val DATABASE_FILE = "my_capital.db"
     private const val BACKUP_ENTRY = "my_capital.db"
     private const val MANIFEST_ENTRY = "manifest.txt"
-    private const val DATABASE_VERSION = 14
+    private const val DATABASE_VERSION = PORTFOLIO_DATABASE_VERSION
     private const val MAX_ARCHIVE_BYTES = 256L * 1024L * 1024L
 
     data class BackupInfo(val databaseVersion: Int, val databaseBytes: Long)
