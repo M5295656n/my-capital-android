@@ -48,6 +48,7 @@ import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PayoutEntity
 import java.io.IOException
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.util.Locale
@@ -129,11 +130,25 @@ internal class MarketOverviewClient {
 
     // GLDRUB_TOM is the preferred spot instrument. If its board-scoped response is
     // empty, retry the security-wide route; use TOD only as a last-resort session fallback.
-    private fun goldQuote(): MarketQuoteRow =
-        goldQuoteOrPlaceholder(
-            quote("GLDRUB_TOM", "Золото ₽/г"),
-            quote("GLDRUB_TOD", "Золото ₽/г")
-        )
+    private fun goldQuote(): MarketQuoteRow {
+        val tom = quote("GLDRUB_TOM", "Золото ₽/г")
+        val tod = quote("GLDRUB_TOD", "Золото ₽/г")
+        // During inactive sessions MOEX may return a valid instrument row but null
+        // for every marketdata price field. In that case use the latest published
+        // daily candle close, not an empty placeholder.
+        val tomClose = if (tom == null && tod == null) goldDailyCandleQuote("GLDRUB_TOM") else null
+        val todClose = if (tom == null && tod == null && tomClose == null) goldDailyCandleQuote("GLDRUB_TOD") else null
+        return tom ?: tod ?: tomClose ?: todClose
+            ?: MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", null, null)
+    }
+
+    private fun goldDailyCandleQuote(ticker: String): MarketQuoteRow? = runCatching {
+        val from = LocalDate.now().minusDays(30)
+        val till = LocalDate.now()
+        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker/candles.json" +
+            "?from=$from&till=$till&interval=24&iss.meta=off&iss.only=candles&candles.columns=begin,close"
+        parseMoexGoldCandleJson(getText(url, "История цены золота"), ticker, "Золото ₽/г")
+    }.getOrNull()
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? {
         val urls = listOf(
@@ -243,6 +258,24 @@ private fun jsonCellNumber(row: org.json.JSONArray, indexes: Map<String, Int>, c
 
 internal fun goldQuoteOrPlaceholder(tom: MarketQuoteRow?, tod: MarketQuoteRow?): MarketQuoteRow =
     tom ?: tod ?: MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", null, null)
+
+internal fun parseMoexGoldCandleJson(json: String, ticker: String, label: String): MarketQuoteRow? {
+    return runCatching {
+        val table = JSONObject(json).getJSONObject("candles")
+        val columns = jsonColumnIndexes(table.getJSONArray("columns"))
+        val rows = table.getJSONArray("data")
+        val closeIndex = columns["close"] ?: return@runCatching null
+        val datedPrices = (0 until rows.length()).mapNotNull { index ->
+            val row = rows.optJSONArray(index) ?: return@mapNotNull null
+            val date = jsonCellString(row, columns["begin"]) ?: return@mapNotNull null
+            val close = jsonCellNumber(row, columns, "close")?.takeIf { it > 0.0 }
+                ?: return@mapNotNull null
+            date to close
+        }
+        val latest = datedPrices.maxByOrNull { it.first } ?: return@runCatching null
+        MarketQuoteRow(ticker, label, latest.second, null)
+    }.getOrNull()
+}
 
 internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String): MarketQuoteRow? {
     return runCatching {
