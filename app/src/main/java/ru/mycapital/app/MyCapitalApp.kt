@@ -182,7 +182,6 @@ internal fun MyCapitalApp() {
                     onImportReport = { reportPicker.launch(arrayOf("text/html", "application/xhtml+xml", "application/octet-stream")) },
                     onExportData = { exportPicker.launch("my-capital-export.zip") },
                     onOpenAccounts = { selected = Screen.Accounts },
-                    onOpenOperations = { selected = Screen.Operations },
                     onOpenEvents = { selected = Screen.Events },
                     modifier = Modifier.padding(padding)
                 )
