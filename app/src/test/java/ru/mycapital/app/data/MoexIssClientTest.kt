@@ -48,7 +48,7 @@ class MoexIssClientTest {
 
     @Test fun keepsRegularSharesAndFundsOnStockMarket() {
         assertEquals(MoexMarketRoute("stock", "shares"), moexMarketRoute("SBER", "Акция"))
-        assertEquals(MoexMarketRoute("stock", "shares"), moexMarketRoute("GOLD", "Фонд"))
+        assertEquals(MoexMarketRoute("stock", "shares", "TQBR"), moexMarketRoute("GOLD", "Фонд"))
     }
 
     @Test fun triesGoldTomBeforeTodAndPreservesExplicitTodPreference() {
@@ -68,6 +68,7 @@ class MoexIssClientTest {
     @Test fun currencyGoldAlwaysUsesCetsBoardEvenWhenAssetTypeIsFund() {
         val route = moexMarketRoute("GLDRUB_TOM", "Фонд")
         assertEquals(listOf("CETS"), preferredMoexBoardsForRoute(route, "Фонд"))
-        assertEquals(listOf("TQTF"), preferredMoexBoardsForRoute(moexMarketRoute("GOLD", "Фонд"), "Фонд"))
+        assertEquals(listOf("TQBR"), preferredMoexBoardsForRoute(moexMarketRoute("GOLD", "Фонд"), "Фонд"))
+        assertEquals(listOf("TQTF"), preferredMoexBoardsForRoute(moexMarketRoute("LQDT", "Фонд"), "Фонд"))
     }
 }
