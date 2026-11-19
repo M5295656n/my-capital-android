@@ -132,10 +132,10 @@ jobs:
                           time.sleep(2 * (attempt + 1))
               raise RuntimeError(f"ISS request failed: {url}: {last_error}")
           
-          def verify_gold_cets_route():
+          def verify_gold_cets_price():
               url = (f"{BASE}/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM.json"
                      "?iss.meta=off&iss.only=marketdata"
-                     "&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE")
+                     "&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE,PREVPRICE")
               payload = get_json(url)
               block = payload.get("marketdata", {})
               columns = block.get("columns", [])
@@ -147,12 +147,46 @@ jobs:
               match = next((row for row in rows if row[secid_i] == "GLDRUB_TOM" and row[board_i] == "CETS"), None)
               if match is None:
                   raise RuntimeError("MOEX ISS did not return GLDRUB_TOM on CETS board")
-              last_i, waprice_i = indexes.get("LAST"), indexes.get("WAPRICE")
-              last = match[last_i] if last_i is not None else None
-              waprice = match[waprice_i] if waprice_i is not None else None
-              print(f"GLDRUB_TOM/CETS route OK; LAST={last}, WAPRICE={waprice}")
+              def positive(column):
+                  index = indexes.get(column)
+                  if index is None or match[index] is None:
+                      return None
+                  try:
+                      value = float(match[index])
+                      return value if value > 0 else None
+                  except (TypeError, ValueError):
+                      return None
+              live = positive("LAST") or positive("WAPRICE") or positive("MARKETPRICE") or positive("PREVPRICE")
+              if live:
+                  print(f"GLDRUB_TOM/CETS numeric market price verified: {live}")
+                  return
+              from datetime import date, timedelta
+              today = date.today()
+              start = today - timedelta(days=30)
+              candle_url = (f"{BASE}/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM/candles.json"
+                            f"?from={start}&till={today}&interval=24&iss.meta=off&iss.only=candles"
+                            "&candles.columns=begin,close")
+              candle_payload = get_json(candle_url)
+              candle_block = candle_payload.get("candles", {})
+              candle_columns = candle_block.get("columns", [])
+              candle_rows = candle_block.get("data", [])
+              close_i = {name.lower(): i for i, name in enumerate(candle_columns)}.get("close")
+              valid = []
+              for row in candle_rows:
+                  if close_i is None or close_i >= len(row) or row[close_i] is None:
+                      continue
+                  try:
+                      close = float(row[close_i])
+                      if close > 0:
+                          valid.append((str(row[0]), close))
+                  except (TypeError, ValueError):
+                      pass
+              if not valid:
+                  raise RuntimeError("GLDRUB_TOM: no positive live price or daily candle close in last 30 days")
+              latest_date, latest_close = max(valid, key=lambda item: item[0])
+              print(f"GLDRUB_TOM/CETS daily candle price verified: {latest_close} (date {latest_date})")
 
-          verify_gold_cets_route()
+          verify_gold_cets_price()
 
           def fetch_board_candles(ticker, market, board):
               by_date = {}
