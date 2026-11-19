@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.BrokerAccountEntity
 import java.util.Locale
+import java.text.DecimalFormatSymbols
 
 private const val ANALYTICS_ALL_ACCOUNTS = "ALL"
 
@@ -408,8 +409,11 @@ private fun classColor(assetClass: PortfolioAssetClass): Color = when (assetClas
     PortfolioAssetClass.OTHER -> MaterialTheme.colorScheme.tertiary
 }
 
-private fun moneyAnalytics(value: Double): String =
-    String.format(Locale("ru", "RU"), "%,.2f", value).replace(',', ' ')
+private fun moneyAnalytics(value: Double): String {
+    val locale = Locale("ru", "RU")
+    val groupingSeparator = DecimalFormatSymbols.getInstance(locale).groupingSeparator
+    return String.format(locale, "%,.2f", value).replace(groupingSeparator, ' ')
+}
 
 private fun percentAnalytics(value: Double): String =
     String.format(Locale("ru", "RU"), "%.1f%%", value * 100.0)
