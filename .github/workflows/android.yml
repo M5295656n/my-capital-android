@@ -189,7 +189,56 @@ jobs:
               daily_change_percent = (latest_close - previous_close) / previous_close * 100.0
               print(f"GLDRUB_TOM/CETS daily close verified: {latest_close} (date {latest_date}); previous close: {previous_close} (date {previous_date}); change: {daily_change_percent:+.4f}%")
 
+          def verify_imoex_quote_and_candles():
+              quote_url = (f"{BASE}/engines/stock/markets/index/boards/SNDX/securities/IMOEX.json"
+                           "?iss.meta=off&iss.only=marketdata"
+                           "&marketdata.columns=SECID,BOARDID,CURRENTVALUE,LASTVALUE,LASTCHANGE")
+              payload = get_json(quote_url)
+              block = payload.get("marketdata", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.upper(): i for i, name in enumerate(columns)}
+              required = ("SECID", "BOARDID", "CURRENTVALUE", "LASTVALUE", "LASTCHANGE")
+              missing = [name for name in required if name not in indexes]
+              if missing:
+                  raise RuntimeError(f"IMOEX response missing native index fields {missing}; columns={columns}")
+              row = next((r for r in rows if r[indexes["SECID"]] == "IMOEX" and r[indexes["BOARDID"]] == "SNDX"), None)
+              if row is None:
+                  raise RuntimeError("MOEX ISS did not return IMOEX on SNDX board")
+              current = row[indexes["CURRENTVALUE"]]
+              previous = row[indexes["LASTVALUE"]]
+              price = current if current is not None else previous
+              if price is None or float(price) <= 0:
+                  raise RuntimeError(f"IMOEX has no positive current or previous index value: {row}")
+              print(f"IMOEX/SNDX index quote verified: current={current}, previous={previous}, last_change={row[indexes['LASTCHANGE']]}")
+
+              from datetime import date, timedelta
+              today = date.today()
+              start = today - timedelta(days=45)
+              candle_url = (f"{BASE}/engines/stock/markets/index/boards/SNDX/securities/IMOEX/candles.json"
+                            f"?from={start}&till={today}&interval=24&iss.meta=off&iss.only=candles"
+                            "&candles.columns=begin,open,high,low,close")
+              candle_payload = get_json(candle_url)
+              candle_block = candle_payload.get("candles", {})
+              candle_columns = candle_block.get("columns", [])
+              candle_rows = candle_block.get("data", [])
+              candle_indexes = {name.lower(): i for i, name in enumerate(candle_columns)}
+              if not candle_rows or any(name not in candle_indexes for name in ("begin", "open", "high", "low", "close")):
+                  raise RuntimeError(f"IMOEX daily candles missing or malformed: columns={candle_columns}, rows={len(candle_rows)}")
+              valid = 0
+              for candle in candle_rows:
+                  try:
+                      values = [float(candle[candle_indexes[name]]) for name in ("open", "high", "low", "close")]
+                      if all(value > 0 for value in values) and values[1] >= max(values[0], values[3]) and values[2] <= min(values[0], values[3]):
+                          valid += 1
+                  except (TypeError, ValueError, IndexError):
+                      continue
+              if valid == 0:
+                  raise RuntimeError("IMOEX daily candles response contains no valid OHLC rows")
+              print(f"IMOEX/SNDX daily candles verified: valid_ohlc_rows={valid}")
+
           verify_gold_cets_price()
+          verify_imoex_quote_and_candles()
 
           def fetch_board_candles(ticker, market, board):
               by_date = {}
