@@ -134,8 +134,8 @@ internal class MarketOverviewClient {
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? {
         val urls = listOf(
-            "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE",
-            "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE"
+            "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,CHANGE,PREVPRICE,MARKETPRICE",
+            "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,CHANGE,PREVPRICE,MARKETPRICE"
         )
         urls.forEach { url ->
             val parsed = runCatching {
@@ -183,7 +183,7 @@ internal class MarketOverviewClient {
                 val url = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$ticker.json" +
                     "?iss.meta=off&iss.only=securities,marketdata" +
                     "&securities.columns=SECID,SHORTNAME" +
-                    "&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE"
+                    "&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,CHANGE,PREVPRICE,MARKETPRICE"
                 runCatching {
                     parseMoexMoverQuoteJson(getText(url, "Котировка $ticker"), ticker, preferredBoards)
                 }.getOrNull()
@@ -250,13 +250,17 @@ internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String)
         val row = candidates.firstOrNull { jsonCellString(it, columns["BOARDID"]) == "CETS" }
             ?: candidates.firstOrNull() ?: return@runCatching null
         val last = jsonCellNumber(row, columns, "LAST")?.takeIf { it > 0.0 }
+        val weightedAverage = jsonCellNumber(row, columns, "WAPRICE")?.takeIf { it > 0.0 }
         val marketPrice = jsonCellNumber(row, columns, "MARKETPRICE")?.takeIf { it > 0.0 }
         val previous = jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
-        val price = last ?: marketPrice ?: previous ?: return@runCatching null
+        // MOEX may publish no LAST while the instrument has a valid weighted
+        // session price. Prefer the live/weighted price before the previous close.
+        val price = last ?: weightedAverage ?: marketPrice ?: previous ?: return@runCatching null
         val reportedChange = jsonCellNumber(row, columns, "CHANGE")
         val changePercent = when {
             last != null && previous != null -> calculateQuoteChangePercent(last, previous)
             last != null && reportedChange != null -> calculateQuoteChangePercent(last, last - reportedChange)
+            weightedAverage != null && previous != null -> calculateQuoteChangePercent(weightedAverage, previous)
             marketPrice != null && previous != null -> calculateQuoteChangePercent(marketPrice, previous)
             else -> null
         }
