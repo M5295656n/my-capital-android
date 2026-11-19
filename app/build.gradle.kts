@@ -61,6 +61,8 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("net.lingala.zip4j:zip4j:2.11.5")
     testImplementation("junit:junit:4.13.2")
+    // Use a real org.json implementation in local JVM tests; Android SDK stubs otherwise swallow parser calls.
+    testImplementation("org.json:json:20250517")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
