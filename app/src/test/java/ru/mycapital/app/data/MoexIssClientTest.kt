@@ -64,4 +64,10 @@ class MoexIssClientTest {
         assertEquals(null, selectSpotQuotePrice(0.0, -1.0))
     }
 
+
+    @Test fun currencyGoldAlwaysUsesCetsBoardEvenWhenAssetTypeIsFund() {
+        val route = moexMarketRoute("GLDRUB_TOM", "Фонд")
+        assertEquals(listOf("CETS"), preferredMoexBoardsForRoute(route, "Фонд"))
+        assertEquals(listOf("TQTF"), preferredMoexBoardsForRoute(moexMarketRoute("GOLD", "Фонд"), "Фонд"))
+    }
 }
