@@ -5,9 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
+internal const val PORTFOLIO_DATABASE_VERSION = 19
+
 @Database(
     entities = [AssetEntity::class, OperationEntity::class, PayoutEntity::class, CashBalanceEntity::class, PortfolioSnapshotEntity::class, IndexHistoryEntity::class, BrokerAccountCashEntity::class, BrokerAccountAssetEntity::class, BrokerAccountEntity::class, BrokerCashOpeningEntity::class, PortfolioCompositionSnapshotEntity::class, MarketCalendarItemEntity::class],
-    version = 19,
+    version = PORTFOLIO_DATABASE_VERSION,
     exportSchema = false
 )
 abstract class PortfolioDatabase : RoomDatabase() {
