@@ -45,7 +45,7 @@ class MoexIndexCandlesClient {
                 var start = 0
                 for (page in 0 until 30) {
                     val url = "$base?from=$fromDate&till=$tillDate&interval=$interval&start=$start" +
-                        "&iss.meta=off&iss.only=candles&candles.columns=begin,open,high,low,close"
+                        "&limit=500&candles.limit=500&iss.meta=off&iss.only=candles&candles.columns=begin,open,high,low,close"
                     val request = Request.Builder().url(url)
                         .header("Accept", "application/json")
                         .header("User-Agent", "MyCapital-Android/0.4.18")
@@ -57,7 +57,7 @@ class MoexIndexCandlesClient {
                     }
                     if (rows.isEmpty()) break
                     rows.forEach { merged[it.begin] = it }
-                    if (rows.size < 100) break
+                    if (rows.size < 500) break
                     start += rows.size
                 }
             } catch (error: Exception) {
