@@ -3,6 +3,8 @@ package ru.mycapital.app
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -27,96 +29,264 @@ internal fun MoreScreen(
     onImportReport: () -> Unit,
     onExportData: () -> Unit,
     onOpenAccounts: () -> Unit,
-    onOpenOperations: () -> Unit,
     onOpenEvents: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Дополнительные инструменты и управление данными", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenAccounts)) {
-            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AccountBalance, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Брокерские счета", fontWeight = FontWeight.SemiBold)
-                    Text("Договоры и остатки по счетам", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, contentDescription = null)
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+                "Ещё",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Дополнительные инструменты MyCapital",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenOperations)) {
-            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.SwapHoriz, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("История операций", fontWeight = FontWeight.SemiBold)
-                    Text("Покупки, продажи, пополнения и выводы", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, contentDescription = null)
-            }
-        }
-        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenEvents)) {
-            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.EventNote, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("События и новости", fontWeight = FontWeight.SemiBold)
-                    Text("Рыночный календарь и новости компаний", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, contentDescription = null)
-            }
-        }
-        Text("Ручное добавление", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Card(Modifier.fillMaxWidth().clickable(onClick = onAddAsset)) {
-            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AddCircleOutline, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Добавить актив", fontWeight = FontWeight.SemiBold)
-                    Text("Вручную внести бумагу и её текущую позицию", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, contentDescription = null)
-            }
-        }
+
         Card(
-            Modifier.fillMaxWidth().then(if (hasAssets) Modifier.clickable(onClick = onAddPayout) else Modifier),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
         ) {
-            Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Payments, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Добавить выплату", fontWeight = FontWeight.SemiBold)
-                    Text(if (hasAssets) "Вручную внести дивиденд или купон" else "Сначала добавьте актив в портфель", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = if (hasAssets) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.Tune,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    "Управление портфелем",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    "Счета, рыночные события и ручное управление данными в одном месте.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
         }
-        Text("Файлы и резервные копии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        OutlinedButton(onClick = onImportReport, enabled = !isParsingReport, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.FileOpen, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка (HTML)")
+
+        MoreSectionTitle("Разделы")
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MoreActionCard(
+                icon = Icons.Default.AccountBalance,
+                title = "Брокерские счета",
+                description = "Договоры, денежные средства и позиции",
+                onClick = onOpenAccounts
+            )
+            MoreActionCard(
+                icon = Icons.Default.EventNote,
+                title = "События и новости",
+                description = "Рыночный календарь и новости компаний",
+                onClick = onOpenEvents
+            )
         }
-        OutlinedButton(onClick = onCreateBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Backup, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (isCreatingBackup) "Создаю полную копию…" else "Создать резервную копию базы")
+
+        MoreSectionTitle("Ручное добавление")
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MoreActionCard(
+                icon = Icons.Default.AddCircleOutline,
+                title = "Добавить актив",
+                description = "Внести бумагу и текущую позицию вручную",
+                onClick = onAddAsset
+            )
+            MoreActionCard(
+                icon = Icons.Default.Payments,
+                title = "Добавить выплату",
+                description = if (hasAssets) {
+                    "Внести дивиденд или купон вручную"
+                } else {
+                    "Сначала добавьте актив в портфель"
+                },
+                onClick = onAddPayout,
+                enabled = hasAssets
+            )
         }
-        OutlinedButton(onClick = onRestoreBackup, enabled = !isCreatingBackup && !isRestoringBackup, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Restore, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из резервной копии")
+
+        MoreSectionTitle("Файлы и резервные копии")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                MoreFileAction(
+                    icon = Icons.Default.FileOpen,
+                    title = if (isParsingReport) "Читаю отчёт…" else "Импорт отчёта Сбербанка",
+                    description = "Загрузить брокерский отчёт в формате HTML",
+                    onClick = onImportReport,
+                    enabled = !isParsingReport,
+                    loading = isParsingReport
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                MoreFileAction(
+                    icon = Icons.Default.Backup,
+                    title = if (isCreatingBackup) "Создаю резервную копию…" else "Создать резервную копию",
+                    description = "Полная зашифрованная копия портфеля",
+                    onClick = onCreateBackup,
+                    enabled = !isCreatingBackup && !isRestoringBackup,
+                    loading = isCreatingBackup
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                MoreFileAction(
+                    icon = Icons.Default.Restore,
+                    title = if (isRestoringBackup) "Восстанавливаю…" else "Восстановить из копии",
+                    description = "Вернуть данные из ZIP-архива",
+                    onClick = onRestoreBackup,
+                    enabled = !isCreatingBackup && !isRestoringBackup,
+                    loading = isRestoringBackup
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                MoreFileAction(
+                    icon = Icons.Default.FileDownload,
+                    title = if (isExportingData) "Экспортирую данные…" else "Экспортировать таблицы",
+                    description = "Сохранить данные в CSV внутри ZIP-архива",
+                    onClick = onExportData,
+                    enabled = !isExportingData,
+                    loading = isExportingData
+                )
+            }
         }
-        Text("Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = onExportData, enabled = !isExportingData, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.FileDownload, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (isExportingData) "Экспортирую данные…" else "Экспортировать таблицы (CSV ZIP)")
+
+        Text(
+            "Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun MoreSectionTitle(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
+@Composable
+private fun MoreActionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (enabled) MaterialTheme.colorScheme.surfaceContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoreFileAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    loading: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (enabled) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = if (enabled || loading) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (loading) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
