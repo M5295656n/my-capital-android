@@ -195,3 +195,5 @@ class OverviewMarketQuoteTest {
         assertNull(calculateQuoteChangePercent(Double.NaN, 90.0))
     }
 }
+
+// CI coverage includes the native MOEX index marketdata schema.
