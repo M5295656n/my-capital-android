@@ -141,10 +141,7 @@ internal class MarketOverviewClient {
             val daily = goldDailyCandleQuote(liveQuote.ticker)
                 ?: goldDailyCandleQuote(if (liveQuote.ticker == "GLDRUB_TOM") "GLDRUB_TOD" else "GLDRUB_TOM")
             val dailyChange = daily?.changePercent
-            if (daily != null && dailyChange != null && daily.price != null) {
-                val previousClose = daily.price / (1.0 + dailyChange / 100.0)
-                return liveQuote.copy(changePercent = calculateQuoteChangePercent(liveQuote.price ?: Double.NaN, previousClose))
-            }
+            if (daily != null) return applyGoldDailyChangeToLiveQuote(liveQuote, daily)
         }
         // During inactive sessions use the latest published daily close and its
         // change versus the previous trading session (never fabricate a zero).
@@ -358,6 +355,14 @@ internal fun parseMoexMoverQuoteJson(
         if (changePercent == 0.0) return@runCatching null
         MarketMoverRow(ticker, name, price, change, changePercent)
     }.getOrNull()
+}
+
+internal fun applyGoldDailyChangeToLiveQuote(liveQuote: MarketQuoteRow, dailyQuote: MarketQuoteRow): MarketQuoteRow {
+    val dailyChange = dailyQuote.changePercent ?: return liveQuote
+    val dailyClose = dailyQuote.price ?: return liveQuote
+    val previousClose = dailyClose / (1.0 + dailyChange / 100.0)
+    val livePrice = liveQuote.price ?: return liveQuote
+    return liveQuote.copy(changePercent = calculateQuoteChangePercent(livePrice, previousClose))
 }
 
 internal fun calculateQuoteChangePercent(current: Double, previous: Double): Double? {
