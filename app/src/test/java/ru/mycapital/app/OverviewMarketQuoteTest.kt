@@ -58,6 +58,22 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun goldQuoteFallsBackToLatestDailyCandleCloseWhenMarketdataIsEmpty() {
+        val json = """{"candles":{"columns":["begin","open","high","low","close","volume"],"data":[["2026-11-17 00:00:00",9900.0,10000.0,9800.0,9950.0,10],["2026-11-18 00:00:00",10000.0,10100.0,9950.0,10064.5,12]]}}"""
+
+        val quote = parseMoexGoldCandleJson(json, "GLDRUB_TOM", "Золото ₽/г")
+
+        assertEquals(10064.5, quote?.price ?: Double.NaN, 0.000001)
+        assertNull(quote?.changePercent)
+    }
+
+    @Test
+    fun goldDailyCandleParserRejectsMissingOrInvalidClose() {
+        assertNull(parseMoexGoldCandleJson("""{"candles":{"columns":["begin","close"],"data":[["2026-11-18",null]]}}""", "GLDRUB_TOM", "Золото ₽/г"))
+        assertNull(parseMoexGoldCandleJson("""{"candles":{"columns":["begin"],"data":[["2026-11-18"]]}}""", "GLDRUB_TOM", "Золото ₽/г"))
+    }
+
+    @Test
     fun goldQuoteRemainsInDashboardWhenMoexHasNoUsablePrice() {
         val quote = goldQuoteOrPlaceholder(null, null)
 
