@@ -68,6 +68,27 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun liveGoldPriceUsesPreviousTradingCloseWhenMarketdataOmitsChange() {
+        val live = MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", 10100.0, null)
+        val daily = MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", 10064.5, 1.1507537688)
+
+        val quote = applyGoldDailyChangeToLiveQuote(live, daily)
+
+        assertEquals(10100.0, quote.price ?: Double.NaN, 0.000001)
+        assertEquals(1.5075376884, quote.changePercent ?: Double.NaN, 0.000001)
+    }
+
+    @Test
+    fun liveGoldPriceKeepsMissingChangeWhenThereIsNoDailyBaseline() {
+        val live = MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", 10100.0, null)
+        val daily = MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", 10064.5, null)
+
+        val quote = applyGoldDailyChangeToLiveQuote(live, daily)
+
+        assertNull(quote.changePercent)
+    }
+
+    @Test
     fun goldDailyCandleParserDoesNotInventChangeWithOnlyOneSession() {
         val json = """{"candles":{"columns":["begin","close"],"data":[["2026-11-18",10064.5]]}}"""
 
