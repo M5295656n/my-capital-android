@@ -55,30 +55,14 @@ internal fun PayoutsScreen(
     var statusFilter by remember { mutableStateOf("Все") }
     var typeFilter by remember { mutableStateOf("Все") }
     var expandedPayoutId by remember { mutableStateOf<Long?>(null) }
-    val visiblePayouts = remember(payouts, selectedAccountId, accountAssets) {
-        val selectedTickers = if (selectedAccountId == ALL_HISTORY_ACCOUNTS || selectedAccountId == UNASSIGNED_HISTORY_ACCOUNT) {
-            emptySet()
-        } else {
-            accountAssets.asSequence()
-                .filter { it.accountId == selectedAccountId && it.quantity > 0.0 }
-                .map { it.ticker.uppercase() }
-                .toSet()
-        }
+    val visiblePayouts = remember(payouts, selectedAccountId, accountAssets, assets) {
         payouts.filter { payout ->
-            when (selectedAccountId) {
-                ALL_HISTORY_ACCOUNTS -> true
-                UNASSIGNED_HISTORY_ACCOUNT -> historyAccountId(payout.sourceKey) == null
-                else -> {
-                    val payoutAccountId = historyAccountId(payout.sourceKey)
-                    if (payoutAccountId != null) {
-                        payoutAccountId == selectedAccountId
-                    } else {
-                        // Portfolio-level forecasts/manual events are shown only when their
-                        // ticker is actually held on the selected broker account.
-                        payout.ticker.uppercase() in selectedTickers
-                    }
-                }
-            }
+            shouldShowPayoutForCurrentHoldings(
+                payout = payout,
+                assets = assets,
+                accountAssets = accountAssets,
+                selectedAccountId = selectedAccountId
+            )
         }
     }
     val periodDates = remember(selectedPeriod, today) {
