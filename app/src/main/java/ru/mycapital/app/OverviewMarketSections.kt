@@ -129,8 +129,11 @@ internal class MarketOverviewClient {
 
     // GLDRUB_TOM is the preferred spot instrument. If its board-scoped response is
     // empty, retry the security-wide route; use TOD only as a last-resort session fallback.
-    private fun goldQuote(): MarketQuoteRow? =
-        quote("GLDRUB_TOM", "Золото ₽/г") ?: quote("GLDRUB_TOD", "Золото ₽/г")
+    private fun goldQuote(): MarketQuoteRow =
+        goldQuoteOrPlaceholder(
+            quote("GLDRUB_TOM", "Золото ₽/г"),
+            quote("GLDRUB_TOD", "Золото ₽/г")
+        )
 
     private fun quote(ticker: String, label: String): MarketQuoteRow? {
         val urls = listOf(
@@ -237,6 +240,9 @@ private fun jsonCellNumber(row: org.json.JSONArray, indexes: Map<String, Int>, c
     val raw = jsonCellString(row, indexes[column]) ?: return null
     return raw.toDoubleOrNull()?.takeIf { it.isFinite() }
 }
+
+internal fun goldQuoteOrPlaceholder(tom: MarketQuoteRow?, tod: MarketQuoteRow?): MarketQuoteRow =
+    tom ?: tod ?: MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", null, null)
 
 internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String): MarketQuoteRow? {
     return runCatching {
