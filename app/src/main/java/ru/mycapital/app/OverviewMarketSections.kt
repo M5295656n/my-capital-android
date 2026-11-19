@@ -128,11 +128,21 @@ internal class MarketOverviewClient {
         )
     }.getOrDefault(emptyList())
 
-    private fun imoexQuote(): MarketQuoteRow? = runCatching {
-        val url = "https://iss.moex.com/iss/engines/stock/markets/index/securities/IMOEX.json" +
-            "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,PREVPRICE,CHANGE"
-        parseMoexIndexQuoteJson(getText(url, "Индекс МосБиржи"))
-    }.getOrNull()
+    private fun imoexQuote(): MarketQuoteRow? {
+        val urls = listOf(
+            "https://iss.moex.com/iss/engines/stock/markets/index/boards/SNDX/securities/IMOEX.json" +
+                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,PREVPRICE,CHANGE",
+            "https://iss.moex.com/iss/engines/stock/markets/index/securities/IMOEX.json" +
+                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,PREVPRICE,CHANGE"
+        )
+        urls.forEach { url ->
+            val quote = runCatching {
+                parseMoexIndexQuoteJson(getText(url, "Индекс МосБиржи"))
+            }.getOrNull()
+            if (quote != null) return quote
+        }
+        return null
+    }
 
     // GLDRUB_TOM is the preferred spot instrument. If its board-scoped response is
     // empty, retry the security-wide route; use TOD only as a last-resort session fallback.
