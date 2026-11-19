@@ -99,8 +99,11 @@ internal fun ImoexIndexChartScreen(
                     interval = selectedPeriod.interval
                 )
             }
-            candles = loaded
-            if (loaded.isEmpty()) error = "MOEX ISS пока не вернул свечи за выбранный период."
+            candles = if (selectedPeriod.label == "1Д" && loaded.isNotEmpty()) {
+                val latestSession = loaded.last().begin.take(10)
+                loaded.filter { it.begin.startsWith(latestSession) }
+            } else loaded
+            if (candles.isEmpty()) error = "MOEX ISS пока не вернул свечи за выбранный период."
         } catch (exception: Exception) {
             error = exception.message ?: "Не удалось загрузить историю индекса."
         } finally {
