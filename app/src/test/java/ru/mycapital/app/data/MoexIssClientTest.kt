@@ -58,7 +58,7 @@ class MoexIssClientTest {
     }
 
     @Test fun goldFundUsesOfficialPreviousCloseOnlyWhenLiveQuoteIsUnavailable() {
-        assertEquals(2_623.5, selectGoldFundQuotePrice(2_637.0, 2_623.5)!!, 0.0001)
+        assertEquals(2_637.0, selectGoldFundQuotePrice(2_637.0, 2_623.5)!!, 0.0001)
         assertEquals(2_623.5, selectGoldFundQuotePrice(null, 2_623.5)!!, 0.0001)
         assertEquals(2_623.5, selectGoldFundQuotePrice(0.0, 2_623.5)!!, 0.0001)
         assertEquals(null, selectGoldFundQuotePrice(null, null))
