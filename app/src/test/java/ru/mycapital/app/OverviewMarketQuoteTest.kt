@@ -156,6 +156,23 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun imoexQuoteUsesLastAndPreviousClose() {
+        val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","PREVPRICE","CHANGE"],"data":[["IMOEX","SNDX",2750.0,2700.0,50.0]]}}"""
+        val quote = parseMoexIndexQuoteJson(json)
+        assertEquals("IMOEX", quote?.ticker)
+        assertEquals(2750.0, quote?.price ?: Double.NaN, 0.000001)
+        assertEquals(1.8518518519, quote?.changePercent ?: Double.NaN, 0.000001)
+    }
+
+    @Test
+    fun imoexQuoteDoesNotInventChangeWhenOnlyPreviousCloseIsAvailable() {
+        val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","PREVPRICE","CHANGE"],"data":[["IMOEX","SNDX",null,2700.0,null]]}}"""
+        val quote = parseMoexIndexQuoteJson(json)
+        assertEquals(2700.0, quote?.price ?: Double.NaN, 0.000001)
+        assertNull(quote?.changePercent)
+    }
+
+    @Test
     fun invalidRatesDoNotProducePercentage() {
         assertNull(calculateQuoteChangePercent(91.0, 0.0))
         assertNull(calculateQuoteChangePercent(Double.NaN, 90.0))
