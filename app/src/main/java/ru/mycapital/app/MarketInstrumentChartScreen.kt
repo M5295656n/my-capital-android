@@ -109,7 +109,7 @@ internal fun parseCbrDynamicRateXml(xml: String): List<Pair<String, Double>> {
         val date = runCatching { LocalDate.parse(it.groupValues[1], DateTimeFormatter.ofPattern("dd.MM.yyyy")).toString() }.getOrNull() ?: return@mapNotNull null
         val rate = it.groupValues[2].replace(",", ".").toDoubleOrNull() ?: return@mapNotNull null
         if (rate > 0.0 && rate.isFinite()) date to rate else null
-    }.sortedBy { it.first }
+    }.sortedBy { it.first }.toList()
 }
 
 private fun loadMoexGoldSeries(ticker: String, from: LocalDate, till: LocalDate): List<MoexIndexCandle> {
