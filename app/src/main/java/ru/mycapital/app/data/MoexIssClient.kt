@@ -85,8 +85,16 @@ class MoexIssClient {
         val market = route.market
         val safeTicker = java.net.URLEncoder.encode(ticker.trim().uppercase(), Charsets.UTF_8.name())
         val boardPath = route.board?.let { "/boards/$it" } ?: ""
-        val url = "https://iss.moex.com/iss/engines/${route.engine}/markets/$market$boardPath/securities/$safeTicker.json" +
+        val endpoint = "https://iss.moex.com/iss/engines/${route.engine}/markets/$market$boardPath/securities/$safeTicker.json"
+        // Currency/precious-metal ISS tables have a different schema from stock and bond tables.
+        // Request only columns documented for the CETS spot market; asking for stock-only fields
+        // can make ISS reject the entire response even when the instrument itself is available.
+        val query = if (route.engine == "currency") {
+            "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE"
+        } else {
             "?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,FACEVALUE,ACCRUEDINT&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,LCURRENTPRICE,MARKETPRICE,ACCRUEDINT"
+        }
+        val url = endpoint + query
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
