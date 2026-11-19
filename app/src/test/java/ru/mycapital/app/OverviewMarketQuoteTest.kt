@@ -84,13 +84,12 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
-    fun goldQuoteFallsBackToPreviousPublishedPriceWhenLastIsNull() {
+    fun goldQuoteDoesNotTreatPreviousPriceAsCurrentPrice() {
         val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["GLDRUB_TOM","CETS",null,null,8123.5,null]]}}"""
 
         val quote = parseMoexGoldQuoteJson(json, "GLDRUB_TOM", "Золото ₽/г")
 
-        assertEquals(8123.5, quote?.price ?: Double.NaN, 0.000001)
-        assertNull(quote?.changePercent)
+        assertNull(quote)
     }
 
     @Test
