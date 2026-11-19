@@ -114,6 +114,12 @@ class AnalyticsCalculationsTest {
     }
 
     @Test
+    fun analyticsMoneyFormattingKeepsRussianDecimalCommaAndSpaceGrouping() {
+        assertEquals("3 243,00", moneyAnalytics(3243.0))
+        assertEquals("243,50", moneyAnalytics(243.5))
+    }
+
+    @Test
     fun domRfAndBothLenenergoShareClassesHaveExplicitSectors() {
         assertEquals("Финансы", sectorForAnalyticsTicker("DOMRF"))
         assertEquals("Электроэнергетика", sectorForAnalyticsTicker("LSNG"))
