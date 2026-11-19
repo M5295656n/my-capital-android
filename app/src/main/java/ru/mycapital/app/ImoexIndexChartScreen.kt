@@ -212,30 +212,56 @@ private fun IndexHistoryChart(
     val minValue = candles.minOf { it.low }
     val maxValue = candles.maxOf { it.high }
     val range = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
+    val axisTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    val axisTextSize = 11.sp
     Canvas(modifier) {
         val left = 8.dp.toPx()
-        val right = size.width - 8.dp.toPx()
+        // Keep a dedicated right-side gutter for the numeric value of each grid line.
+        val labelGutter = 58.dp.toPx()
+        val plotRight = size.width - labelGutter
         val top = 10.dp.toPx()
         val bottom = size.height - 10.dp.toPx()
         fun y(value: Double): Float =
             bottom - ((value - minValue) / range).toFloat() * (bottom - top)
+        val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = axisTextColor
+            textSize = axisTextSize.toPx()
+            textAlign = android.graphics.Paint.Align.LEFT
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+        }
+        val formatter = java.text.DecimalFormat(
+            "#,##0",
+            java.text.DecimalFormatSymbols(Locale("ru", "RU")).apply {
+                groupingSeparator = ' '
+                decimalSeparator = ','
+            }
+        )
         for (index in 0..4) {
-            val gy = top + (bottom - top) * index / 4f
-            drawLine(grid, Offset(left, gy), Offset(right, gy), 1.dp.toPx())
+            val fraction = index / 4f
+            val gy = top + (bottom - top) * fraction
+            val value = maxValue - range * fraction
+            drawLine(grid, Offset(left, gy), Offset(plotRight, gy), 1.dp.toPx())
+            val metrics = labelPaint.fontMetrics
+            val baseline = gy - (metrics.ascent + metrics.descent) / 2f
+            drawContext.canvas.nativeCanvas.drawText(
+                formatter.format(value),
+                plotRight + 6.dp.toPx(),
+                baseline,
+                labelPaint
+            )
         }
         if (mode == IndexChartMode.LINE) {
             val path = Path()
             candles.forEachIndexed { index, candle ->
-                val x = left + (right - left) * index / (candles.lastIndex).coerceAtLeast(1)
+                val x = left + (plotRight - left) * index / (candles.lastIndex).coerceAtLeast(1)
                 val pointY = y(candle.close)
                 if (index == 0) path.moveTo(x, pointY) else path.lineTo(x, pointY)
             }
             drawPath(path, lineColor, style = Stroke(width = 2.6.dp.toPx()))
             val last = candles.last()
-            val lastX = right
-            drawCircle(lineColor, 4.dp.toPx(), Offset(lastX, y(last.close)))
+            drawCircle(lineColor, 4.dp.toPx(), Offset(plotRight, y(last.close)))
         } else {
-            val slot = (right - left) / candles.size.coerceAtLeast(1)
+            val slot = (plotRight - left) / candles.size.coerceAtLeast(1)
             val bodyWidth = (slot * .62f).coerceIn(2.dp.toPx(), 12.dp.toPx())
             candles.forEachIndexed { index, candle ->
                 val x = left + slot * (index + .5f)
