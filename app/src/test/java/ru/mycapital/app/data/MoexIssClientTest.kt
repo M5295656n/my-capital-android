@@ -57,4 +57,11 @@ class MoexIssClientTest {
         assertEquals(listOf("SBER"), moexQuoteCandidates("SBER"))
     }
 
+    @Test fun spotGoldQuoteUsesLastThenWeightedAverageAndRejectsMissingValues() {
+        assertEquals(10_250.0, selectSpotQuotePrice(10_250.0, 10_240.0)!!, 0.0001)
+        assertEquals(10_240.0, selectSpotQuotePrice(null, 10_240.0)!!, 0.0001)
+        assertEquals(null, selectSpotQuotePrice(null, null))
+        assertEquals(null, selectSpotQuotePrice(0.0, -1.0))
+    }
+
 }
