@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -16,13 +15,9 @@ import androidx.compose.ui.unit.dp
 internal fun AppBackupDialogs(
     pendingBackupCreate: Uri?,
     pendingBackupRestore: Uri?,
-    createPassword: String,
-    createPasswordConfirm: String,
     restorePassword: String,
     isCreating: Boolean,
     isRestoring: Boolean,
-    onCreatePasswordChange: (String) -> Unit,
-    onCreatePasswordConfirmChange: (String) -> Unit,
     onRestorePasswordChange: (String) -> Unit,
     onDismissCreate: () -> Unit,
     onConfirmCreate: () -> Unit,
@@ -32,36 +27,14 @@ internal fun AppBackupDialogs(
     if (pendingBackupCreate != null) {
         AlertDialog(
             onDismissRequest = onDismissCreate,
-            title = { Text("Защитить резервную копию") },
+            title = { Text("Создать резервную копию?") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Архив будет зашифрован AES-256. Придумайте пароль длиной не менее 9 символов и сохраните его отдельно. Без пароля восстановить данные будет невозможно. Приложение пароль не сохраняет.")
-                    OutlinedTextField(
-                        value = createPassword,
-                        onValueChange = onCreatePasswordChange,
-                        label = { Text("Пароль") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        enabled = !isCreating
-                    )
-                    OutlinedTextField(
-                        value = createPasswordConfirm,
-                        onValueChange = onCreatePasswordConfirmChange,
-                        label = { Text("Повторите пароль") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        enabled = !isCreating
-                    )
-                    if (createPasswordConfirm.isNotEmpty() && createPassword != createPasswordConfirm) {
-                        Text("Пароли не совпадают.", color = MaterialTheme.colorScheme.error)
-                    }
-                }
+                Text("Будет создан ZIP-архив без шифрования и пароля. Любой, у кого будет файл, сможет прочитать содержащиеся в нём финансовые данные. Храните архив в безопасном месте.")
             },
             confirmButton = {
-                TextButton(
-                    enabled = !isCreating && createPassword.length >= 9 && createPassword == createPasswordConfirm,
-                    onClick = onConfirmCreate
-                ) { Text(if (isCreating) "Создаю…" else "Создать архив") }
+                TextButton(enabled = !isCreating, onClick = onConfirmCreate) {
+                    Text(if (isCreating) "Создаю…" else "Создать архив")
+                }
             },
             dismissButton = {
                 TextButton(enabled = !isCreating, onClick = onDismissCreate) { Text("Отмена") }
@@ -74,11 +47,11 @@ internal fun AppBackupDialogs(
             title = { Text("Восстановить резервную копию?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Введите пароль AES-256. Сначала архив будет расшифрован и проверен; только после успешной проверки текущая база будет заменена. Перед продолжением рекомендуется сохранить свежую копию текущих данных.")
+                    Text("Новые резервные копии открываются без пароля. Если вы восстанавливаете старый архив AES-256, введите его пароль. Сначала данные будут проверены; только после успешной проверки текущая база будет заменена.")
                     OutlinedTextField(
                         value = restorePassword,
                         onValueChange = onRestorePasswordChange,
-                        label = { Text("Пароль архива") },
+                        label = { Text("Пароль старой копии (если требуется)") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         enabled = !isRestoring
@@ -86,10 +59,9 @@ internal fun AppBackupDialogs(
                 }
             },
             confirmButton = {
-                TextButton(
-                    enabled = !isRestoring && restorePassword.isNotBlank(),
-                    onClick = onConfirmRestore
-                ) { Text(if (isRestoring) "Восстанавливаю…" else "Восстановить") }
+                TextButton(enabled = !isRestoring, onClick = onConfirmRestore) {
+                    Text(if (isRestoring) "Восстанавливаю…" else "Восстановить")
+                }
             },
             dismissButton = {
                 TextButton(enabled = !isRestoring, onClick = onDismissRestore) { Text("Отмена") }
