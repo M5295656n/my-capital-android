@@ -50,6 +50,7 @@ internal fun OverviewScreen(
     isRefreshing: Boolean,
     quoteSyncMessage: String?,
     onOpenSettings: () -> Unit,
+    onOpenIndexChart: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val portfolioTotal = total + cashBalance
@@ -356,7 +357,7 @@ val annualizedReturn = remember(history) {
             }
         }
         item {
-            MarketQuotesSection(marketData = marketData)
+            MarketQuotesSection(marketData = marketData, onOpenIndexChart = onOpenIndexChart)
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

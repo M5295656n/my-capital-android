@@ -2,6 +2,7 @@ package ru.mycapital.app
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,7 +90,7 @@ internal class MarketOverviewClient {
         val quotes = coroutineScope {
             val currencyQuotes = async(Dispatchers.IO) { cbrCurrencyQuotes() }
             val goldQuote = async(Dispatchers.IO) { goldQuote() }
-            currencyQuotes.await() + listOfNotNull(goldQuote.await())
+            currencyQuotes.await() + listOfNotNull(imoexQuote(), goldQuote.await())
         }
         val bulkMovers = coroutineScope {
             listOf(
@@ -112,7 +113,7 @@ internal class MarketOverviewClient {
         )
     }
 
-    // Use one Bank of Russia rates snapshot for USD, EUR and CNY so all three
+    // Use one Bank of Russia rates snapshot for USD and EUR so both
     // currency cards share the same publication date and previous-rate basis.
     private fun cbrCurrencyQuotes(): List<MarketQuoteRow> = runCatching {
         val request = Request.Builder()
@@ -123,10 +124,25 @@ internal class MarketOverviewClient {
         val body = getText(request.url.toString(), "Курсы валют")
         listOfNotNull(
             parseCbrCurrencyRateJson(body, "USD", "USD_RUB_CBR", "USD/RUB"),
-            parseCbrCurrencyRateJson(body, "EUR", "EUR_RUB_CBR", "EUR/RUB"),
-            parseCbrCurrencyRateJson(body, "CNY", "CNY_RUB_CBR", "CNY/RUB")
+            parseCbrCurrencyRateJson(body, "EUR", "EUR_RUB_CBR", "EUR/RUB")
         )
     }.getOrDefault(emptyList())
+
+    private fun imoexQuote(): MarketQuoteRow? {
+        val urls = listOf(
+            "https://iss.moex.com/iss/engines/stock/markets/index/boards/SNDX/securities/IMOEX.json" +
+                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,CURRENTVALUE,LASTVALUE,LASTCHANGE,LAST,PREVPRICE,CHANGE",
+            "https://iss.moex.com/iss/engines/stock/markets/index/securities/IMOEX.json" +
+                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,CURRENTVALUE,LASTVALUE,LASTCHANGE,LAST,PREVPRICE,CHANGE"
+        )
+        urls.forEach { url ->
+            val quote = runCatching {
+                parseMoexIndexQuoteJson(getText(url, "Индекс МосБиржи"))
+            }.getOrNull()
+            if (quote != null) return quote
+        }
+        return null
+    }
 
     // GLDRUB_TOM is the preferred spot instrument. If its board-scoped response is
     // empty, retry the security-wide route; use TOD only as a last-resort session fallback.
@@ -370,6 +386,32 @@ internal fun calculateQuoteChangePercent(current: Double, previous: Double): Dou
     return ((current - previous) / previous * 100.0).takeIf { it.isFinite() }
 }
 
+internal fun parseMoexIndexQuoteJson(json: String): MarketQuoteRow? = runCatching {
+    val table = JSONObject(json).getJSONObject("marketdata")
+    val columns = jsonColumnIndexes(table.getJSONArray("columns"))
+    val rows = table.getJSONArray("data")
+    val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
+        .firstOrNull { jsonCellString(it, columns["SECID"]) == "IMOEX" }
+        ?: return@runCatching null
+
+    // Index marketdata uses CURRENTVALUE/LASTVALUE/LASTCHANGE, unlike shares
+    // where the equivalent fields are LAST/PREVPRICE/CHANGE.
+    val current = (jsonCellNumber(row, columns, "CURRENTVALUE")
+        ?: jsonCellNumber(row, columns, "LAST"))?.takeIf { it > 0.0 }
+    val previous = (jsonCellNumber(row, columns, "LASTVALUE")
+        ?: jsonCellNumber(row, columns, "PREVPRICE"))?.takeIf { it > 0.0 }
+    val price = current ?: previous ?: return@runCatching null
+    val absoluteChange = jsonCellNumber(row, columns, "LASTCHANGE")
+        ?: jsonCellNumber(row, columns, "CHANGE")
+    val change = when {
+        current != null && previous != null -> calculateQuoteChangePercent(current, previous)
+        current != null && absoluteChange != null ->
+            calculateQuoteChangePercent(current, current - absoluteChange)
+        else -> null
+    }
+    MarketQuoteRow("IMOEX", "Индекс МосБиржи", price, change)
+}.getOrNull()
+
 internal fun parseCbrCurrencyRateJson(
     json: String,
     currencyCode: String,
@@ -400,7 +442,7 @@ internal fun parseEuroRateJson(json: String): MarketQuoteRow? =
     parseCbrCurrencyRateJson(json, "EUR", "EUR_RUB_CBR", "EUR/RUB")
 
 @Composable
-internal fun MarketQuotesSection(marketData: MarketOverviewData) {
+internal fun MarketQuotesSection(marketData: MarketOverviewData, onOpenIndexChart: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Мои котировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -410,7 +452,11 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData) {
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 marketData.quotes.take(4).forEach { quote ->
-                    Card(Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))) {
+                    Card(
+                        Modifier.weight(1f).then(if (quote.ticker == "IMOEX") Modifier.clickable(onClick = onOpenIndexChart) else Modifier),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))
+                    ) {
                         Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             MarketInstrumentIcon(quote.ticker, Modifier.size(29.dp))
                             Text(quote.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -497,6 +543,7 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
     val context = LocalContext.current
     val isCurrency = key in setOf("USD000UTSTOM", "USD_RUB_CBR", "EUR_RUB__TOM", "EUR_RUB_CBR", "CNYRUB_TOM", "CNY_RUB_CBR")
     val isGold = key.startsWith("GLDRUB_")
+    val isIndex = key == "IMOEX"
     val currencyMark = when (key) {
         "USD000UTSTOM", "USD_RUB_CBR" -> "$"
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
@@ -509,13 +556,17 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
         else -> Color(0xFFC83D48)
     }
     val isOfz = key.startsWith("SU")
-    val logoPath = if (isOfz || isCurrency || isGold) null else AssetLogoCatalog.assetPathFor(key)
+    val logoPath = if (isOfz || isCurrency || isGold || isIndex) null else AssetLogoCatalog.assetPathFor(key)
     if (isCurrency) {
         Box(
             modifier.clip(CircleShape).background(currencyColor),
             contentAlignment = Alignment.Center
         ) {
             Text(currencyMark, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        }
+    } else if (isIndex) {
+        Box(modifier.clip(CircleShape).background(Color(0xFF2459A6)), contentAlignment = Alignment.Center) {
+            Text("М", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
         }
     } else if (isGold) {
         Box(

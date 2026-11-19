@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19 ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19 ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
     branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19 ]
@@ -189,7 +189,110 @@ jobs:
               daily_change_percent = (latest_close - previous_close) / previous_close * 100.0
               print(f"GLDRUB_TOM/CETS daily close verified: {latest_close} (date {latest_date}); previous close: {previous_close} (date {previous_date}); change: {daily_change_percent:+.4f}%")
 
+          def verify_imoex_quote_and_candles():
+              quote_url = (f"{BASE}/engines/stock/markets/index/boards/SNDX/securities/IMOEX.json"
+                           "?iss.meta=off&iss.only=marketdata"
+                           "&marketdata.columns=SECID,BOARDID,CURRENTVALUE,LASTVALUE,LASTCHANGE")
+              payload = get_json(quote_url)
+              block = payload.get("marketdata", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.upper(): i for i, name in enumerate(columns)}
+              required = ("SECID", "BOARDID", "CURRENTVALUE", "LASTVALUE", "LASTCHANGE")
+              missing = [name for name in required if name not in indexes]
+              if missing:
+                  raise RuntimeError(f"IMOEX response missing native index fields {missing}; columns={columns}")
+              row = next((r for r in rows if r[indexes["SECID"]] == "IMOEX" and r[indexes["BOARDID"]] == "SNDX"), None)
+              if row is None:
+                  raise RuntimeError("MOEX ISS did not return IMOEX on SNDX board")
+              current = row[indexes["CURRENTVALUE"]]
+              previous = row[indexes["LASTVALUE"]]
+              price = current if current is not None else previous
+              if price is None or float(price) <= 0:
+                  raise RuntimeError(f"IMOEX has no positive current or previous index value: {row}")
+              print(f"IMOEX/SNDX index quote verified: current={current}, previous={previous}, last_change={row[indexes['LASTCHANGE']]}")
+
+              from datetime import date, timedelta
+              today = date.today()
+              start = today - timedelta(days=45)
+              candle_url = (f"{BASE}/engines/stock/markets/index/boards/SNDX/securities/IMOEX/candles.json"
+                            f"?from={start}&till={today}&interval=24&iss.meta=off&iss.only=candles"
+                            "&candles.columns=begin,open,high,low,close")
+              candle_payload = get_json(candle_url)
+              candle_block = candle_payload.get("candles", {})
+              candle_columns = candle_block.get("columns", [])
+              candle_rows = candle_block.get("data", [])
+              candle_indexes = {name.lower(): i for i, name in enumerate(candle_columns)}
+              if not candle_rows or any(name not in candle_indexes for name in ("begin", "open", "high", "low", "close")):
+                  raise RuntimeError(f"IMOEX daily candles missing or malformed: columns={candle_columns}, rows={len(candle_rows)}")
+              valid = 0
+              for candle in candle_rows:
+                  try:
+                      values = [float(candle[candle_indexes[name]]) for name in ("open", "high", "low", "close")]
+                      if all(value > 0 for value in values) and values[1] >= max(values[0], values[3]) and values[2] <= min(values[0], values[3]):
+                          valid += 1
+                  except (TypeError, ValueError, IndexError):
+                      continue
+              if valid == 0:
+                  raise RuntimeError("IMOEX daily candles response contains no valid OHLC rows")
+              print(f"IMOEX/SNDX daily candles verified: valid_ohlc_rows={valid}")
+
+          def verify_cbr_currency_history():
+              from datetime import date, timedelta
+              from xml.etree import ElementTree
+              end = date.today()
+              start = end - timedelta(days=35)
+              for code, label in (("R01235", "USD/RUB"), ("R01239", "EUR/RUB")):
+                  url = ("https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=" +
+                         start.strftime("%d/%m/%Y") + "&date_req2=" + end.strftime("%d/%m/%Y") +
+                         "&VAL_NM_RQ=" + code)
+                  request = Request(url, headers={"User-Agent": "MyCapital-CI/1.0"})
+                  with urlopen(request, timeout=25) as response:
+                      root = ElementTree.fromstring(response.read())
+                  rates = []
+                  for record in root.findall("Record"):
+                      try:
+                          day = record.attrib["Date"]
+                          value = float(record.findtext("Value", "").replace(",", "."))
+                          if value > 0:
+                              rates.append((day, value))
+                      except (KeyError, TypeError, ValueError):
+                          continue
+                  if len(rates) < 2:
+                      raise RuntimeError(f"{label}: CBR dynamic history returned fewer than two valid daily rates")
+                  print(f"{label}: CBR daily history verified, rows={len(rates)}, range={rates[0][0]}..{rates[-1][0]}")
+
+          def verify_gold_daily_ohlc():
+              from datetime import date, timedelta
+              end = date.today()
+              start = end - timedelta(days=90)
+              url = (f"{BASE}/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM/candles.json"
+                     f"?from={start}&till={end}&interval=24&start=0&limit=500&iss.meta=off&iss.only=candles"
+                     "&candles.columns=begin,open,high,low,close")
+              payload = get_json(url)
+              block = payload.get("candles", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.lower(): i for i, name in enumerate(columns)}
+              required = ("begin", "open", "high", "low", "close")
+              if not rows or any(name not in indexes for name in required):
+                  raise RuntimeError(f"GLDRUB_TOM/CETS OHLC history missing: columns={columns}, rows={len(rows)}")
+              valid = 0
+              for row in rows:
+                  try:
+                      o, h, l, c = [float(row[indexes[name]]) for name in ("open", "high", "low", "close")]
+                      if min(o, h, l, c) > 0 and h >= max(o, c, l) and l <= min(o, c, h):
+                          valid += 1
+                  except (TypeError, ValueError, IndexError):
+                      continue
+              if valid < 2:
+                  raise RuntimeError(f"GLDRUB_TOM/CETS: expected at least two valid OHLC candles, got {valid}")
+              print(f"GLDRUB_TOM/CETS OHLC history verified: valid_rows={valid}")
+
           verify_gold_cets_price()
+          verify_imoex_quote_and_candles()
+          verify_cbr_currency_history()
+          verify_gold_daily_ohlc()
 
           def fetch_board_candles(ticker, market, board):
               by_date = {}
