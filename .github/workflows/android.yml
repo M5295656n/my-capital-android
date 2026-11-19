@@ -135,7 +135,7 @@ jobs:
           def verify_gold_cets_price():
               url = (f"{BASE}/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM.json"
                      "?iss.meta=off&iss.only=marketdata"
-                     "&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE,PREVPRICE")
+                     "&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE")
               payload = get_json(url)
               block = payload.get("marketdata", {})
               columns = block.get("columns", [])
@@ -156,7 +156,7 @@ jobs:
                       return value if value > 0 else None
                   except (TypeError, ValueError):
                       return None
-              live = positive("LAST") or positive("WAPRICE") or positive("MARKETPRICE") or positive("PREVPRICE")
+              live = positive("LAST") or positive("WAPRICE") or positive("MARKETPRICE")
               if live:
                   print(f"GLDRUB_TOM/CETS numeric market price verified: {live}")
                   return
