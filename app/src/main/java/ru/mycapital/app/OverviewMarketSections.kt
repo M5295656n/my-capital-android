@@ -133,12 +133,24 @@ internal class MarketOverviewClient {
     private fun goldQuote(): MarketQuoteRow {
         val tom = quote("GLDRUB_TOM", "Золото ₽/г")
         val tod = quote("GLDRUB_TOD", "Золото ₽/г")
-        // During inactive sessions MOEX may return a valid instrument row but null
-        // for every marketdata price field. In that case use the latest published
-        // daily candle close, not an empty placeholder.
-        val tomClose = if (tom == null && tod == null) goldDailyCandleQuote("GLDRUB_TOM") else null
-        val todClose = if (tom == null && tod == null && tomClose == null) goldDailyCandleQuote("GLDRUB_TOD") else null
-        return tom ?: tod ?: tomClose ?: todClose
+        val liveQuote = tom ?: tod
+        // If MOEX provides a live price but omits PREVPRICE/CHANGE, recover the
+        // previous trading close from the two latest daily candles and calculate
+        // the percentage against that close using the live price.
+        if (liveQuote != null && liveQuote.changePercent == null) {
+            val daily = goldDailyCandleQuote(liveQuote.ticker)
+                ?: goldDailyCandleQuote(if (liveQuote.ticker == "GLDRUB_TOM") "GLDRUB_TOD" else "GLDRUB_TOM")
+            val dailyChange = daily?.changePercent
+            if (daily != null && dailyChange != null && daily.price != null) {
+                val previousClose = daily.price / (1.0 + dailyChange / 100.0)
+                return liveQuote.copy(changePercent = calculateQuoteChangePercent(liveQuote.price ?: Double.NaN, previousClose))
+            }
+        }
+        // During inactive sessions use the latest published daily close and its
+        // change versus the previous trading session (never fabricate a zero).
+        val tomClose = if (liveQuote == null) goldDailyCandleQuote("GLDRUB_TOM") else null
+        val todClose = if (liveQuote == null && tomClose == null) goldDailyCandleQuote("GLDRUB_TOD") else null
+        return liveQuote ?: tomClose ?: todClose
             ?: MarketQuoteRow("GLDRUB_TOM", "Золото ₽/г", null, null)
     }
 
@@ -271,8 +283,11 @@ internal fun parseMoexGoldCandleJson(json: String, ticker: String, label: String
                 ?: return@mapNotNull null
             date to close
         }
-        val latest = datedPrices.maxByOrNull { it.first } ?: return@runCatching null
-        MarketQuoteRow(ticker, label, latest.second, null)
+        val ordered = datedPrices.sortedBy { it.first }
+        val latest = ordered.lastOrNull() ?: return@runCatching null
+        val previousClose = ordered.getOrNull(ordered.lastIndex - 1)?.second
+        val changePercent = previousClose?.let { calculateQuoteChangePercent(latest.second, it) }
+        MarketQuoteRow(ticker, label, latest.second, changePercent)
     }.getOrNull()
 }
 
