@@ -69,20 +69,39 @@ internal class MarketOverviewClient {
         .callTimeout(12, TimeUnit.SECONDS)
         .build()
 
-    suspend fun load(heldTickers: Set<String>): MarketOverviewData = withContext(Dispatchers.IO) {
-        // MOEX endpoints are independent. Fetch them concurrently so one slow endpoint
-        // cannot keep the dashboard in its loading state for several sequential timeouts.
+    suspend fun load(heldAssets: List<AssetEntity>): MarketOverviewData = withContext(Dispatchers.IO) {
+        val eligibleAssets = heldAssets.asSequence()
+            .filter { it.quantity > 0.0 && it.ticker.isNotBlank() }
+            .filter {
+                it.assetType.contains("акци", ignoreCase = true) ||
+                    it.assetType.contains("облигац", ignoreCase = true) ||
+                    it.assetType.contains("фонд", ignoreCase = true) ||
+                    it.assetType.contains("пай", ignoreCase = true)
+            }
+            .distinctBy { it.ticker.trim().uppercase() }
+            .toList()
+        val heldTickers = eligibleAssets.map { it.ticker.trim().uppercase() }.toSet()
+
+        // Keep the efficient board-group snapshot as the primary source. If MOEX omits
+        // a held security from that snapshot, resolve only the missing tickers directly.
         val quotes = coroutineScope {
             val currencyQuotes = async(Dispatchers.IO) { cbrCurrencyQuotes() }
-            val goldQuote = async(Dispatchers.IO) { quote("GLDRUB_TOM", "Золото ₽/г") }
+            val goldQuote = async(Dispatchers.IO) { goldQuote() }
             currencyQuotes.await() + listOfNotNull(goldQuote.await())
         }
-        val movers = coroutineScope {
+        val bulkMovers = coroutineScope {
             listOf(
                 async(Dispatchers.IO) { loadMoversFrom("shares", "57") },
                 async(Dispatchers.IO) { loadMoversFrom("bonds", "58") }
-            ).awaitAll().flatten().distinctBy { it.ticker }
-        }.filter { it.ticker.uppercase() in heldTickers }
+            ).awaitAll().flatten().distinctBy { it.ticker.uppercase() }
+        }.filter { it.ticker.trim().uppercase() in heldTickers }
+
+        val missingAssets = eligibleAssets.filter { asset ->
+            bulkMovers.none { it.ticker.equals(asset.ticker.trim(), ignoreCase = true) }
+        }
+        val fallbackMovers = loadHeldMovers(missingAssets)
+        val movers = (bulkMovers + fallbackMovers).distinctBy { it.ticker.uppercase() }
+
         MarketOverviewData(
             quotes = quotes,
             gainers = movers.sortedByDescending { it.changePercent }.take(5),
@@ -107,35 +126,24 @@ internal class MarketOverviewClient {
         )
     }.getOrDefault(emptyList())
 
-    // Gold is traded on MOEX's FX and precious-metals market, main board CETS.
-    // Request the board explicitly and retain the last published price outside session.
-    private fun quote(ticker: String, label: String): MarketQuoteRow? = runCatching {
-        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,CHANGE,PREVPRICE,MARKETPRICE"
-        val json = getJson(url)
-        val table = json.optJSONObject("marketdata") ?: return@runCatching null
-        val columns = table.optJSONArray("columns") ?: return@runCatching null
-        val rows = table.optJSONArray("data") ?: return@runCatching null
-        val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
-        val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
-            .firstOrNull { it.optString(indexes["SECID"] ?: -1) == ticker } ?: return@runCatching null
-        fun value(column: String): Double? {
-            val index = indexes[column] ?: return null
-            return row.optDouble(index, Double.NaN).takeIf { it.isFinite() && it > 0.0 }
+    // GLDRUB_TOM is the preferred spot instrument. If its board-scoped response is
+    // empty, retry the security-wide route; use TOD only as a last-resort session fallback.
+    private fun goldQuote(): MarketQuoteRow? =
+        quote("GLDRUB_TOM", "Золото ₽/г") ?: quote("GLDRUB_TOD", "Золото ₽/г")
+
+    private fun quote(ticker: String, label: String): MarketQuoteRow? {
+        val urls = listOf(
+            "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE",
+            "https://iss.moex.com/iss/engines/currency/markets/selt/securities/$ticker.json?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE"
+        )
+        urls.forEach { url ->
+            val parsed = runCatching {
+                parseMoexGoldQuoteJson(getText(url, "Котировка золота"), ticker, label)
+            }.getOrNull()
+            if (parsed != null) return parsed
         }
-        val last = value("LAST")
-        val marketPrice = value("MARKETPRICE")
-        val previous = value("PREVPRICE")
-        val price = last ?: marketPrice ?: previous
-        val change = indexes["CHANGE"]?.let { row.optDouble(it, Double.NaN) }
-            ?.takeIf { it.isFinite() }
-        val changePercent = when {
-            last != null && previous != null -> calculateQuoteChangePercent(last, previous)
-            last != null && change != null -> calculateQuoteChangePercent(last, last - change)
-            marketPrice != null && previous != null -> calculateQuoteChangePercent(marketPrice, previous)
-            else -> null
-        }
-        MarketQuoteRow(ticker, label, price, changePercent)
-    }.getOrNull()
+        return null
+    }
 
     private fun loadMoversFrom(market: String, boardGroup: String): List<MarketMoverRow> = runCatching {
         val url = "https://iss.moex.com/iss/engines/stock/markets/$market/boardgroups/$boardGroup/securities.json?iss.meta=off&iss.only=securities,marketdata&securities.columns=SECID,SHORTNAME&marketdata.columns=SECID,LAST,CHANGE"
@@ -163,6 +171,24 @@ internal class MarketOverviewClient {
             else MarketMoverRow(ticker, names[ticker] ?: ticker, price, change, change / previous * 100.0)
         }.filter { it.changePercent.isFinite() && it.changePercent != 0.0 }
     }.getOrDefault(emptyList())
+
+    private suspend fun loadHeldMovers(assets: List<AssetEntity>): List<MarketMoverRow> = coroutineScope {
+        assets.map { asset ->
+            async(Dispatchers.IO) {
+                val ticker = asset.ticker.trim().uppercase()
+                val isBond = asset.assetType.contains("облигац", ignoreCase = true)
+                val market = if (isBond) "bonds" else "shares"
+                val preferredBoards = if (isBond) listOf("TQOB", "TQCB") else listOf("TQBR", "TQTF")
+                val url = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$ticker.json" +
+                    "?iss.meta=off&iss.only=securities,marketdata" +
+                    "&securities.columns=SECID,SHORTNAME" +
+                    "&marketdata.columns=SECID,BOARDID,LAST,CHANGE,PREVPRICE,MARKETPRICE"
+                runCatching {
+                    parseMoexMoverQuoteJson(getText(url, "Котировка $ticker"), ticker, preferredBoards)
+                }.getOrNull()
+            }
+        }.awaitAll().filterNotNull()
+    }
 
     private fun getJson(url: String): JSONObject =
         try {
@@ -195,6 +221,87 @@ internal class MarketOverviewClient {
         throw lastError ?: IOException("$source: запрос не выполнен")
     }
 }
+
+internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String): MarketQuoteRow? =
+    runCatching {
+        val table = JSONObject(json).optJSONObject("marketdata") ?: return@runCatching null
+        val columns = table.optJSONArray("columns") ?: return@runCatching null
+        val rows = table.optJSONArray("data") ?: return@runCatching null
+        val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
+        val secIdIndex = indexes["SECID"] ?: return@runCatching null
+        val candidates = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
+            .filter { it.optString(secIdIndex) == ticker }
+        val row = candidates.firstOrNull { candidate ->
+            indexes["BOARDID"]?.let { candidate.optString(it) == "CETS" } == true
+        } ?: candidates.firstOrNull() ?: return@runCatching null
+        fun value(column: String): Double? = indexes[column]
+            ?.takeIf { it < row.length() && !row.isNull(it) }
+            ?.let { row.optDouble(it, Double.NaN) }
+            ?.takeIf { it.isFinite() && it > 0.0 }
+        val last = value("LAST")
+        val marketPrice = value("MARKETPRICE")
+        val previous = value("PREVPRICE")
+        val price = last ?: marketPrice ?: previous ?: return@runCatching null
+        val change = indexes["CHANGE"]
+            ?.takeIf { it < row.length() && !row.isNull(it) }
+            ?.let { row.optDouble(it, Double.NaN) }
+            ?.takeIf { it.isFinite() }
+        val changePercent = when {
+            last != null && previous != null -> calculateQuoteChangePercent(last, previous)
+            last != null && change != null -> calculateQuoteChangePercent(last, last - change)
+            marketPrice != null && previous != null -> calculateQuoteChangePercent(marketPrice, previous)
+            else -> null
+        }
+        MarketQuoteRow(ticker, label, price, changePercent)
+    }.getOrNull()
+
+internal fun parseMoexMoverQuoteJson(
+    json: String,
+    ticker: String,
+    preferredBoards: List<String>
+): MarketMoverRow? = runCatching {
+    val root = JSONObject(json)
+    val securities = root.optJSONObject("securities")
+    val securityColumns = securities?.optJSONArray("columns")
+    val securityRows = securities?.optJSONArray("data")
+    val securityIndexes = securityColumns?.let { cols ->
+        (0 until cols.length()).associate { cols.optString(it) to it }
+    }.orEmpty()
+    val name = (0 until (securityRows?.length() ?: 0)).mapNotNull { index ->
+        val row = securityRows?.optJSONArray(index) ?: return@mapNotNull null
+        val idIndex = securityIndexes["SECID"] ?: return@mapNotNull null
+        if (row.optString(idIndex) != ticker) return@mapNotNull null
+        row.optString(securityIndexes["SHORTNAME"] ?: idIndex).takeIf { it.isNotBlank() }
+    }.firstOrNull() ?: ticker
+
+    val table = root.optJSONObject("marketdata") ?: return@runCatching null
+    val columns = table.optJSONArray("columns") ?: return@runCatching null
+    val rows = table.optJSONArray("data") ?: return@runCatching null
+    val indexes = (0 until columns.length()).associate { columns.optString(it) to it }
+    val idIndex = indexes["SECID"] ?: return@runCatching null
+    val candidates = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
+        .filter { it.optString(idIndex) == ticker }
+    val row = candidates.firstOrNull { candidate ->
+        indexes["BOARDID"]?.let { candidate.optString(it) in preferredBoards } == true
+    } ?: candidates.firstOrNull() ?: return@runCatching null
+    fun value(column: String): Double? = indexes[column]
+        ?.takeIf { it < row.length() && !row.isNull(it) }
+        ?.let { row.optDouble(it, Double.NaN) }
+        ?.takeIf { it.isFinite() && it > 0.0 }
+    val last = value("LAST")
+    val marketPrice = value("MARKETPRICE")
+    val previous = value("PREVPRICE")
+    val price = last ?: marketPrice ?: previous ?: return@runCatching null
+    val reportedChange = indexes["CHANGE"]
+        ?.takeIf { it < row.length() && !row.isNull(it) }
+        ?.let { row.optDouble(it, Double.NaN) }
+        ?.takeIf { it.isFinite() }
+    val change = reportedChange ?: previous?.let { price - it } ?: return@runCatching null
+    val previousPrice = previous ?: (price - change)
+    val changePercent = calculateQuoteChangePercent(price, previousPrice) ?: return@runCatching null
+    if (changePercent == 0.0) return@runCatching null
+    MarketMoverRow(ticker, name, price, change, changePercent)
+}.getOrNull()
 
 internal fun calculateQuoteChangePercent(current: Double, previous: Double): Double? {
     if (!current.isFinite() || !previous.isFinite() || current <= 0.0 || previous <= 0.0) return null

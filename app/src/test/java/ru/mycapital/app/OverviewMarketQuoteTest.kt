@@ -58,6 +58,38 @@ class OverviewMarketQuoteTest {
     }
 
     @Test
+    fun goldQuoteFallsBackToPreviousPublishedPriceWhenLastIsNull() {
+        val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["GLDRUB_TOM","CETS",null,null,8123.5,null]]}}"""
+
+        val quote = parseMoexGoldQuoteJson(json, "GLDRUB_TOM", "Золото ₽/г")
+
+        assertEquals(8123.5, quote?.price ?: Double.NaN, 0.000001)
+        assertNull(quote?.changePercent)
+    }
+
+    @Test
+    fun goldQuotePrefersCetsBoardAndLastPrice() {
+        val json = """{"marketdata":{"columns":["SECID","BOARDID","LAST","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["GLDRUB_TOM","CNGD",8100.0,10.0,8090.0,8080.0],["GLDRUB_TOM","CETS",8200.0,20.0,8180.0,8170.0]]}}"""
+
+        val quote = parseMoexGoldQuoteJson(json, "GLDRUB_TOM", "Золото ₽/г")
+
+        assertEquals(8200.0, quote?.price ?: Double.NaN, 0.000001)
+        assertEquals(0.2444987775, quote?.changePercent ?: Double.NaN, 0.000001)
+    }
+
+    @Test
+    fun heldMoverFallbackUsesPreviousCloseWhenChangeIsMissing() {
+        val json = """{"securities":{"columns":["SECID","SHORTNAME"],"data":[["SBER","Сбербанк"]]},"marketdata":{"columns":["SECID","BOARDID","LAST","CHANGE","PREVPRICE","MARKETPRICE"],"data":[["SBER","TQBR",310.0,null,300.0,299.0]]}}"""
+
+        val mover = parseMoexMoverQuoteJson(json, "SBER", listOf("TQBR"))
+
+        assertEquals("Сбербанк", mover?.name)
+        assertEquals(310.0, mover?.price ?: Double.NaN, 0.000001)
+        assertEquals(10.0, mover?.change ?: Double.NaN, 0.000001)
+        assertEquals(3.3333333333, mover?.changePercent ?: Double.NaN, 0.000001)
+    }
+
+    @Test
     fun invalidRatesDoNotProducePercentage() {
         assertNull(calculateQuoteChangePercent(91.0, 0.0))
         assertNull(calculateQuoteChangePercent(Double.NaN, 90.0))

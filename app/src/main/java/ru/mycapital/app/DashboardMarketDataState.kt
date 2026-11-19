@@ -23,20 +23,17 @@ internal data class DashboardMarketDataState(
  */
 @Composable
 internal fun rememberDashboardMarketDataState(assets: List<AssetEntity>): DashboardMarketDataState {
-    val heldTickers = remember(assets) {
-        assets.filter { it.quantity > 0.0 }
-            .map { it.ticker.trim().uppercase() }
-            .filter { it.isNotBlank() }
-            .toSet()
+    val heldAssets = remember(assets) {
+        assets.filter { it.quantity > 0.0 && it.ticker.isNotBlank() }
     }
     var data by remember { mutableStateOf(MarketOverviewData()) }
     var refreshVersion by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(heldTickers, refreshVersion) {
+    LaunchedEffect(heldAssets, refreshVersion) {
         val loaded = runCatching {
             withTimeout(35_000L) {
                 withContext(Dispatchers.IO) {
-                    MarketOverviewClient().load(heldTickers)
+                    MarketOverviewClient().load(heldAssets)
                 }
             }
         }
