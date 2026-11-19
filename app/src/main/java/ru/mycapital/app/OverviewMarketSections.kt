@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.PayoutEntity
 import java.io.IOException
 import java.time.Instant
@@ -434,7 +435,7 @@ private fun MarketInstrumentIcon(ticker: String, modifier: Modifier = Modifier) 
     val key = ticker.trim().uppercase()
     val context = LocalContext.current
     val isCurrency = key in setOf("USD000UTSTOM", "USD_RUB_CBR", "EUR_RUB__TOM", "EUR_RUB_CBR", "CNYRUB_TOM", "CNY_RUB_CBR")
-    val isGold = key == "GLDRUB_TOM"
+    val isGold = key.startsWith("GLDRUB_")
     val currencyMark = when (key) {
         "USD000UTSTOM", "USD_RUB_CBR" -> "$"
         "EUR_RUB__TOM", "EUR_RUB_CBR" -> "€"
