@@ -409,7 +409,7 @@ private fun classColor(assetClass: PortfolioAssetClass): Color = when (assetClas
     PortfolioAssetClass.OTHER -> MaterialTheme.colorScheme.tertiary
 }
 
-private fun moneyAnalytics(value: Double): String {
+internal fun moneyAnalytics(value: Double): String {
     val locale = Locale("ru", "RU")
     val groupingSeparator = DecimalFormatSymbols.getInstance(locale).groupingSeparator
     return String.format(locale, "%,.2f", value).replace(groupingSeparator, ' ')
