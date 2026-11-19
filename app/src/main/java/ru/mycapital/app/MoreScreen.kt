@@ -140,7 +140,7 @@ internal fun MoreScreen(
                 MoreFileAction(
                     icon = Icons.Default.Backup,
                     title = if (isCreatingBackup) "Создаю резервную копию…" else "Создать резервную копию",
-                    description = "Полная зашифрованная копия портфеля",
+                    description = "Полная копия портфеля без пароля",
                     onClick = onCreateBackup,
                     enabled = !isCreatingBackup && !isRestoringBackup,
                     loading = isCreatingBackup
@@ -167,7 +167,7 @@ internal fun MoreScreen(
         }
 
         Text(
-            "Резервная копия содержит финансовые данные и историю портфеля и шифруется AES-256. Пароль не хранится в приложении. Без него восстановление невозможно.",
+            "Резервная копия содержит финансовые данные и историю портфеля без шифрования и пароля. Любой, у кого есть ZIP-файл, сможет прочитать его содержимое. Храните архив в безопасном месте.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp)
