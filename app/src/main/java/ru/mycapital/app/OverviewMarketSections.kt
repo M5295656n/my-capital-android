@@ -393,14 +393,15 @@ internal fun parseMoexIndexQuoteJson(json: String): MarketQuoteRow? = runCatchin
     val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
         .firstOrNull { jsonCellString(it, columns["SECID"]) == "IMOEX" }
         ?: return@runCatching null
-    val last = jsonCellNumber(row, columns, "LAST")?.takeIf { it > 0.0 }
-        ?: jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
-        ?: return@runCatching null
+    val live = jsonCellNumber(row, columns, "LAST")?.takeIf { it > 0.0 }
     val previous = jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
+    val price = live ?: previous ?: return@runCatching null
     val reportedChange = jsonCellNumber(row, columns, "CHANGE")
-    val change = previous?.let { calculateQuoteChangePercent(last, it) }
-        ?: reportedChange?.let { calculateQuoteChangePercent(last, last - it) }
-    MarketQuoteRow("IMOEX", "Индекс МосБиржи", last, change)
+    val change = if (live != null) {
+        previous?.let { calculateQuoteChangePercent(live, it) }
+            ?: reportedChange?.let { calculateQuoteChangePercent(live, live - it) }
+    } else null
+    MarketQuoteRow("IMOEX", "Индекс МосБиржи", price, change)
 }.getOrNull()
 
 internal fun parseCbrCurrencyRateJson(
