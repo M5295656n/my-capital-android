@@ -113,7 +113,7 @@ internal class MarketOverviewClient {
         )
     }
 
-    // Use one Bank of Russia rates snapshot for USD, EUR and CNY so all three
+    // Use one Bank of Russia rates snapshot for USD and EUR so both
     // currency cards share the same publication date and previous-rate basis.
     private fun cbrCurrencyQuotes(): List<MarketQuoteRow> = runCatching {
         val request = Request.Builder()
