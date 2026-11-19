@@ -237,8 +237,62 @@ jobs:
                   raise RuntimeError("IMOEX daily candles response contains no valid OHLC rows")
               print(f"IMOEX/SNDX daily candles verified: valid_ohlc_rows={valid}")
 
+          def verify_cbr_currency_history():
+              from datetime import date, timedelta
+              from xml.etree import ElementTree
+              end = date.today()
+              start = end - timedelta(days=35)
+              for code, label in (("R01235", "USD/RUB"), ("R01239", "EUR/RUB")):
+                  url = ("https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=" +
+                         start.strftime("%d/%m/%Y") + "&date_req2=" + end.strftime("%d/%m/%Y") +
+                         "&VAL_NM_RQ=" + code)
+                  request = Request(url, headers={"User-Agent": "MyCapital-CI/1.0"})
+                  with urlopen(request, timeout=25) as response:
+                      root = ElementTree.fromstring(response.read())
+                  rates = []
+                  for record in root.findall("Record"):
+                      try:
+                          day = record.attrib["Date"]
+                          value = float(record.findtext("Value", "").replace(",", "."))
+                          if value > 0:
+                              rates.append((day, value))
+                      except (KeyError, TypeError, ValueError):
+                          continue
+                  if len(rates) < 2:
+                      raise RuntimeError(f"{label}: CBR dynamic history returned fewer than two valid daily rates")
+                  print(f"{label}: CBR daily history verified, rows={len(rates)}, range={rates[0][0]}..{rates[-1][0]}")
+
+          def verify_gold_daily_ohlc():
+              from datetime import date, timedelta
+              end = date.today()
+              start = end - timedelta(days=90)
+              url = (f"{BASE}/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM/candles.json"
+                     f"?from={start}&till={end}&interval=24&start=0&limit=500&iss.meta=off&iss.only=candles"
+                     "&candles.columns=begin,open,high,low,close")
+              payload = get_json(url)
+              block = payload.get("candles", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.lower(): i for i, name in enumerate(columns)}
+              required = ("begin", "open", "high", "low", "close")
+              if not rows or any(name not in indexes for name in required):
+                  raise RuntimeError(f"GLDRUB_TOM/CETS OHLC history missing: columns={columns}, rows={len(rows)}")
+              valid = 0
+              for row in rows:
+                  try:
+                      o, h, l, c = [float(row[indexes[name]]) for name in ("open", "high", "low", "close")]
+                      if min(o, h, l, c) > 0 and h >= max(o, c, l) and l <= min(o, c, h):
+                          valid += 1
+                  except (TypeError, ValueError, IndexError):
+                      continue
+              if valid < 2:
+                  raise RuntimeError(f"GLDRUB_TOM/CETS: expected at least two valid OHLC candles, got {valid}")
+              print(f"GLDRUB_TOM/CETS OHLC history verified: valid_rows={valid}")
+
           verify_gold_cets_price()
           verify_imoex_quote_and_candles()
+          verify_cbr_currency_history()
+          verify_gold_daily_ohlc()
 
           def fetch_board_candles(ticker, market, board):
               by_date = {}
