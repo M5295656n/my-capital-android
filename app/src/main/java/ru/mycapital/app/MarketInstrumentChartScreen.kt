@@ -52,7 +52,7 @@ internal fun MarketInstrumentChartScreen(ticker: String, quote: MarketQuoteRow?,
             val start = days?.let { end.minusDays(it) } ?: LocalDate.of(1992, 1, 1)
             candles = withContext(Dispatchers.IO) {
                 if (isCurrency) loadCbrRateSeries(if (isUsd) "R01235" else "R01239", start, end).map { MoexIndexCandle(it.first, it.second, it.second, it.second, it.second) }
-                else loadMoexGoldSeries(start, end)
+                else loadMoexGoldSeries(ticker, start, end)
             }
             if (candles.isEmpty()) error = "История за выбранный период не опубликована."
         } catch (e: Exception) { error = e.message ?: "Не удалось загрузить историю." }
@@ -63,7 +63,7 @@ internal fun MarketInstrumentChartScreen(ticker: String, quote: MarketQuoteRow?,
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
             Column {
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(if (isCurrency) "Банк России · официальный курс" else "GLDRUB_TOM · Московская биржа · ₽/г", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (isCurrency) "Банк России · официальный курс" else "$ticker · Московская биржа · ₽/г", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Text(quote?.price?.let { String.format(Locale("ru", "RU"), "%,.2f ₽", it) } ?: "—", fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -73,7 +73,7 @@ internal fun MarketInstrumentChartScreen(ticker: String, quote: MarketQuoteRow?,
         }
         when {
             loading && candles.isEmpty() -> Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            candles.size > 1 -> {
+            candles.isNotEmpty() -> {
                 if (!isCurrency) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = !candleMode, onClick = { candleMode = false }, label = { Text("Линейный") })
                     FilterChip(selected = candleMode, onClick = { candleMode = true }, label = { Text("Свечной") })
@@ -112,12 +112,12 @@ internal fun parseCbrDynamicRateXml(xml: String): List<Pair<String, Double>> {
     }.sortedBy { it.first }
 }
 
-private fun loadMoexGoldSeries(from: LocalDate, till: LocalDate): List<MoexIndexCandle> {
+private fun loadMoexGoldSeries(ticker: String, from: LocalDate, till: LocalDate): List<MoexIndexCandle> {
     val client = OkHttpClient.Builder().connectTimeout(12, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).callTimeout(60, TimeUnit.SECONDS).build()
     val merged = linkedMapOf<String, MoexIndexCandle>()
     var start = 0
     repeat(20) {
-        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM/candles.json?from=" + from + "&till=" + till + "&interval=24&start=" + start + "&limit=500&iss.meta=off&iss.only=candles&candles.columns=begin,open,high,low,close"
+        val url = "https://iss.moex.com/iss/engines/currency/markets/selt/boards/CETS/securities/$ticker/candles.json?from=" + from + "&till=" + till + "&interval=24&start=" + start + "&limit=500&iss.meta=off&iss.only=candles&candles.columns=begin,open,high,low,close"
         val json = client.newCall(Request.Builder().url(url).header("Accept", "application/json").header("User-Agent", "MyCapital-Android/0.4.18").build()).execute().use {
             if (!it.isSuccessful) throw java.io.IOException("MOEX ISS HTTP " + it.code)
             it.body?.string() ?: throw java.io.IOException("Пустой ответ MOEX ISS")
