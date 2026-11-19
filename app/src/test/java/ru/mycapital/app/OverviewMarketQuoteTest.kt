@@ -64,6 +64,16 @@ class OverviewMarketQuoteTest {
         val quote = parseMoexGoldCandleJson(json, "GLDRUB_TOM", "Золото ₽/г")
 
         assertEquals(10064.5, quote?.price ?: Double.NaN, 0.000001)
+        assertEquals(1.1507537688, quote?.changePercent ?: Double.NaN, 0.000001)
+    }
+
+    @Test
+    fun goldDailyCandleParserDoesNotInventChangeWithOnlyOneSession() {
+        val json = """{"candles":{"columns":["begin","close"],"data":[["2026-11-18",10064.5]]}}"""
+
+        val quote = parseMoexGoldCandleJson(json, "GLDRUB_TOM", "Золото ₽/г")
+
+        assertEquals(10064.5, quote?.price ?: Double.NaN, 0.000001)
         assertNull(quote?.changePercent)
     }
 
