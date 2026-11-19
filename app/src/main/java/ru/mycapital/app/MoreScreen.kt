@@ -200,7 +200,7 @@ private fun MoreActionCard(
             .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (enabled) MaterialTheme.colorScheme.surfaceContainer
+            containerColor = if (enabled) MaterialTheme.colorScheme.surfaceVariant
             else MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
