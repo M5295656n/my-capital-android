@@ -44,11 +44,14 @@ internal fun normalizeMoexPrice(price: Double, assetType: String, faceValue: Dou
 
 internal data class MoexMarketRoute(val engine: String, val market: String, val board: String? = null)
 
-/** Gold spot trades on the FX and Precious Metals market, board CETS. */
+/** Gold spot trades on CETS; the GOLD ETF trades on the shares market, board TQBR. */
 internal fun moexMarketRoute(ticker: String, assetType: String): MoexMarketRoute {
     val code = ticker.trim().uppercase()
     if (code == "GLDRUB_TOM" || code == "GLDRUB_TOD") {
         return MoexMarketRoute(engine = "currency", market = "selt", board = "CETS")
+    }
+    if (code == "GOLD") {
+        return MoexMarketRoute(engine = "stock", market = "shares", board = "TQBR")
     }
     val market = if (assetType.contains("облигац", ignoreCase = true)) "bonds" else "shares"
     return MoexMarketRoute(engine = "stock", market = market)
@@ -60,7 +63,7 @@ internal fun selectSpotQuotePrice(last: Double?, weightedAverage: Double?): Doub
         ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }
 
 internal fun preferredMoexBoardsForRoute(route: MoexMarketRoute, assetType: String): List<String> =
-    if (route.engine == "currency") listOf(route.board ?: "CETS") else preferredMoexBoards(assetType)
+    route.board?.let(::listOf) ?: preferredMoexBoards(assetType)
 
 internal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
     "GLDRUB_TOM" -> listOf("GLDRUB_TOM", "GLDRUB_TOD")
