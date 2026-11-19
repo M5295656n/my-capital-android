@@ -166,7 +166,7 @@ class MoexIssClient {
                 preferredBoards.flatMap { board -> matchingRows.filter { it.second == board } }
             } else matchingRows
             for ((row, board) in selectedRows) {
-                val price = if (market == "bonds") {
+                val price = (if (market == "bonds") {
                     selectBondQuotePrice(
                         last = value(row, "LAST"),
                         weightedAverage = value(row, "WAPRICE"),
@@ -177,7 +177,7 @@ class MoexIssClient {
                     selectSpotQuotePrice(value(row, "LAST"), value(row, "WAPRICE"))
                 } else {
                     value(row, "LAST") ?: value(row, "WAPRICE") ?: value(row, "LCURRENTPRICE")
-                } ?: continue
+                }) ?: continue
                 val accruedInterest = if (market == "bonds") {
                     val accruedIndex = indexes["ACCRUEDINT"]
                     val accruedFromMarketData = accruedIndex?.takeIf { it < row.length() && !row.isNull(it) }
