@@ -264,7 +264,6 @@ internal fun parseMoexGoldCandleJson(json: String, ticker: String, label: String
         val table = JSONObject(json).getJSONObject("candles")
         val columns = jsonColumnIndexes(table.getJSONArray("columns"))
         val rows = table.getJSONArray("data")
-        val closeIndex = columns["close"] ?: return@runCatching null
         val datedPrices = (0 until rows.length()).mapNotNull { index ->
             val row = rows.optJSONArray(index) ?: return@mapNotNull null
             val date = jsonCellString(row, columns["begin"]) ?: return@mapNotNull null
@@ -294,7 +293,7 @@ internal fun parseMoexGoldQuoteJson(json: String, ticker: String, label: String)
         val previous = jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
         // MOEX may publish no LAST while the instrument has a valid weighted
         // session price. Prefer the live/weighted price before the previous close.
-        val price = last ?: weightedAverage ?: marketPrice ?: previous ?: return@runCatching null
+        val price = last ?: weightedAverage ?: marketPrice ?: return@runCatching null
         val reportedChange = jsonCellNumber(row, columns, "CHANGE")
         val changePercent = when {
             last != null && previous != null -> calculateQuoteChangePercent(last, previous)
