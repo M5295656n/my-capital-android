@@ -23,6 +23,7 @@ class OfficialDividendAnnouncementsTest {
         assertEquals(278.0, merged.sumOf { it.amountPerUnit }, 0.000001)
         assertEquals(11.87, merged.sumOf { it.amountPerUnit } / 2342.0 * 100.0, 0.01)
         assertNotNull(merged.singleOrNull { it.status == "RECOMMENDED" })
+        assertEquals("Рекомендовано советом директоров", ru.mycapital.app.dividendStatusLabel("RECOMMENDED"))
         assertNull(merged.singleOrNull { it.amountPerUnit == 98.0 })
     }
 

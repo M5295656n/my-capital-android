@@ -16,6 +16,8 @@
 
 | Тикер | Компания | Файл | Источник идентификации / атрибуция |
 |---|---|---|---|
+| DOMRF | ДОМ.РФ | `domrf.svg` | Логотип ПАО «ДОМ.РФ»: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Dom.RF_Logo.svg), исходный бренд — https://дом.рф/about/ ; векторная версия адаптирована для квадратной карточки |
+| LSNGP | Россети Ленэнерго (привилегированная акция) | `lenenergo.svg` | Официальный логотип в [корпоративной символике компании](https://rosseti-lenenergo.ru/press/symbolics/) (PDF); квадратная версия использует фирменный знак, сверенный с официальным образцом. Векторный источник знака: https://github.com/1maximsafronov/integrity-scada/blob/79cc2c435374bef3ba977af05fce5b784a89af2d/client/public/img/logo-rosseti.svg |
 | IRAO | Интер РАО | `interrao.svg` | Официальный сайт: https://www.interrao.ru/ ; фирменная версия основана на оранжевом солнечном знаке и синем наименовании группы |
 | MDMG | МД Медикал Груп («Мать и дитя») | `mdmg.svg` | Официальный сайт: https://www.mcclinics.com/ ; фирменная символика «Mother & Child» |
 | OZPH | Озон Фармацевтика | `ozph.svg` | Официальная символика и разрешение на добросовестное использование по CC BY 4.0: https://ozonpharm.ru/news/contacts/ ; исходная публикация: https://commons.wikimedia.org/wiki/File:OZON_MainLogo_RU_big.jpg |

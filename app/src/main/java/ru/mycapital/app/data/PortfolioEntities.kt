@@ -29,7 +29,10 @@ data class OperationEntity(
     val operationDate: Long = System.currentTimeMillis(),
     val note: String = "",
     val sourceKey: String? = null,
-    val accountId: String? = null
+    val accountId: String? = null,
+    // Cash settlement may occur after the trade date (notably for bonds).
+    // Null preserves legacy/manual operation behavior.
+    val settlementDate: Long? = null
 )
 
 @Entity(tableName = "payouts", indices = [Index(value = ["sourceKey"], unique = true)])
@@ -69,6 +72,19 @@ data class PortfolioSnapshotEntity(
     val externalFlow: Double = 0.0
 )
 
+
+
+@Entity(
+    tableName = "portfolio_composition_snapshots",
+    primaryKeys = ["dateKey", "accountId", "dimension", "category"]
+)
+data class PortfolioCompositionSnapshotEntity(
+    val dateKey: String,
+    val accountId: String,
+    val dimension: String,
+    val category: String,
+    val value: Double
+)
 
 @Entity(tableName = "broker_account_cash")
 data class BrokerAccountCashEntity(

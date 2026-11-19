@@ -96,4 +96,15 @@ class MoexSecurityHistoryClientTest {
         assertEquals(null, calculateBondAccruedInterest(LocalDate.parse("2026-08-01"), coupons))
     }
 
+    @Test
+    fun parsesPrimaryTradingBoardBeforeSecondaryBoards() {
+        val entries = listOf(
+            Triple("TQBR", true, "shares"),
+            Triple("TQTF", false, "shares"),
+            Triple("TQOB", true, "bonds")
+        )
+        assertEquals(listOf("TQBR", "TQTF"), orderTradingBoards(entries, "shares"))
+        assertEquals(listOf("TQOB"), orderTradingBoards(entries, "bonds"))
+    }
+
 }

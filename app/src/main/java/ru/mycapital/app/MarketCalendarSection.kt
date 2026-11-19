@@ -1,0 +1,315 @@
+package ru.mycapital.app
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import ru.mycapital.app.data.MarketCalendarItemEntity
+import ru.mycapital.app.data.PayoutEntity
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private data class CalendarDisplayItem(
+    val key: String,
+    val date: LocalDate,
+    val category: String,
+    val title: String,
+    val description: String,
+    val source: String,
+    val url: String?,
+    val detailsUrl: String?,
+    val tickers: String,
+    val isPayout: Boolean,
+    val placementDetails: List<String> = emptyList(),
+    val impactAssessment: String = "",
+    val impactHorizon: String = "",
+    val importance: String = "NORMAL",
+    val publishedAt: Long? = null,
+    val portfolioExposure: List<String> = emptyList()
+)
+
+@Composable
+internal fun MarketCalendarSection(
+    news: List<MarketCalendarItemEntity>,
+    payouts: List<PayoutEntity>,
+    onRefreshNews: () -> Unit,
+    newsSyncMessage: String?,
+    portfolioAssets: List<ru.mycapital.app.data.AssetEntity>,
+    portfolioCash: Double,
+    modifier: Modifier = Modifier
+) {
+    val zone = remember { ZoneId.of("Europe/Moscow") }
+    val today = remember { LocalDate.now(zone) }
+    var month by remember { mutableStateOf(YearMonth.from(today)) }
+    var selectedDate by remember { mutableStateOf(today) }
+    var selectedFilter by remember { mutableStateOf("Все") }
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale("ru", "RU")) }
+    // The exposure share is measured against the full selected portfolio, including free cash.
+    val portfolioValue = remember(portfolioAssets, portfolioCash) {
+        portfolioAssets.sumOf { (it.quantity * it.currentPrice).coerceAtLeast(0.0) } + portfolioCash.coerceAtLeast(0.0)
+    }
+    val newsItems = remember(news, portfolioAssets, portfolioValue) {
+        news.map {
+            CalendarDisplayItem(
+                key = it.sourceKey,
+                date = java.time.Instant.ofEpochMilli(it.eventDate).atZone(zone).toLocalDate(),
+                category = when (it.category) { "ECONOMY" -> "Экономика"; "NEW_ISSUES" -> "Новые размещения"; else -> "Компании" },
+                title = org.jsoup.parser.Parser.unescapeEntities(it.title, false),
+                description = org.jsoup.parser.Parser.unescapeEntities(it.summary, false),
+                source = it.sourceName,
+                url = it.sourceUrl,
+                detailsUrl = it.detailsSourceUrl,
+                tickers = it.relatedTickers,
+                isPayout = false,
+                impactAssessment = it.impactAssessment,
+                impactHorizon = it.impactHorizon,
+                importance = it.importance,
+                publishedAt = it.publishedAt,
+                portfolioExposure = it.relatedTickers.split(",").map { ticker -> ticker.trim().uppercase() }
+                    .filter { ticker -> ticker.isNotBlank() }
+                    .distinct()
+                    .mapNotNull { ticker -> portfolioAssets.firstOrNull { it.ticker.equals(ticker, true) && it.quantity > 0.0 } }
+                    .map { asset ->
+                        val value = asset.quantity * asset.currentPrice
+                        val share = if (portfolioValue > 0.0) value / portfolioValue * 100.0 else null
+                        "${asset.ticker}: ${String.format(Locale("ru", "RU"), "%.6f", asset.quantity).trimEnd('0').trimEnd(',')} шт. · ${String.format(Locale("ru", "RU"), "%,.2f", value)} ₽" +
+                            (share?.let { " · ${String.format(Locale("ru", "RU"), "%.2f%%", it)} портфеля" } ?: "")
+                    },
+                placementDetails = buildList {
+                    it.issuer?.let { value -> add("Эмитент: ${org.jsoup.parser.Parser.unescapeEntities(value, false)}") }
+                    it.instrumentType?.let { value -> add("Инструмент: $value") }
+                    if (it.category == "NEW_ISSUES") {
+                        add("Объём: ${it.placementVolume ?: "Не сообщено"}")
+                        add("Цена размещения: ${it.placementPrice ?: "Не сообщено"}")
+                        val instrument = it.instrumentType.orEmpty()
+                        val couponLabel = when {
+                            instrument.contains("акци", ignoreCase = true) -> "Не применяется"
+                            instrument.contains("структурн", ignoreCase = true) && instrument.contains("дисконт", ignoreCase = true) -> "Обычный купон не предусмотрен; доход определяется условиями выпуска"
+                            it.couponRate != null -> it.couponRate
+                            else -> "Не опубликован"
+                        }
+                        add("Купон: $couponLabel")
+                        if (instrument.contains("облигац", ignoreCase = true)) {
+                            add("Рейтинг выпуска: Нет данных в опубликованных документах")
+                            add("Рейтинг эмитента: Нет данных в карточке события")
+                        }
+                    }
+                    it.couponAmount?.let { value -> add("Размер купона: $value") }
+                    it.isin?.let { value -> add("ISIN: $value") }
+                    it.applicationDates?.let { value -> add("Сбор заявок: $value") }
+                    it.placementStartDate?.let { value -> add("Начало размещения: $value") }
+                    it.tradingStartDate?.let { value -> add("Начало торгов: $value") }
+                }
+            )
+        }
+    }
+    val payoutItems = remember(payouts) {
+        payouts.mapNotNull { payout ->
+            val timestamp = payout.expectedDate ?: payout.actualDate ?: return@mapNotNull null
+            CalendarDisplayItem(
+                key = payout.sourceKey ?: "payout:${payout.id}",
+                date = java.time.Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate(),
+                category = "Выплаты",
+                title = "${payout.payoutType}: ${payout.ticker}",
+                description = "Ожидаемая сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
+                source = payout.sourceName ?: "Портфель",
+                url = null,
+                detailsUrl = null,
+                tickers = payout.ticker,
+                isPayout = true
+            )
+        }
+    }
+    val allItems = remember(newsItems, payoutItems) { (newsItems + payoutItems).sortedBy { it.date } }
+    val filteredItems = remember(allItems, selectedFilter) {
+        if (selectedFilter == "Все") allItems else allItems.filter { it.category == selectedFilter }
+    }
+    val monthItems = remember(filteredItems, month) { filteredItems.filter { YearMonth.from(it.date) == month } }
+    val selectedItems = remember(filteredItems, selectedDate) { filteredItems.filter { it.date == selectedDate } }
+    val firstDay = month.atDay(1)
+    val offset = firstDay.dayOfWeek.value - 1
+    val cellCount = ((offset + month.lengthOfMonth() + 6) / 7) * 7
+    val days = (0 until cellCount).map { index ->
+        val day = index - offset + 1
+        if (day in 1..month.lengthOfMonth()) month.atDay(day) else null
+    }
+    val uriHandler = LocalUriHandler.current
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("События и новости", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("Календарь рынка и события по портфелю", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onRefreshNews) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Обновить новости")
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf("Все", "Экономика", "Компании", "Новые размещения", "Выплаты").forEach { filter ->
+                    FilterChip(
+                        selected = selectedFilter == filter,
+                        onClick = { selectedFilter = filter },
+                        label = { Text(filter, maxLines = 1) }
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { month = month.minusMonths(1); selectedDate = month.atDay(1) }) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Предыдущий месяц")
+                }
+                Text(
+                    month.atDay(1).format(DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru", "RU")))
+                        .replaceFirstChar { it.titlecase(Locale("ru", "RU")) },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                IconButton(onClick = { month = month.plusMonths(1); selectedDate = month.atDay(1) }) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Следующий месяц")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach {
+                    Text(it, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            days.chunked(7).forEach { week ->
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    week.forEach { date ->
+                        val count = date?.let { d -> monthItems.count { it.date == d } } ?: 0
+                        val isSelected = date == selectedDate
+                        val isToday = date == today
+                        Box(
+                            Modifier.weight(1f).aspectRatio(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                                .clickable(enabled = date != null) { date?.let { selectedDate = it } },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (date != null) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        date.dayOfMonth.toString(),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (count > 0) {
+                                        Box(Modifier.size(5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                                    } else {
+                                        Spacer(Modifier.size(5.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Text("${selectedDate.format(dateFormatter)} · ${selectedItems.size} событий",
+                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            if (selectedItems.isEmpty()) {
+                Text("На выбранную дату событий нет. Дни с событиями отмечены точкой.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                selectedItems.forEach { item ->
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(item.category.uppercase(Locale("ru", "RU")), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall)
+                        item.publishedAt?.let { timestamp ->
+                            Text("Опубликовано: ${java.time.Instant.ofEpochMilli(timestamp).atZone(zone).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale("ru", "RU")))} МСК", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (item.tickers.isNotBlank()) Text("Связанные бумаги в новости: ${item.tickers}", style = MaterialTheme.typography.labelSmall)
+                        if (item.portfolioExposure.isNotEmpty()) {
+                            Text("Совпадающие позиции выбранного портфеля", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            item.portfolioExposure.forEach { exposure -> Text(exposure, style = MaterialTheme.typography.bodySmall) }
+                        } else if (item.tickers.isNotBlank()) {
+                            Text("В выбранном портфеле совпадающих позиций нет.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (item.impactAssessment.isNotBlank()) {
+                            Text("Важность: " + when (item.importance) { "HIGH" -> "Высокая"; "LOW" -> "Низкая"; else -> "Обычная" }, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text("Почему важно", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text(item.impactAssessment, style = MaterialTheme.typography.bodySmall)
+                            if (item.impactHorizon.isNotBlank()) Text("Горизонт: ${item.impactHorizon}", style = MaterialTheme.typography.labelSmall)
+                        }
+                        item.placementDetails.forEach { detail ->
+                            Text(detail, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("Источник: ${item.source}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!item.url.isNullOrBlank()) {
+                            Row(Modifier.clickable { runCatching { uriHandler.openUri(item.url) } }, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Открыть первоисточник", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.padding(start = 4.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        if (!item.isPayout) {
+                            if (!item.detailsUrl.isNullOrBlank() && item.detailsUrl != item.url) {
+                                Row(Modifier.clickable { runCatching { uriHandler.openUri(item.detailsUrl) } }, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Открыть условия выпуска", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.padding(start = 4.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                            if (item.impactAssessment.isBlank()) {
+                                Text("Отдельная оценка влияния для этой записи пока отсутствует. Прогноз цены не формируется.",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            if (!newsSyncMessage.isNullOrBlank()) {
+                Text(newsSyncMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}

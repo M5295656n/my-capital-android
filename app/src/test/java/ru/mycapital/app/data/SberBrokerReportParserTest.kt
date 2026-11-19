@@ -236,6 +236,11 @@ class SberBrokerReportParserTest {
         assertEquals(BrokerCashFlowKind.REDEMPTION, classifyBrokerCashFlow("Погашение номинала ОФЗ 26228"))
         assertEquals(BrokerCashFlowKind.AMORTIZATION, classifyBrokerCashFlow("Частичное погашение номинала ОФЗ 26228"))
         assertEquals(BrokerCashFlowKind.INTERNAL_TRANSFER, classifyBrokerCashFlow("Перевод д/с с договора A на договор B"))
+        assertEquals(
+            BrokerInternalTransfer("403RY0J", "S25F9ZU"),
+            parseBrokerInternalTransfer("Перевод д/с с договора 403RY0J, ТП Основной рынок на договор S25F9ZU, ТП Основной рынок")
+        )
+        assertEquals(null, parseBrokerInternalTransfer("Перевод денежных средств без номеров договоров"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Комиссия Биржи от 01.10.2026"))
         assertEquals(BrokerCashFlowKind.IGNORE, classifyBrokerCashFlow("Сделка от 01.10.2026"))
     }

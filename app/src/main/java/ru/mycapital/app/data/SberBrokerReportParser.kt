@@ -36,6 +36,23 @@ data class BrokerReportCashFlow(
 ) {
     val kind: BrokerCashFlowKind
         get() = classifyBrokerCashFlow(description)
+
+    internal val internalTransfer: BrokerInternalTransfer?
+        get() = parseBrokerInternalTransfer(description)
+}
+
+internal data class BrokerInternalTransfer(
+    val fromAccountId: String,
+    val toAccountId: String
+)
+
+internal fun parseBrokerInternalTransfer(description: String): BrokerInternalTransfer? {
+    val match = Regex("(?iu)с\\s+договора?\\s+([A-Z0-9-]+).*?на\\s+договора?\\s+([A-Z0-9-]+)")
+        .find(description) ?: return null
+    val from = match.groupValues[1].uppercase(Locale.ROOT)
+    val to = match.groupValues[2].uppercase(Locale.ROOT)
+    if (from == to) return null
+    return BrokerInternalTransfer(fromAccountId = from, toAccountId = to)
 }
 
 internal fun classifyBrokerCashFlow(description: String): BrokerCashFlowKind {

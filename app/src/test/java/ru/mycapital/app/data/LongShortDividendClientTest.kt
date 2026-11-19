@@ -72,6 +72,19 @@ SBER,"Сбербанк",2026-11-20,2026-11-19,12.5,RUB,4.2,confirmed,2026-12-05
     }
 
     @Test
+    fun keepsNextCalendarYearAndFollowingYearForecastsWithinTwoYearHorizon() {
+        val csv = """secid,company,record_date,last_buy_date,value,currency,yield_pct,status,payment_date
+T,"Т-Технологии",2027-05-20,2027-05-19,100,RUB,5.0,forecast,2027-06-04
+X5,"X5",2028-05-20,2028-05-19,120,RUB,5.0,forecast,2028-06-04
+SBER,"Сбербанк",2029-01-10,2029-01-09,50,RUB,5.0,forecast,2029-01-25
+"""
+        val visible = parseLongShortDividendCsv(csv, today)
+            .filter { isWithinDividendForecastHorizon(it, today) }
+
+        assertEquals(listOf("T", "X5"), visible.map { it.ticker })
+    }
+
+    @Test
     fun ignoresPastRowsAndNonRubles() {
         val csv = """secid,company,record_date,last_buy_date,value,currency,yield_pct,status,payment_date
 SBER,"Сбербанк",2026-10-20,2026-10-19,12.5,RUB,4.2,confirmed,2026-10-25
