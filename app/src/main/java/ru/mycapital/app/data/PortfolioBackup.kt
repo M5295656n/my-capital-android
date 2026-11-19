@@ -120,7 +120,7 @@ object PortfolioBackup {
             }
             return BackupInfo(version, tempDb.length())
         } finally {
-            password?.fill('\\u0000')
+            password?.fill('\u0000')
             archive.delete()
             extractDir.deleteRecursively()
         }
