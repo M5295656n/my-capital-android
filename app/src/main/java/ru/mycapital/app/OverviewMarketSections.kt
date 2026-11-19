@@ -442,7 +442,7 @@ internal fun parseEuroRateJson(json: String): MarketQuoteRow? =
     parseCbrCurrencyRateJson(json, "EUR", "EUR_RUB_CBR", "EUR/RUB")
 
 @Composable
-internal fun MarketQuotesSection(marketData: MarketOverviewData, onOpenIndexChart: () -> Unit) {
+internal fun MarketQuotesSection(marketData: MarketOverviewData, onOpenMarketChart: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Мои котировки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -453,7 +453,7 @@ internal fun MarketQuotesSection(marketData: MarketOverviewData, onOpenIndexChar
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 marketData.quotes.take(4).forEach { quote ->
                     Card(
-                        Modifier.weight(1f).then(if (quote.ticker == "IMOEX") Modifier.clickable(onClick = onOpenIndexChart) else Modifier),
+                        Modifier.weight(1f).then(if (quote.ticker in setOf("IMOEX", "USD_RUB_CBR", "EUR_RUB_CBR", "GLDRUB_TOM", "GLDRUB_TOD")) Modifier.clickable { onOpenMarketChart(quote.ticker) } else Modifier),
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f))
                     ) {
