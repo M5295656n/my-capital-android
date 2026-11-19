@@ -132,6 +132,28 @@ jobs:
                           time.sleep(2 * (attempt + 1))
               raise RuntimeError(f"ISS request failed: {url}: {last_error}")
           
+          def verify_gold_cets_route():
+              url = (f"{BASE}/engines/currency/markets/selt/boards/CETS/securities/GLDRUB_TOM.json"
+                     "?iss.meta=off&iss.only=marketdata"
+                     "&marketdata.columns=SECID,BOARDID,LAST,WAPRICE,MARKETPRICE")
+              payload = get_json(url)
+              block = payload.get("marketdata", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.upper(): i for i, name in enumerate(columns)}
+              secid_i, board_i = indexes.get("SECID"), indexes.get("BOARDID")
+              if secid_i is None or board_i is None:
+                  raise RuntimeError(f"GLDRUB_TOM CETS response has unexpected columns: {columns}")
+              match = next((row for row in rows if row[secid_i] == "GLDRUB_TOM" and row[board_i] == "CETS"), None)
+              if match is None:
+                  raise RuntimeError("MOEX ISS did not return GLDRUB_TOM on CETS board")
+              last_i, waprice_i = indexes.get("LAST"), indexes.get("WAPRICE")
+              last = match[last_i] if last_i is not None else None
+              waprice = match[waprice_i] if waprice_i is not None else None
+              print(f"GLDRUB_TOM/CETS route OK; LAST={last}, WAPRICE={waprice}")
+
+          verify_gold_cets_route()
+
           def fetch_board_candles(ticker, market, board):
               by_date = {}
               offset = 0
