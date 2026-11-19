@@ -228,7 +228,9 @@ private fun jsonColumnIndexes(columns: org.json.JSONArray): Map<String, Int> =
 
 private fun jsonCellString(row: org.json.JSONArray, index: Int?): String? {
     if (index == null || index !in 0 until row.length() || row.isNull(index)) return null
-    return runCatching { row.get(index).toString() }.getOrNull()?.takeIf { it.isNotBlank() && it != "null" }
+    // optString handles Android's org.json scalar representations consistently,
+    // including values returned as boxed numbers and nullable cells.
+    return row.optString(index, "").trim().takeIf { it.isNotEmpty() && it != "null" }
 }
 
 private fun jsonCellNumber(row: org.json.JSONArray, indexes: Map<String, Int>, column: String): Double? {
