@@ -55,7 +55,11 @@ internal fun moexMarketRoute(ticker: String, assetType: String): MoexMarketRoute
 }
 
 /** TOM is primary; TOD is a fallback only when TOM has no usable quote. */
-internal fun selectSpotQuotePrice(last: Double?, weightedAverage: Double?): Double? =\n    last?.takeIf { it.isFinite() && it > 0.0 }\n        ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }\n\ninternal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
+internal fun selectSpotQuotePrice(last: Double?, weightedAverage: Double?): Double? =
+    last?.takeIf { it.isFinite() && it > 0.0 }
+        ?: weightedAverage?.takeIf { it.isFinite() && it > 0.0 }
+
+internal fun moexQuoteCandidates(ticker: String): List<String> = when (ticker.trim().uppercase()) {
     "GLDRUB_TOM" -> listOf("GLDRUB_TOM", "GLDRUB_TOD")
     "GLDRUB_TOD" -> listOf("GLDRUB_TOD", "GLDRUB_TOM")
     else -> listOf(ticker.trim().uppercase())
