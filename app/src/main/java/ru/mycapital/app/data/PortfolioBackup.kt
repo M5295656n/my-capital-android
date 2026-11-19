@@ -124,7 +124,7 @@ object PortfolioBackup {
         }
     }
 
-    private fun validateDatabase(file: File): Int {
+    internal fun validateDatabase(file: File): Int {
         check(file.isFile && file.length() > 0L) { "В архиве отсутствует база данных." }
         val db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
         try {
