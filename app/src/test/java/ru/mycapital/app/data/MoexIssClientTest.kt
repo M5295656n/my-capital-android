@@ -41,4 +41,42 @@ class MoexIssClientTest {
     fun refusesNegativeAccruedInterest() {
         normalizeMoexPrice(78.07, "Облигация", 1_000.0, -0.01)
     }
+    @Test fun routesGoldSpotToCurrencyMarketAndCetsBoard() {
+        assertEquals(MoexMarketRoute("currency", "selt", "CETS"), moexMarketRoute("GLDRUB_TOM", "Золото"))
+        assertEquals(MoexMarketRoute("currency", "selt", "CETS"), moexMarketRoute("GLDRUB_TOD", "Золото"))
+    }
+
+    @Test fun keepsRegularSharesAndFundsOnStockMarket() {
+        assertEquals(MoexMarketRoute("stock", "shares"), moexMarketRoute("SBER", "Акция"))
+        assertEquals(MoexMarketRoute("stock", "shares", "TQBR"), moexMarketRoute("GOLD", "Фонд"))
+    }
+
+    @Test fun triesGoldTomBeforeTodAndPreservesExplicitTodPreference() {
+        assertEquals(listOf("GLDRUB_TOM", "GLDRUB_TOD"), moexQuoteCandidates("GLDRUB_TOM"))
+        assertEquals(listOf("GLDRUB_TOD", "GLDRUB_TOM"), moexQuoteCandidates("GLDRUB_TOD"))
+        assertEquals(listOf("SBER"), moexQuoteCandidates("SBER"))
+    }
+
+    @Test fun goldFundUsesOfficialPreviousCloseOnlyWhenLiveQuoteIsUnavailable() {
+        assertEquals(2_637.0, selectGoldFundQuotePrice(2_637.0, 2_623.5)!!, 0.0001)
+        assertEquals(2_623.5, selectGoldFundQuotePrice(null, 2_623.5)!!, 0.0001)
+        assertEquals(2_623.5, selectGoldFundQuotePrice(0.0, 2_623.5)!!, 0.0001)
+        assertEquals(null, selectGoldFundQuotePrice(null, null))
+        assertEquals(null, selectGoldFundQuotePrice(null, -1.0))
+    }
+
+    @Test fun spotGoldQuoteUsesLastThenWeightedAverageAndRejectsMissingValues() {
+        assertEquals(10_250.0, selectSpotQuotePrice(10_250.0, 10_240.0)!!, 0.0001)
+        assertEquals(10_240.0, selectSpotQuotePrice(null, 10_240.0)!!, 0.0001)
+        assertEquals(null, selectSpotQuotePrice(null, null))
+        assertEquals(null, selectSpotQuotePrice(0.0, -1.0))
+    }
+
+
+    @Test fun currencyGoldAlwaysUsesCetsBoardEvenWhenAssetTypeIsFund() {
+        val route = moexMarketRoute("GLDRUB_TOM", "Фонд")
+        assertEquals(listOf("CETS"), preferredMoexBoardsForRoute(route, "Фонд"))
+        assertEquals(listOf("TQBR"), preferredMoexBoardsForRoute(moexMarketRoute("GOLD", "Фонд"), "Фонд"))
+        assertEquals(listOf("TQTF"), preferredMoexBoardsForRoute(moexMarketRoute("LQDT", "Фонд"), "Фонд"))
+    }
 }

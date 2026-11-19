@@ -57,6 +57,13 @@ class MoexSecurityHistoryClient {
                 loadCandles(ticker, "shares", fromDate, tillDate)
             type.contains("облиг") || type.contains("офз") ->
                 loadBondCloses(ticker, fromDate, tillDate)
+            type.contains("другое") || type.contains("неизвест") -> {
+                // Fully sold instruments may exist only in the operation ledger,
+                // which has no assetType field. Resolve them from MOEX data rather
+                // than guessing from ticker prefixes: bonds first, then shares/funds.
+                runCatching { loadBondCloses(ticker, fromDate, tillDate) }
+                    .getOrElse { loadCandles(ticker, "shares", fromDate, tillDate) }
+            }
             else -> throw IllegalArgumentException("Тип актива не поддерживается историческим графиком")
         }
     }
@@ -105,20 +112,58 @@ class MoexSecurityHistoryClient {
         tillDate: LocalDate
     ): List<MoexDailyClose> {
         val safeTicker = encodeTicker(ticker)
-        val baseUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker/candles.json"
-        val result = linkedMapOf<LocalDate, MoexDailyClose>()
-        var start = 0
-
-        repeat(50) {
-            val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start" +
-                "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
-            val page = parseDailyCandles(getJson(url))
-            if (page.isEmpty()) return result.values.sortedBy { it.date }
-            page.forEach { result[it.date] = it }
-            if (page.size < 500) return result.values.sortedBy { it.date }
-            start += page.size
+        // Securities can trade on different boards inside the same MOEX market.
+        // The board-less route may resolve to the default board (e.g. TQBR),
+        // which returns no candles for ETFs (TQTF) and OFZ (TQOB).
+        // Resolve the instrument's actual boards and try the primary board first.
+        val metadataUrl = "https://iss.moex.com/iss/securities/$safeTicker.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary,market"
+        val boards = runCatching { parseTradingBoards(getJson(metadataUrl), market) }
+            .getOrDefault(emptyList())
+        val candidates = (boards + when (market) {
+            "bonds" -> listOf("TQOB", "TQCB")
+            else -> listOf("TQTF", "TQBR", "TQTD")
+        }).distinct()
+        // Merge every available board instead of stopping at the first non-empty one.
+        // Some securities have only a short recent history on the primary board while
+        // another board retains older candles. Primary-board values win on duplicate dates.
+        val merged = linkedMapOf<LocalDate, MoexDailyClose>()
+        for (board in candidates) {
+            val baseUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/boards/$board/securities/$safeTicker/candles.json"
+            var start = 0
+            for (pageIndex in 0 until 50) {
+                val url = "$baseUrl?from=$fromDate&till=$tillDate&interval=24&start=$start&limit=500&candles.limit=500" +
+                    "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
+                val page = try {
+                    parseDailyCandles(getJson(url))
+                } catch (_: Exception) {
+                    break
+                }
+                if (page.isEmpty()) break
+                page.forEach { merged.putIfAbsent(it.date, it) }
+                if (page.size < 500) break
+                start += page.size
+            }
         }
-        return result.values.sortedBy { it.date }
+        if (merged.isNotEmpty()) return merged.values.sortedBy { it.date }
+        // Last-resort compatibility path for securities whose board metadata
+        // is incomplete in ISS.
+        val fallbackUrl = "https://iss.moex.com/iss/engines/stock/markets/$market/securities/$safeTicker/candles.json"
+        val fallback = linkedMapOf<LocalDate, MoexDailyClose>()
+        var offset = 0
+        for (pageIndex in 0 until 50) {
+            val url = "$fallbackUrl?from=$fromDate&till=$tillDate&interval=24&start=$offset&limit=500&candles.limit=500" +
+                "&iss.meta=off&iss.only=candles&candles.columns=begin,close"
+            val page = try {
+                parseDailyCandles(getJson(url))
+            } catch (_: Exception) {
+                break
+            }
+            if (page.isEmpty()) break
+            page.forEach { fallback[it.date] = it }
+            if (page.size < 500) break
+            offset += page.size
+        }
+        return fallback.values.sortedBy { it.date }
     }
 
     private fun getJson(url: String): JSONObject {
@@ -257,6 +302,35 @@ internal fun calculateBondDirtyPrice(
     require(accruedInterest.isFinite() && accruedInterest >= 0.0)
     return outstandingFaceValue * cleanPricePercent / 100.0 + accruedInterest
 }
+
+internal fun parseTradingBoards(json: JSONObject, expectedMarket: String): List<String> {
+    val block = json.optJSONObject("boards") ?: return emptyList()
+    val columns = block.optJSONArray("columns") ?: return emptyList()
+    val rows = block.optJSONArray("data") ?: return emptyList()
+    val indexes = (0 until columns.length()).associate { columns.getString(it).lowercase() to it }
+    val boardIndex = indexes["boardid"] ?: return emptyList()
+    val primaryIndex = indexes["is_primary"]
+    val marketIndex = indexes["market"]
+    val entries = (0 until rows.length()).mapNotNull { index ->
+        val row = rows.optJSONArray(index) ?: return@mapNotNull null
+        if (row.isNull(boardIndex)) return@mapNotNull null
+        val market = marketIndex?.takeIf { !row.isNull(it) }?.let { row.optString(it) }
+        val primary = primaryIndex != null && !row.isNull(primaryIndex) && row.optInt(primaryIndex) == 1
+        Triple(row.optString(boardIndex), primary, market)
+    }
+    return orderTradingBoards(entries, expectedMarket)
+}
+
+internal fun orderTradingBoards(
+    entries: List<Triple<String, Boolean, String?>>,
+    expectedMarket: String
+): List<String> = entries.asSequence()
+    .filter { (_, _, market) -> market.isNullOrBlank() || market.equals(expectedMarket, ignoreCase = true) }
+    .filter { (board, _, _) -> board.matches(Regex("[A-Z0-9]{2,8}")) }
+    .sortedByDescending { it.second }
+    .map { it.first }
+    .distinct()
+    .toList()
 
 internal fun parseDailyCandles(json: JSONObject): List<MoexDailyClose> {
     val candles = json.optJSONObject("candles")

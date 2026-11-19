@@ -10,49 +10,83 @@ import java.util.Locale
 internal fun isImportableBrokerTrade(status: String): Boolean =
     status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ", "ЗО")
 
+/** Prefer a recognized type from the latest broker security directory over stale local classification. */
+internal fun resolveImportedAssetType(existingType: String, reportedType: String?): String {
+    val reported = reportedType?.trim().orEmpty()
+    return if (reported.isNotBlank() && !reported.equals("Другое", ignoreCase = true)) reported else existingType
+}
+
 
 /**
- * Calculates weighted-average acquisition cost from a complete buy/sell history.
- * Returns null when the available operations do not explain the current holding
- * (for example, when the report omits purchases made before its start date).
+ * Calculates the remaining acquisition cost using the same FIFO lot convention
+ * as sale history and realized-profit calculations. Books are isolated by
+ * brokerage account and ticker. Returns null when the recorded trades do not
+ * fully explain the current aggregate position.
  */
 internal fun calculateAverageCostFromCompleteHistory(
     operations: List<OperationEntity>,
     expectedQuantity: Double
 ): Double? {
     val epsilon = 0.0000001
-    var quantity = 0.0
-    var totalCost = 0.0
+    if (!expectedQuantity.isFinite() || expectedQuantity < 0.0) return null
+
+    data class BookKey(val accountId: String?, val ticker: String)
+    data class Lot(var quantity: Double, val unitCost: Double)
+    val lotsByBook = mutableMapOf<BookKey, ArrayDeque<Lot>>()
+
+    fun accountId(operation: OperationEntity): String? {
+        operation.accountId?.takeIf { it.isNotBlank() }?.let { return it }
+        val parts = operation.sourceKey?.split(':', limit = 3) ?: return null
+        if (parts.size < 3 || parts[0] != "SBER") return null
+        return parts[1].takeIf {
+            it.isNotBlank() && it.uppercase(java.util.Locale.ROOT) !in setOf("TRADE", "CASH", "PAYOUT")
+        }
+    }
 
     operations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
         .forEach { operation ->
-            when (operation.operationType) {
-                "Покупка" -> {
-                    if (operation.quantity <= 0.0 || operation.price < 0.0 || operation.commission < 0.0) {
-                        return null
-                    }
-                    quantity += operation.quantity
-                    totalCost += operation.quantity * operation.price + operation.commission
-                }
-                "Продажа" -> {
-                    if (operation.quantity <= 0.0 || quantity + epsilon < operation.quantity) {
-                        return null
-                    }
-                    val averageBeforeSale = if (quantity > epsilon) totalCost / quantity else 0.0
-                    quantity -= operation.quantity
-                    totalCost = averageBeforeSale * quantity
-                    if (quantity <= epsilon) {
-                        quantity = 0.0
-                        totalCost = 0.0
-                    }
+            if (operation.operationType != "Покупка" && operation.operationType != "Продажа") return@forEach
+            val ticker = operation.ticker?.trim()?.uppercase(java.util.Locale.ROOT).orEmpty()
+            val quantity = operation.quantity
+            val price = operation.price
+            val commission = operation.commission
+            if (ticker.isBlank() || !quantity.isFinite() || quantity <= 0.0 ||
+                !price.isFinite() || price < 0.0 ||
+                !commission.isFinite() || commission < 0.0
+            ) return null
+
+            val lots = lotsByBook.getOrPut(BookKey(accountId(operation), ticker)) { ArrayDeque() }
+            if (operation.operationType == "Покупка") {
+                val grossCost = quantity * price
+                val totalCost = grossCost + commission
+                val unitCost = totalCost / quantity
+                if (!grossCost.isFinite() || !totalCost.isFinite() || !unitCost.isFinite()) return null
+                lots.addLast(Lot(quantity, unitCost))
+            } else {
+                val grossProceeds = quantity * price
+                val netProceeds = grossProceeds - commission
+                if (!grossProceeds.isFinite() || !netProceeds.isFinite() || netProceeds < 0.0) return null
+                val available = lots.sumOf { it.quantity }
+                if (!available.isFinite() || available + epsilon < quantity) return null
+
+                var remaining = quantity
+                while (remaining > epsilon && lots.isNotEmpty()) {
+                    val lot = lots.first()
+                    val matched = minOf(remaining, lot.quantity)
+                    lot.quantity -= matched
+                    remaining -= matched
+                    if (lot.quantity <= epsilon) lots.removeFirst()
                 }
             }
         }
 
-    if (kotlin.math.abs(quantity - expectedQuantity) > maxOf(epsilon, expectedQuantity * 0.000001)) {
+    val remainingQuantity = lotsByBook.values.sumOf { lots -> lots.sumOf { it.quantity } }
+    val remainingCost = lotsByBook.values.sumOf { lots -> lots.sumOf { it.quantity * it.unitCost } }
+    if (!remainingQuantity.isFinite() || !remainingCost.isFinite()) return null
+    if (kotlin.math.abs(remainingQuantity - expectedQuantity) > maxOf(epsilon, expectedQuantity * 0.000001)) {
         return null
     }
-    return if (quantity > epsilon) totalCost / quantity else 0.0
+    return if (remainingQuantity > epsilon) remainingCost / remainingQuantity else 0.0
 }
 
 class PortfolioRepository(private val database: PortfolioDatabase) {
@@ -172,6 +206,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 dao.updateAsset(
                     asset.copy(
                         quantity = nextQuantity,
+                        assetType = resolveImportedAssetType(asset.assetType, reportRow?.assetType),
                         currentPrice = reportRow?.closingPrice?.takeIf { it > 0.0 } ?: asset.currentPrice,
                         updatedAt = System.currentTimeMillis()
                     )
@@ -236,14 +271,17 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             val assetsByTicker = dao.getAssets().associateBy { it.ticker.uppercase() }
             report.cashFlows.forEach { flow ->
                 val kind = flow.kind
-                if (kind == BrokerCashFlowKind.IGNORE || kind == BrokerCashFlowKind.INTERNAL_TRANSFER) {
-                    // Trades and fees are imported from the trade table; transfers between
-                    // brokerage agreements are not external portfolio cash flows.
-                    return@forEach
-                }
+                if (kind == BrokerCashFlowKind.IGNORE) return@forEach
                 val amount = when (kind) {
                     BrokerCashFlowKind.DEPOSIT, BrokerCashFlowKind.DIVIDEND, BrokerCashFlowKind.COUPON, BrokerCashFlowKind.REDEMPTION, BrokerCashFlowKind.AMORTIZATION -> flow.credit
                     BrokerCashFlowKind.WITHDRAWAL -> flow.debit
+                    BrokerCashFlowKind.INTERNAL_TRANSFER -> {
+                        val transfer = flow.internalTransfer ?: return@forEach
+                        if (report.accountId != transfer.fromAccountId && report.accountId != transfer.toAccountId) return@forEach
+                        if (flow.credit > 0.0 && flow.debit == 0.0 && report.accountId == transfer.toAccountId) flow.credit
+                        else if (flow.debit > 0.0 && flow.credit == 0.0 && report.accountId == transfer.fromAccountId) flow.debit
+                        else return@forEach
+                    }
                     else -> 0.0
                 }
                 if (amount <= 0.0) return@forEach
@@ -254,6 +292,8 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     BrokerCashFlowKind.COUPON -> "Купон"
                     BrokerCashFlowKind.REDEMPTION -> "Погашение"
                     BrokerCashFlowKind.AMORTIZATION -> "Амортизация"
+                    BrokerCashFlowKind.INTERNAL_TRANSFER ->
+                        if (flow.credit > 0.0) "Внутренний перевод входящий" else "Внутренний перевод исходящий"
                     else -> return@forEach
                 }
                 val payout = kind == BrokerCashFlowKind.DIVIDEND || kind == BrokerCashFlowKind.COUPON || kind == BrokerCashFlowKind.REDEMPTION || kind == BrokerCashFlowKind.AMORTIZATION
@@ -277,23 +317,32 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     // A credited broker-report row is evidence of receipt. The report
                     // supplies the net credit, but may not disclose gross or withheld tax.
                     // Keep that net amount separately instead of inventing a gross/tax split.
-                    val payoutId = dao.insertPayout(
-                        PayoutEntity(
-                            assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
-                            ticker = ticker ?: "—",
-                            payoutType = operationType,
-                            amountPerUnit = 0.0,
-                            quantity = 0.0,
-                            totalAmount = 0.0,
-                            taxAmount = 0.0,
-                            expectedDate = null,
-                            actualDate = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
-                            status = "RECEIVED",
-                            sourceKey = "SBER:${report.accountId}:PAYOUT:$scopedFlowKey",
-                            reportedNetAmount = amount
+                    // Payout identity has been account-scoped since this import path
+                    // was introduced. Never promote an unscoped parser key: it could
+                    // belong to an identical row from another brokerage account.
+                    val payoutSourceKey = "SBER:${report.accountId}:PAYOUT:$scopedFlowKey"
+                    val scopedPayout = dao.getPayoutBySourceKey(payoutSourceKey)
+                    if (scopedPayout == null) {
+                        val receivedAt = flow.date.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                        val payoutAssetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id }
+                        val payoutId = dao.insertPayout(
+                            PayoutEntity(
+                                assetId = payoutAssetId,
+                                ticker = ticker ?: "—",
+                                payoutType = operationType,
+                                amountPerUnit = 0.0,
+                                quantity = 0.0,
+                                totalAmount = 0.0,
+                                taxAmount = 0.0,
+                                expectedDate = null,
+                                actualDate = receivedAt,
+                                status = "RECEIVED",
+                                sourceKey = payoutSourceKey,
+                                reportedNetAmount = amount
+                            )
                         )
-                    )
-                    if (payoutId != -1L) payoutsImported++
+                        if (payoutId != -1L) payoutsImported++
+                    }
                 }
                 val row = OperationEntity(
                     assetId = ticker?.let { symbol -> assetsByTicker[symbol.uppercase()]?.id },
@@ -338,15 +387,24 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     price = trade.price,
                     commission = trade.totalFee,
                     operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    settlementDate = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
                     sourceKey = scopedSourceKey,
                     accountId = report.accountId
                 )
-                if (dao.getOperationBySourceKey(trade.sourceKey) != null) {
+                val settlementTimestamp = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+                val legacyDuplicate = dao.getOperationBySourceKey(trade.sourceKey)
+                if (legacyDuplicate != null) {
+                    // Upgrade older imports in place: settlementDate was not stored
+                    // by previous app versions.
+                    dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
-                    if (id == -1L) duplicates++ else imported++
+                    if (id == -1L) {
+                        dao.updateOperationSettlementDate(scopedSourceKey, settlementTimestamp)
+                        duplicates++
+                    } else imported++
                 }
             }
 
@@ -378,46 +436,42 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
         commission: Double = 0.0,
         note: String = ""
     ) {
-        require(quantity > 0.0) { "Количество должно быть больше нуля" }
-        require(price >= 0.0) { "Цена не может быть отрицательной" }
-        require(commission >= 0.0) { "Комиссия не может быть отрицательной" }
+        require(quantity.isFinite() && quantity > 0.0) { "Количество должно быть конечным и больше нуля" }
+        require(price.isFinite() && price >= 0.0) { "Цена должна быть конечной и неотрицательной" }
+        require(commission.isFinite() && commission >= 0.0) { "Комиссия должна быть конечной и неотрицательной" }
 
         database.withTransaction {
             dao.ensureCashBalance(CashBalanceEntity())
             val cash = dao.getCashBalance() ?: 0.0
             val grossAmount = quantity * price
+            require(grossAmount.isFinite()) { "Сумма сделки выходит за допустимый диапазон" }
 
             val nextCash = if (isBuy) {
                 val totalCost = grossAmount + commission
+                require(totalCost.isFinite()) { "Стоимость покупки выходит за допустимый диапазон" }
+                require(cash.isFinite() && (cash - totalCost).isFinite()) { "Остаток денежных средств некорректен" }
                 require(cash + 0.0000001 >= totalCost) {
                     "Недостаточно свободных денег. Нужно ${"%.2f".format(java.util.Locale.US, totalCost)} ₽, доступно ${"%.2f".format(java.util.Locale.US, cash)} ₽"
                 }
                 (cash - totalCost).coerceAtLeast(0.0)
             } else {
                 val proceeds = grossAmount - commission
-                require(proceeds >= 0.0) { "Комиссия не может превышать сумму продажи" }
+                require(proceeds.isFinite() && proceeds >= 0.0) { "Сумма продажи после комиссии некорректна" }
+                require(cash.isFinite() && (cash + proceeds).isFinite()) { "Остаток денежных средств некорректен" }
                 cash + proceeds
             }
 
             val asset = requireNotNull(dao.getAsset(assetId)) { "Актив не найден" }
             val nextQuantity = if (isBuy) asset.quantity + quantity else asset.quantity - quantity
-            require(nextQuantity >= -0.0000001) { "Недостаточно бумаг для продажи" }
+            require(nextQuantity.isFinite() && nextQuantity >= -0.0000001) { "Количество после сделки некорректно или недостаточно для продажи" }
 
-            val nextAverage = when {
+            val fallbackAverage = when {
                 nextQuantity <= 0.0000001 -> 0.0
                 isBuy -> ((asset.quantity * asset.averagePrice) + grossAmount + commission) / nextQuantity
                 else -> asset.averagePrice
             }
 
             dao.updateCashBalance(nextCash)
-            dao.updateAsset(
-                asset.copy(
-                    quantity = nextQuantity.coerceAtLeast(0.0),
-                    averagePrice = nextAverage,
-                    currentPrice = price,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
             dao.insertOperation(
                 OperationEntity(
                     assetId = asset.id,
@@ -429,16 +483,33 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     note = note
                 )
             )
+            // When the complete trade history is available, keep the stored
+            // average price aligned with the FIFO basis shown in asset details.
+            // For manually entered opening positions without full history, retain
+            // the existing basis and its established weighted update behavior.
+            val fifoAverage = calculateAverageCostFromCompleteHistory(
+                dao.getOperationsForAsset(asset.id),
+                nextQuantity.coerceAtLeast(0.0)
+            )
+            dao.updateAsset(
+                asset.copy(
+                    quantity = nextQuantity.coerceAtLeast(0.0),
+                    averagePrice = fifoAverage ?: fallbackAverage,
+                    currentPrice = price,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
         }
     }
 
     suspend fun recordCashFlow(isDeposit: Boolean, amount: Double, note: String = "") {
-        require(amount > 0.0) { "Сумма должна быть больше нуля" }
+        require(amount.isFinite() && amount > 0.0) { "Сумма должна быть конечной и больше нуля" }
         database.withTransaction {
             dao.ensureCashBalance(CashBalanceEntity())
             val current = dao.getCashBalance() ?: 0.0
+            require(current.isFinite()) { "Текущий денежный остаток некорректен" }
             val next = if (isDeposit) current + amount else current - amount
-            require(next >= -0.0000001) { "Недостаточно свободных денег" }
+            require(next.isFinite() && next >= -0.0000001) { "Недостаточно свободных денег или сумма выходит за допустимый диапазон" }
             dao.updateCashBalance(next.coerceAtLeast(0.0))
             dao.insertOperation(
                 OperationEntity(
@@ -470,6 +541,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
             dao.updatePayout(payout.copy(taxAmount = taxAmount, actualDate = receivedAt, status = "RECEIVED"))
             dao.ensureCashBalance(CashBalanceEntity())
             val current = dao.getCashBalance() ?: 0.0
+            require(current.isFinite() && (current + net).isFinite()) { "Остаток денежных средств некорректен" }
             dao.updateCashBalance(current + net)
             dao.insertOperation(
                 OperationEntity(
@@ -500,10 +572,12 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
     ) {
         require(ticker.isNotBlank()) { "Укажите тикер" }
         require(payoutType == "Дивиденд" || payoutType == "Купон") { "Неизвестный тип выплаты" }
-        require(amountPerUnit > 0.0) { "Сумма на единицу должна быть больше нуля" }
-        require(quantity > 0.0) { "Количество должно быть больше нуля" }
+        require(amountPerUnit.isFinite() && amountPerUnit > 0.0) { "Сумма на единицу должна быть конечной и больше нуля" }
+        require(quantity.isFinite() && quantity > 0.0) { "Количество должно быть конечным и больше нуля" }
+        require(taxAmount.isFinite() && taxAmount >= 0.0) { "Налог должен быть конечным и неотрицательным" }
         val gross = amountPerUnit * quantity
-        require(taxAmount >= 0.0 && taxAmount <= gross) { "Налог должен быть от нуля до суммы выплаты" }
+        require(gross.isFinite()) { "Сумма выплаты выходит за допустимый диапазон" }
+        require(taxAmount <= gross) { "Налог не может превышать сумму выплаты" }
         if (!isReceived) require(expectedDate != null) { "Укажите дату ожидаемой выплаты" }
         val now = System.currentTimeMillis()
 
@@ -526,6 +600,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 dao.ensureCashBalance(CashBalanceEntity())
                 val net = gross - taxAmount
                 val current = dao.getCashBalance() ?: 0.0
+                require(current.isFinite() && (current + net).isFinite()) { "Остаток денежных средств некорректен" }
                 dao.updateCashBalance(current + net)
                 dao.insertOperation(
                     OperationEntity(

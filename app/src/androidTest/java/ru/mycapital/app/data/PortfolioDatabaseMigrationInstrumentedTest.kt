@@ -55,12 +55,15 @@ class PortfolioDatabaseMigrationInstrumentedTest {
         }
 
         val database = Room.databaseBuilder(context, PortfolioDatabase::class.java, databaseName)
-            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12)
+            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12, PortfolioDatabase.MIGRATION_12_13, PortfolioDatabase.MIGRATION_13_14, PortfolioDatabase.MIGRATION_14_15, PortfolioDatabase.MIGRATION_15_16, PortfolioDatabase.MIGRATION_16_17, PortfolioDatabase.MIGRATION_17_18, PortfolioDatabase.MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
 
         try {
-            database.openHelper.writableDatabase
+            val migratedDb = database.openHelper.writableDatabase
+            migratedDb.query("SELECT name FROM sqlite_master WHERE type='table' AND name='market_calendar_items'").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+            }
             val dao = database.portfolioDao()
             val oldOperation = dao.observeOperations().first()
             assertEquals(1, oldOperation.size)
@@ -68,7 +71,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
             assertEquals("Старая операция", oldOperation.single().note)
             assertEquals(null, oldOperation.single().sourceKey)
             assertEquals(null, oldOperation.single().accountId)
-            assertEquals(null, oldOperation.single().accountId)
+            assertEquals(null, oldOperation.single().settlementDate)
             assertEquals(123.45, dao.getCashBalance()!!, 0.000001)
             assertEquals(0, dao.getBrokerAccountCashAccounts().size)
             assertEquals(0, dao.getBrokerAccountAssets("403RY0J").size)

@@ -20,51 +20,95 @@ internal fun calculateSaleLotResults(
 
     val lotsByBook = mutableMapOf<BookKey, ArrayDeque<Lot>>()
     val results = mutableListOf<SaleLotResult>()
+    val epsilon = 0.0000001
 
     operations.asSequence()
         .filter { it.operationType == "Покупка" || it.operationType == "Продажа" }
         .sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
         .forEach { operation ->
             val ticker = operation.ticker?.trim()?.uppercase().orEmpty()
-            if (ticker.isBlank() || !operation.quantity.isFinite() ||
-                !operation.price.isFinite() || !operation.commission.isFinite() ||
-                operation.quantity <= 0.0
-            ) return@forEach
+            val quantity = operation.quantity
+            val price = operation.price
+            val commission = operation.commission
+            if (ticker.isBlank() || !quantity.isFinite() || quantity <= 0.0 ||
+                !price.isFinite() || price < 0.0 ||
+                !commission.isFinite() || commission < 0.0
+            ) {
+                if (operation.operationType == "Продажа" && quantity.isFinite() && quantity > 0.0) {
+                    results += SaleLotResult(operation.id, 0.0, quantity, 0.0, 0.0, 0.0)
+                }
+                return@forEach
+            }
 
             val key = BookKey(
-                brokerAccountIdFromTradeSourceKey(operation.sourceKey),
+                operation.accountId?.takeIf { it.isNotBlank() } ?: brokerAccountIdFromTradeSourceKey(operation.sourceKey),
                 ticker
             )
             val lots = lotsByBook.getOrPut(key) { ArrayDeque() }
 
             if (operation.operationType == "Покупка") {
-                val unitCost = (operation.quantity * operation.price + operation.commission) /
-                    operation.quantity
-                lots.addLast(Lot(operation.quantity, unitCost))
+                val grossCost = quantity * price
+                val totalCost = grossCost + commission
+                val unitCost = totalCost / quantity
+                if (!grossCost.isFinite() || !totalCost.isFinite() || !unitCost.isFinite()) {
+                    return@forEach
+                }
+                lots.addLast(Lot(quantity, unitCost))
             } else {
-                var remaining = operation.quantity
+                val grossProceeds = quantity * price
+                val totalNetProceeds = grossProceeds - commission
+                val netSalePerUnit = totalNetProceeds / quantity
+                if (!grossProceeds.isFinite() || !totalNetProceeds.isFinite() ||
+                    totalNetProceeds < 0.0 || !netSalePerUnit.isFinite()
+                ) {
+                    results += SaleLotResult(operation.id, 0.0, quantity, 0.0, 0.0, 0.0)
+                    return@forEach
+                }
+
+                var remaining = quantity
                 var matchedQuantity = 0.0
                 var costBasis = 0.0
-                while (remaining > 0.0000001 && lots.isNotEmpty()) {
-                    val lot = lots.first()
+                val allocations = mutableListOf<Pair<Lot, Double>>()
+                for (lot in lots) {
+                    if (remaining <= epsilon) break
                     val matched = minOf(remaining, lot.quantity)
-                    matchedQuantity += matched
-                    costBasis += matched * lot.unitCost
+                    val nextMatched = matchedQuantity + matched
+                    val nextCostBasis = costBasis + matched * lot.unitCost
+                    if (!nextMatched.isFinite() || !nextCostBasis.isFinite()) {
+                        remaining = quantity
+                        matchedQuantity = 0.0
+                        costBasis = 0.0
+                        allocations.clear()
+                        break
+                    }
+                    allocations += lot to matched
+                    matchedQuantity = nextMatched
+                    costBasis = nextCostBasis
                     remaining -= matched
-                    lot.quantity -= matched
-                    if (lot.quantity <= 0.0000001) lots.removeFirst()
                 }
-                val unmatched = remaining.coerceAtLeast(0.0)
-                val matchedCommission = operation.commission *
-                    (matchedQuantity / operation.quantity)
-                val netProceeds = matchedQuantity * operation.price - matchedCommission
+
+                val matchedCommission = commission * (matchedQuantity / quantity)
+                val netProceeds = matchedQuantity * price - matchedCommission
+                val profit = netProceeds - costBasis
+                if (!matchedCommission.isFinite() || !netProceeds.isFinite() ||
+                    netProceeds < 0.0 || !profit.isFinite()
+                ) {
+                    results += SaleLotResult(operation.id, 0.0, quantity, 0.0, 0.0, 0.0)
+                    return@forEach
+                }
+
+                allocations.forEach { (lot, matched) ->
+                    check(lots.firstOrNull() === lot) { "FIFO lot order changed during calculation." }
+                    lot.quantity -= matched
+                    if (lot.quantity <= epsilon) lots.removeFirst()
+                }
                 results += SaleLotResult(
                     operationId = operation.id,
                     matchedQuantity = matchedQuantity,
-                    unmatchedQuantity = unmatched,
+                    unmatchedQuantity = remaining.coerceAtLeast(0.0),
                     costBasis = costBasis,
                     netProceeds = netProceeds,
-                    profit = netProceeds - costBasis
+                    profit = profit
                 )
             }
         }
