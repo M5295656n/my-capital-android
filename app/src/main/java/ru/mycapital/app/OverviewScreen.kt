@@ -48,6 +48,7 @@ internal fun OverviewScreen(
     onRefreshMarketData: () -> Unit,
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
+    quoteSyncMessage: String?,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -154,7 +155,14 @@ val annualizedReturn = remember(history) {
                     }
                 }
             }
-            // Detailed MOEX diagnostics stay out of the dashboard; refresh feedback is the compact spinner above.
+            quoteSyncMessage?.let { message ->
+                Text(
+                    message,
+                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
         item {
             Column(
