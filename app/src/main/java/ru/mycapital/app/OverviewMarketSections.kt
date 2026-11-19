@@ -131,9 +131,9 @@ internal class MarketOverviewClient {
     private fun imoexQuote(): MarketQuoteRow? {
         val urls = listOf(
             "https://iss.moex.com/iss/engines/stock/markets/index/boards/SNDX/securities/IMOEX.json" +
-                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,PREVPRICE,CHANGE",
+                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,CURRENTVALUE,LASTVALUE,LASTCHANGE,LAST,PREVPRICE,CHANGE",
             "https://iss.moex.com/iss/engines/stock/markets/index/securities/IMOEX.json" +
-                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,LAST,PREVPRICE,CHANGE"
+                "?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,BOARDID,CURRENTVALUE,LASTVALUE,LASTCHANGE,LAST,PREVPRICE,CHANGE"
         )
         urls.forEach { url ->
             val quote = runCatching {
@@ -393,14 +393,22 @@ internal fun parseMoexIndexQuoteJson(json: String): MarketQuoteRow? = runCatchin
     val row = (0 until rows.length()).mapNotNull { rows.optJSONArray(it) }
         .firstOrNull { jsonCellString(it, columns["SECID"]) == "IMOEX" }
         ?: return@runCatching null
-    val live = jsonCellNumber(row, columns, "LAST")?.takeIf { it > 0.0 }
-    val previous = jsonCellNumber(row, columns, "PREVPRICE")?.takeIf { it > 0.0 }
-    val price = live ?: previous ?: return@runCatching null
-    val reportedChange = jsonCellNumber(row, columns, "CHANGE")
-    val change = if (live != null) {
-        previous?.let { calculateQuoteChangePercent(live, it) }
-            ?: reportedChange?.let { calculateQuoteChangePercent(live, live - it) }
-    } else null
+
+    // Index marketdata uses CURRENTVALUE/LASTVALUE/LASTCHANGE, unlike shares
+    // where the equivalent fields are LAST/PREVPRICE/CHANGE.
+    val current = (jsonCellNumber(row, columns, "CURRENTVALUE")
+        ?: jsonCellNumber(row, columns, "LAST"))?.takeIf { it > 0.0 }
+    val previous = (jsonCellNumber(row, columns, "LASTVALUE")
+        ?: jsonCellNumber(row, columns, "PREVPRICE"))?.takeIf { it > 0.0 }
+    val price = current ?: previous ?: return@runCatching null
+    val absoluteChange = jsonCellNumber(row, columns, "LASTCHANGE")
+        ?: jsonCellNumber(row, columns, "CHANGE")
+    val change = when {
+        current != null && previous != null -> calculateQuoteChangePercent(current, previous)
+        current != null && absoluteChange != null ->
+            calculateQuoteChangePercent(current, current - absoluteChange)
+        else -> null
+    }
     MarketQuoteRow("IMOEX", "Индекс МосБиржи", price, change)
 }.getOrNull()
 
