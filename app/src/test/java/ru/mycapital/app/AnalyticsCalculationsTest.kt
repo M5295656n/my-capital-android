@@ -112,4 +112,29 @@ class AnalyticsCalculationsTest {
         assertEquals(0, calculatePortfolioConcentration(listOf(asset("SBER")), 0.0).size)
         assertNull(sectorForAnalyticsTicker("NOTREAL"))
     }
+
+    @Test
+    fun domRfAndBothLenenergoShareClassesHaveExplicitSectors() {
+        assertEquals("Финансы", sectorForAnalyticsTicker("DOMRF"))
+        assertEquals("Электроэнергетика", sectorForAnalyticsTicker("LSNG"))
+        assertEquals("Электроэнергетика", sectorForAnalyticsTicker("LSNGP"))
+        assertEquals("Финансы", sectorForTicker("DOMRF"))
+        assertEquals("Электроэнергетика", sectorForTicker("LSNG"))
+        assertEquals("Электроэнергетика", sectorForTicker("LSNGP"))
+
+        val sectors = calculatePortfolioSectorSlices(
+            listOf(
+                asset("DOMRF", quantity = 2.0, price = 100.0),
+                asset("LSNG", quantity = 1.0, price = 150.0),
+                asset("LSNGP", quantity = 3.0, price = 50.0)
+            ),
+            totalPortfolioValue = 500.0
+        )
+        assertEquals(2, sectors.size)
+        assertEquals(200.0, sectors.first { it.sector == "Финансы" }.value, 0.000001)
+        val electricity = sectors.first { it.sector == "Электроэнергетика" }
+        assertEquals(300.0, electricity.value, 0.000001)
+        assertEquals(setOf("LSNG", "LSNGP"), electricity.positions.map { it.ticker }.toSet())
+    }
+
 }

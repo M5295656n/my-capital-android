@@ -72,7 +72,7 @@ internal fun calculatePortfolioClassSlices(
 }
 
 internal fun sectorForAnalyticsTicker(ticker: String): String? = when (ticker.trim().uppercase()) {
-    "SBER", "SBERP", "T", "VTBR", "MOEX", "BSPB", "CBOM" -> "Финансы"
+    "SBER", "SBERP", "T", "VTBR", "MOEX", "BSPB", "CBOM", "DOMRF" -> "Финансы"
     "LKOH", "ROSN", "TATN", "GAZP", "NVTK", "SNGS", "SNGSP", "BANE", "TRNFP" -> "Нефть и газ"
     "OZON", "MVID", "FIXP", "X5", "MGNT", "LENT" -> "Потребительский сектор"
     "YDEX" -> "Информационные технологии"
@@ -82,7 +82,7 @@ internal fun sectorForAnalyticsTicker(ticker: String): String? = when (ticker.tr
     "MTSS", "RTKM", "VEON" -> "Телекоммуникации"
     "AFLT", "FLOT" -> "Транспорт"
     "PIKK", "SMLT", "LSRG" -> "Недвижимость"
-    "IRAO", "HYDR", "FEES", "UPRO" -> "Электроэнергетика"
+    "IRAO", "HYDR", "FEES", "UPRO", "LSNG", "LSNGP" -> "Электроэнергетика"
     else -> null
 }
 
