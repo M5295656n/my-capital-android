@@ -41,4 +41,20 @@ class MoexIssClientTest {
     fun refusesNegativeAccruedInterest() {
         normalizeMoexPrice(78.07, "Облигация", 1_000.0, -0.01)
     }
+    @Test fun routesGoldSpotToCurrencyMarketAndCetsBoard() {
+        assertEquals(MoexMarketRoute("currency", "selt", "CETS"), moexMarketRoute("GLDRUB_TOM", "Золото"))
+        assertEquals(MoexMarketRoute("currency", "selt", "CETS"), moexMarketRoute("GLDRUB_TOD", "Золото"))
+    }
+
+    @Test fun keepsRegularSharesAndFundsOnStockMarket() {
+        assertEquals(MoexMarketRoute("stock", "shares"), moexMarketRoute("SBER", "Акция"))
+        assertEquals(MoexMarketRoute("stock", "shares"), moexMarketRoute("GOLD", "Фонд"))
+    }
+
+    @Test fun triesGoldTomBeforeTodAndPreservesExplicitTodPreference() {
+        assertEquals(listOf("GLDRUB_TOM", "GLDRUB_TOD"), moexQuoteCandidates("GLDRUB_TOM"))
+        assertEquals(listOf("GLDRUB_TOD", "GLDRUB_TOM"), moexQuoteCandidates("GLDRUB_TOD"))
+        assertEquals(listOf("SBER"), moexQuoteCandidates("SBER"))
+    }
+
 }
