@@ -80,7 +80,7 @@ object PortfolioBackup {
             val encrypted = headers.any { it.isEncrypted }
             check(headers.all { it.isEncrypted == encrypted }) { "Формат архива некорректен." }
             val zip = if (encrypted) {
-                require(!password.isNullOrEmpty()) { "Это старая зашифрованная копия. Введите пароль AES-256." }
+                require(password != null && password.isNotEmpty()) { "Это старая зашифрованная копия. Введите пароль AES-256." }
                 ZipFile(archive, password)
             } else {
                 ZipFile(archive)
