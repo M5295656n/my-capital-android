@@ -1,7 +1,6 @@
 package ru.mycapital.app.data
 
 import java.time.Instant
-import java.time.YearMonth
 import java.time.ZoneOffset
 
 /**
@@ -19,7 +18,6 @@ internal fun removeSupersededDividendForecasts(
     fun date(value: Long?): java.time.LocalDate? = value?.let {
         Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
     }
-    fun month(value: Long?): YearMonth? = date(value)?.let(YearMonth::from)
 
     val confirmed = events.filter {
         it.status.equals("ANNOUNCED", true) || it.status.equals("RECOMMENDED", true)
@@ -45,4 +43,18 @@ internal fun removeSupersededDividendForecasts(
                 )
         }
     }
+}
+
+/** True when either the record date or payment date identifies this forecast month. */
+internal fun hasProviderDividendInMonth(
+    ticker: String,
+    forecastDate: java.time.LocalDate,
+    events: List<DividendCalendarEvent>
+): Boolean {
+    val forecastMonth = java.time.YearMonth.from(forecastDate)
+    return events.asSequence()
+        .filter { it.ticker.equals(ticker, ignoreCase = true) }
+        .flatMap { sequenceOf(it.recordDate, it.paymentDate).filterNotNull() }
+        .map { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
+        .any { java.time.YearMonth.from(it) == forecastMonth }
 }
