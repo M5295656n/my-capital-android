@@ -19,6 +19,15 @@ interface PortfolioDao {
     suspend fun updateAssetPrice(assetId: Long, price: Double, updatedAt: Long)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuoteHistory(quote: QuoteHistoryEntity)
+
+    @Query("SELECT * FROM quote_history WHERE ticker = :ticker ORDER BY receivedAt ASC")
+    fun observeQuoteHistory(ticker: String): Flow<List<QuoteHistoryEntity>>
+
+    @Query("SELECT * FROM quote_history WHERE ticker = :ticker ORDER BY receivedAt DESC LIMIT 1")
+    suspend fun getLatestQuoteHistory(ticker: String): QuoteHistoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAsset(asset: AssetEntity): Long
 
     @Delete
