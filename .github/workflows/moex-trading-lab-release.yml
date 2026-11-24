@@ -1,0 +1,107 @@
+name: MOEX Trading Lab signed release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moex-trading-lab-release
+  cancel-in-progress: false
+
+jobs:
+  build-moex-release:
+    name: Build and verify MOEX Trading Lab APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout MyCapital (signing-secret owner)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout MOEX Trading Lab source (read-only token)
+        uses: actions/checkout@v4
+        with:
+          repository: M5295656N/moex-trading-lab-android
+          ref: feature/persistent-release-signing
+          path: moex-src
+          token: ${{ secrets.MOEX_REPO_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Validate signing configuration
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MOEX_REPO_READ_TOKEN: ${{ secrets.MOEX_REPO_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$MOEX_REPO_READ_TOKEN" || { echo "::error::Missing MOEX_REPO_READ_TOKEN repository secret (fine-grained, read-only access to MOEX repository)."; exit 1; }
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "::error::Missing existing MyCapital keystore secret."; exit 1; }
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Missing existing MyCapital keystore password secret."; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Missing existing MyCapital key alias secret."; exit 1; }
+          test -n "$ANDROID_KEY_PASSWORD" || { echo "::error::Missing existing MyCapital key password secret."; exit 1; }
+          echo "All required secret values are present; values are not printed."
+
+      - name: Restore existing MyCapital signing key in temporary runner storage
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/moex-signing"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/moex-signing/my-capital-signing.jks"
+          chmod 600 "$RUNNER_TEMP/moex-signing/my-capital-signing.jks"
+          test -s "$RUNNER_TEMP/moex-signing/my-capital-signing.jks"
+          echo "MOEX_RELEASE_STORE_FILE=$RUNNER_TEMP/moex-signing/my-capital-signing.jks" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Run MOEX tests and build signed Release APK
+        working-directory: moex-src
+        env:
+          MOEX_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MOEX_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MOEX_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle testDebugUnitTest
+          gradle compileDebugAndroidTestKotlin
+          gradle assembleRelease
+
+      - name: Verify APK signature, package and version
+        working-directory: moex-src
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1)"
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt"
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
+          printf '%s\n' "$VERIFY_OUTPUT"
+          ACTUAL_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" | grep -i 'certificate SHA-256 digest' | head -n 1 | sed 's/.*digest: *//' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED_SHA256="77FE78460534AC46DA9A42B03435DEF8CC5D2D6D3CC67C7D3C6C8FD35008FD66"
+          test -n "$ACTUAL_SHA256" || { echo "::error::Could not read signing certificate SHA-256."; exit 1; }
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || { echo "::error::Signing certificate differs from the existing MyCapital certificate."; exit 1; }
+          "$AAPT" dump badging "$APK" | grep -E "package: name='ru.moex.tradinglab'.*versionCode='1'.*versionName='1.0.0'"
+          sha256sum "$APK"
+
+      - name: Upload verified signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: moex-trading-lab-release-v1.0.0-signed-with-existing-certificate
+          path: moex-src/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
