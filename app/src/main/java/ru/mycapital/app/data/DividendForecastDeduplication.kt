@@ -86,8 +86,13 @@ internal fun removeSupersededDividendForecasts(
             if (indexed.index in consumedConfirmed) return@firstOrNull false
             val announcement = indexed.value
             if (!forecast.ticker.equals(announcement.ticker, ignoreCase = true)) return@firstOrNull false
-            val confirmedDate = recordDate(announcement.recordDate) ?: return@firstOrNull false
-            val sameRecordDate = confirmedDate == forecastDate
+            // Some recommendations publish only the cash payment date, not the
+            // registry date. Use that date as a fallback so a forecast for the
+            // same month/amount is superseded instead of shown as a second payout.
+            val confirmedDate = recordDate(announcement.recordDate)
+                ?: recordDate(announcement.paymentDate)
+                ?: return@firstOrNull false
+            val sameRecordDate = announcement.recordDate != null && confirmedDate == forecastDate
             val sameMonthAndAmount = YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
                 forecast.amountPerUnit.isFinite() && announcement.amountPerUnit.isFinite() &&
                 kotlin.math.abs(forecast.amountPerUnit - announcement.amountPerUnit) <= 0.01
@@ -114,9 +119,8 @@ internal fun hasProviderDividendOnRecordDate(
     .filter { it.ticker.equals(ticker, ignoreCase = true) }
     .filter { it.status.equals("ANNOUNCED", true) || it.status.equals("RECOMMENDED", true) }
     .mapNotNull { event ->
-        val date = event.recordDate?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
-        } ?: return@mapNotNull null
+        val dateMillis = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
+        val date = Instant.ofEpochMilli(dateMillis).atZone(ZoneOffset.UTC).toLocalDate()
         date to event.amountPerUnit
     }
     .any { (confirmedDate, confirmedAmount) ->
