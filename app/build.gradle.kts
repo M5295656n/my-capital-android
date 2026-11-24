@@ -1,3 +1,9 @@
+import java.net.URI
+import java.security.MessageDigest
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.io.ByteArrayInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -79,10 +85,10 @@ val downloadMoexNcaRootCertificate by tasks.registering {
     outputs.file(certificateFile)
     doLast {
         val sourceUrl = "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt"
-        val downloaded = java.net.URI(sourceUrl).toURL().openStream().use { it.readBytes() }
-        val certificate = java.security.cert.CertificateFactory.getInstance("X.509")
-            .generateCertificate(java.io.ByteArrayInputStream(downloaded)) as java.security.cert.X509Certificate
-        val fingerprint = java.security.MessageDigest.getInstance("SHA-256")
+        val downloaded = URI(sourceUrl).toURL().openStream().use { it.readBytes() }
+        val certificate = CertificateFactory.getInstance("X.509")
+            .generateCertificate(ByteArrayInputStream(downloaded)) as X509Certificate
+        val fingerprint = MessageDigest.getInstance("SHA-256")
             .digest(certificate.encoded)
             .joinToString("") { "%02X".format(it) }
         check(fingerprint == "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31") {
