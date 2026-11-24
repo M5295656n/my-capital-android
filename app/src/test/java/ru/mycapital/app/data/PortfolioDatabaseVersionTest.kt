@@ -7,6 +7,6 @@ class PortfolioDatabaseVersionTest {
     @Test
     fun currentRoomSchemaVersionIsDeclaredOnceForDatabaseAndBackup() {
         // PortfolioDatabase @Database and PortfolioBackup validation both consume this constant.
-        assertEquals(19, PORTFOLIO_DATABASE_VERSION)
+        assertEquals(20, PORTFOLIO_DATABASE_VERSION)
     }
 }
