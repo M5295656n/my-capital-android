@@ -6,6 +6,7 @@ import androidx.work.Data
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.room.withTransaction
 
 class QuoteRefreshWorker(
     appContext: Context,
@@ -13,7 +14,8 @@ class QuoteRefreshWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val dao = PortfolioDatabase.getInstance(applicationContext).portfolioDao()
+        val database = PortfolioDatabase.getInstance(applicationContext)
+        val dao = database.portfolioDao()
         val assets = dao.getAssets()
         if (assets.isEmpty()) {
             return@withContext Result.success(Data.Builder().putString("summary", "В портфеле нет активов для обновления.").build())
@@ -33,7 +35,19 @@ class QuoteRefreshWorker(
             try {
                 val quote = client.getQuote(asset.ticker, asset.assetType)
                 if (quote != null) {
-                    dao.updateAssetPrice(asset.id, quote.price, System.currentTimeMillis())
+                    val receivedAt = System.currentTimeMillis()
+                    database.withTransaction {
+                        dao.insertQuoteHistory(
+                            QuoteHistoryEntity(
+                                ticker = quote.ticker,
+                                source = "MOEX_ISS",
+                                receivedAt = receivedAt,
+                                price = quote.price,
+                                board = quote.board
+                            )
+                        )
+                        dao.updateAssetPrice(asset.id, quote.price, receivedAt)
+                    }
                     updated++
                 } else {
                     unavailable++

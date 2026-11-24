@@ -6,10 +6,10 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19 ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24 ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19 ]
+    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, feature/imoex-dashboard-chart-2026-11-19 ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 
@@ -104,6 +104,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Install and verify official MOEX NCA root CA
+        run: |
+          set -euo pipefail
+          CERT="$RUNNER_TEMP/russian_trusted_root_ca.pem"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt" \
+            --output "$CERT"
+          ACTUAL="$(openssl x509 -in "$CERT" -noout -fingerprint -sha256 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31"
+          echo "MOEX NCA root SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED" || (echo "ERROR: Official NCA root fingerprint mismatch" && exit 1)
+          openssl x509 -in "$CERT" -noout -subject -dates
+          cat /etc/ssl/certs/ca-certificates.crt "$CERT" > "$RUNNER_TEMP/moex-ca-bundle.pem"
+          echo "SSL_CERT_FILE=$RUNNER_TEMP/moex-ca-bundle.pem" >> "$GITHUB_ENV"
       - name: Verify live MOEX history for affected instruments
         run: |
           python3 - <<'PY'
@@ -118,7 +132,10 @@ jobs:
               "SBMM": ("shares", ["TQTF", "TQBR", "TQTD"]),
               "SU26244RMFS2": ("bonds", ["TQOB", "TQCB"]),
           }
-          
+
+          # TLS verification is intentionally strict. The official NCA root is
+          # installed into the runner trust bundle in the preceding workflow step.
+
           def get_json(url):
               last_error = None
               for attempt in range(3):

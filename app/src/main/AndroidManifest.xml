@@ -2,6 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:label="Мой капитал"
         android:icon="@drawable/file_00000000b56081f491c1681143d5b91c"
         android:roundIcon="@drawable/file_00000000b56081f491c1681143d5b91c"

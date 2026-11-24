@@ -1,3 +1,9 @@
+import java.net.URI
+import java.security.MessageDigest
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.io.ByteArrayInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,8 +17,8 @@ android {
         applicationId = "ru.mycapital.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 130
-        versionName = "0.4.18"
+        versionCode = 131
+        versionName = "0.4.19"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -69,4 +75,36 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.room:room-testing:2.8.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+
+// Download the official NCA root certificate from the Gosuslugi CDN.
+// Pin the DER certificate fingerprint so a substituted download is never trusted.
+val downloadMoexNcaRootCertificate by tasks.registering {
+    val certificateFile = layout.projectDirectory.file("src/main/res/raw/russian_trusted_root_ca.cer")
+    outputs.file(certificateFile)
+    doLast {
+        val sourceUrl = "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt"
+        val downloaded = URI(sourceUrl).toURL().openStream().use { it.readBytes() }
+        val certificate = CertificateFactory.getInstance("X.509")
+            .generateCertificate(ByteArrayInputStream(downloaded)) as X509Certificate
+        val fingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(certificate.encoded)
+            .joinToString("") { "%02X".format(it) }
+        check(fingerprint == "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31") {
+            "Unexpected MOEX NCA root certificate fingerprint: $fingerprint"
+        }
+        check(certificate.subjectX500Principal.name.contains("Russian Trusted Root CA")) {
+            "Downloaded certificate is not Russian Trusted Root CA: ${certificate.subjectX500Principal}"
+        }
+        certificate.checkValidity()
+        certificateFile.asFile.apply {
+            parentFile.mkdirs()
+            writeBytes(certificate.encoded)
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(downloadMoexNcaRootCertificate)
 }
