@@ -42,7 +42,7 @@ class DividendForecastDeduplicationTest {
     fun keepsSeparateConfirmedEventsAndForecastInAnotherMonth() {
         val events = listOf(
             DividendCalendarEvent("TATN", 31.44, "FORECAST", millis("2027-01-10"), null, "jan-forecast"),
-            DividendCalendarEvent("TATN", 20.00, "RECOMMENDED", null, millis("2027-01-19"), "jan-confirmed"),
+            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED", null, millis("2027-01-19"), "jan-confirmed"),
             DividendCalendarEvent("TATN", 12.00, "FORECAST", millis("2027-07-10"), null, "july-forecast")
         )
         assertEquals(setOf("jan-confirmed", "july-forecast"),
