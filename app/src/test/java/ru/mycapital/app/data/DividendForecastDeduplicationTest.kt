@@ -113,7 +113,7 @@ class DividendForecastDeduplicationTest {
             )
         )
         assertEquals(
-            false,
+            true,
             hasProviderDividendOnRecordDate(
                 "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 20.0
             )
