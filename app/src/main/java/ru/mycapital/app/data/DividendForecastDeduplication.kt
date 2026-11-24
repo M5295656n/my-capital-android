@@ -84,7 +84,7 @@ internal fun hasProviderDividendOnRecordDate(
     .mapNotNull { event ->
         val dateMillis = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
         val date = Instant.ofEpochMilli(dateMillis).atZone(ZoneOffset.UTC).toLocalDate()
-        Triple(date, event.amountPerUnit)
+        Pair(date, event.amountPerUnit)
     }
     .any { (confirmedDate, confirmedAmount) ->
         val sameMonth = YearMonth.from(confirmedDate) == YearMonth.from(forecastDate)
