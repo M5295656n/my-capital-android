@@ -6,7 +6,7 @@ import org.junit.Test
 class PortfolioDatabaseVersionTest {
     @Test
     fun currentRoomSchemaVersionIsDeclaredOnceForDatabaseAndBackup() {
-        // PortfolioDatabase @Database and PortfolioBackup validation both consume this constant.
+        // Room and backup validation share this version; v20 adds the local quote_history table.
         assertEquals(20, PORTFOLIO_DATABASE_VERSION)
     }
 }
