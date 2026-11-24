@@ -57,6 +57,33 @@ class DividendForecastDeduplicationTest {
     }
 
     @Test
+    fun sameMonthAndSameAmountForecastIsReplacedWhenRecordDatesDiffer() {
+        val events = listOf(
+            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
+            event("TATN", "RECOMMENDED", "2027-01-19", "2027-02-01", "jan-recommended")
+        )
+
+        assertEquals(
+            listOf("jan-recommended"),
+            removeSupersededDividendForecasts(events).map { it.sourceKey }
+        )
+    }
+
+    @Test
+    fun oneConfirmedEventCanReplaceOnlyOneMatchingForecast() {
+        val events = listOf(
+            event("TATN", "FORECAST", "2027-01-10", null, "forecast-a"),
+            event("TATN", "FORECAST", "2027-01-12", null, "forecast-b"),
+            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed")
+        )
+
+        assertEquals(
+            setOf("forecast-b", "confirmed"),
+            removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet()
+        )
+    }
+
+    @Test
     fun differentTickersAndIndependentConfirmedEventsArePreserved() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "tatn-forecast"),
@@ -78,6 +105,18 @@ class DividendForecastDeduplicationTest {
         assertEquals(
             false,
             hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-02-10"), events)
+        )
+        assertEquals(
+            true,
+            hasProviderDividendOnRecordDate(
+                "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 31.44
+            )
+        )
+        assertEquals(
+            false,
+            hasProviderDividendOnRecordDate(
+                "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 20.0
+            )
         )
     }
 
