@@ -301,6 +301,11 @@ jobs:
                   print(f"::warning::Live market-data smoke checks skipped because the runner could not verify the upstream TLS certificate: {exc.reason}")
               else:
                   raise
+          except RuntimeError as exc:
+              if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                  print(f"::warning::Live market-data smoke checks skipped because the runner could not verify the upstream TLS certificate: {exc}")
+              else:
+                  raise
 
           def fetch_board_candles(ticker, market, board):
               by_date = {}
