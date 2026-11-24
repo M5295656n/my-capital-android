@@ -55,7 +55,7 @@ class PortfolioDatabaseMigrationInstrumentedTest {
         }
 
         val database = Room.databaseBuilder(context, PortfolioDatabase::class.java, databaseName)
-            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12, PortfolioDatabase.MIGRATION_12_13, PortfolioDatabase.MIGRATION_13_14, PortfolioDatabase.MIGRATION_14_15, PortfolioDatabase.MIGRATION_15_16, PortfolioDatabase.MIGRATION_16_17, PortfolioDatabase.MIGRATION_17_18, PortfolioDatabase.MIGRATION_18_19)
+            .addMigrations(PortfolioDatabase.MIGRATION_6_7, PortfolioDatabase.MIGRATION_7_8, PortfolioDatabase.MIGRATION_8_9, PortfolioDatabase.MIGRATION_9_10, PortfolioDatabase.MIGRATION_10_11, PortfolioDatabase.MIGRATION_11_12, PortfolioDatabase.MIGRATION_12_13, PortfolioDatabase.MIGRATION_13_14, PortfolioDatabase.MIGRATION_14_15, PortfolioDatabase.MIGRATION_15_16, PortfolioDatabase.MIGRATION_16_17, PortfolioDatabase.MIGRATION_17_18, PortfolioDatabase.MIGRATION_18_19, PortfolioDatabase.MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
 
@@ -65,6 +65,23 @@ class PortfolioDatabaseMigrationInstrumentedTest {
                 assertEquals(true, cursor.moveToFirst())
             }
             val dao = database.portfolioDao()
+            migratedDb.query("SELECT name FROM sqlite_master WHERE type='table' AND name='quote_history'").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+            }
+            dao.insertQuoteHistory(
+                QuoteHistoryEntity(
+                    ticker = "SBER",
+                    source = "MOEX_ISS",
+                    receivedAt = 1790000001000,
+                    price = 250.5,
+                    board = "TQBR"
+                )
+            )
+            val savedQuote = dao.getLatestQuoteHistory("SBER")
+            assertNotNull(savedQuote)
+            assertEquals(250.5, savedQuote!!.price, 0.000001)
+            assertEquals("MOEX_ISS", savedQuote.source)
+            assertEquals("TQBR", savedQuote.board)
             val oldOperation = dao.observeOperations().first()
             assertEquals(1, oldOperation.size)
             assertEquals(7L, oldOperation.single().id)
