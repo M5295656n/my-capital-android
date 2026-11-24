@@ -70,3 +70,35 @@ dependencies {
     androidTestImplementation("androidx.room:room-testing:2.8.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+
+// Download the official NCA root certificate from the Gosuslugi CDN.
+// Pin the DER certificate fingerprint so a substituted download is never trusted.
+val downloadMoexNcaRootCertificate by tasks.registering {
+    val certificateFile = layout.projectDirectory.file("src/main/res/raw/russian_trusted_root_ca.cer")
+    outputs.file(certificateFile)
+    doLast {
+        val sourceUrl = "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt"
+        val downloaded = java.net.URI(sourceUrl).toURL().openStream().use { it.readBytes() }
+        val certificate = java.security.cert.CertificateFactory.getInstance("X.509")
+            .generateCertificate(java.io.ByteArrayInputStream(downloaded)) as java.security.cert.X509Certificate
+        val fingerprint = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(certificate.encoded)
+            .joinToString("") { "%02X".format(it) }
+        check(fingerprint == "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31") {
+            "Unexpected MOEX NCA root certificate fingerprint: $fingerprint"
+        }
+        check(certificate.subjectX500Principal.name.contains("Russian Trusted Root CA")) {
+            "Downloaded certificate is not Russian Trusted Root CA: ${certificate.subjectX500Principal}"
+        }
+        certificate.checkValidity()
+        certificateFile.asFile.apply {
+            parentFile.mkdirs()
+            writeBytes(certificate.encoded)
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(downloadMoexNcaRootCertificate)
+}
