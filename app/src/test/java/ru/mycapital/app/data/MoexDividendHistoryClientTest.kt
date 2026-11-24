@@ -190,6 +190,38 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun forecastsFourQuarterlyPaymentsAcrossTheNextYear() {
+        val history = listOf(
+            dividend("2026-01-20", 4.5),
+            dividend("2026-04-20", 4.6),
+            dividend("2026-07-20", 4.7),
+            dividend("2026-10-20", 4.8)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 14),
+            horizonMonths = 12
+        )
+
+        assertEquals(4, forecasts.size)
+        assertEquals(
+            listOf(1, 4, 7, 10),
+            forecasts.map { it.recordDate.monthValue }
+        )
+        assertEquals(
+            listOf(
+                LocalDate.of(2027, 1, 18),
+                LocalDate.of(2027, 4, 18),
+                LocalDate.of(2027, 7, 17),
+                LocalDate.of(2027, 10, 15)
+            ),
+            forecasts.map { it.recordDate }
+        )
+    }
+
+    @Test
     fun doesNotForecastMonthWithOnlyOneHistoricalOccurrence() {
         val forecasts = calculateHistoricalDividendForecasts(
             ticker = "T",
