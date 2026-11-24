@@ -82,6 +82,12 @@ class PortfolioDatabaseMigrationInstrumentedTest {
             assertEquals(250.5, savedQuote!!.price, 0.000001)
             assertEquals("MOEX_ISS", savedQuote.source)
             assertEquals("TQBR", savedQuote.board)
+            // Re-fetching the same instrument/source at the same timestamp is idempotent.
+            dao.insertQuoteHistory(savedQuote.copy(price = 251.0))
+            assertEquals(251.0, dao.getLatestQuoteHistory("SBER")!!.price, 0.000001)
+            // A second provider remains a separate observation, not an overwrite.
+            dao.insertQuoteHistory(savedQuote.copy(source = "OTHER", price = 249.0))
+            assertEquals(2, dao.observeQuoteHistory("SBER").first().size)
             val oldOperation = dao.observeOperations().first()
             assertEquals(1, oldOperation.size)
             assertEquals(7L, oldOperation.single().id)
