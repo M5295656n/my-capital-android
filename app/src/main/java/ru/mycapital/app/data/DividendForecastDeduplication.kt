@@ -128,7 +128,7 @@ internal fun hasProviderDividendOnRecordDate(
         Triple(date, event.amountPerUnit, event.recordDate == null)
     }
     .any { (confirmedDate, confirmedAmount, recordDateMissing) ->
-        confirmedDate == forecastDate ||
+        (!recordDateMissing && confirmedDate == forecastDate) ||
             (recordDateMissing && amountPerShare != null &&
                 YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
                 amountPerShare.isFinite() && confirmedAmount.isFinite() &&
