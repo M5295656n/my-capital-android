@@ -120,7 +120,19 @@ jobs:
               "SBMM": ("shares", ["TQTF", "TQBR", "TQTD"]),
               "SU26244RMFS2": ("bonds", ["TQOB", "TQCB"]),
           }
-          
+
+          # Probe MOEX TLS once before live checks. A certificate failure skips
+          # only external smoke checks; Gradle tests/build/signing still run.
+          probe = Request(BASE + "/index.json", headers={"User-Agent": "MyCapital-CI/1.0"})
+          try:
+              with urlopen(probe, timeout=20) as response:
+                  response.read(1)
+          except URLError as exc:
+              if isinstance(exc.reason, ssl.SSLCertVerificationError):
+                  print(f"::warning::Live market-data smoke checks skipped: MOEX TLS verification failed: {exc.reason}")
+                  raise SystemExit(0)
+              raise
+
           def get_json(url):
               last_error = None
               for attempt in range(3):
@@ -291,21 +303,10 @@ jobs:
                   raise RuntimeError(f"GLDRUB_TOM/CETS: expected at least two valid OHLC candles, got {valid}")
               print(f"GLDRUB_TOM/CETS OHLC history verified: valid_rows={valid}")
 
-          try:
-              verify_gold_cets_price()
-              verify_imoex_quote_and_candles()
-              verify_cbr_currency_history()
-              verify_gold_daily_ohlc()
-          except URLError as exc:
-              if isinstance(exc.reason, ssl.SSLCertVerificationError):
-                  print(f"::warning::Live market-data smoke checks skipped because the runner could not verify the upstream TLS certificate: {exc.reason}")
-              else:
-                  raise
-          except RuntimeError as exc:
-              if "CERTIFICATE_VERIFY_FAILED" in str(exc):
-                  print(f"::warning::Live market-data smoke checks skipped because the runner could not verify the upstream TLS certificate: {exc}")
-              else:
-                  raise
+          verify_gold_cets_price()
+          verify_imoex_quote_and_candles()
+          verify_cbr_currency_history()
+          verify_gold_daily_ohlc()
 
           def fetch_board_candles(ticker, market, board):
               by_date = {}
