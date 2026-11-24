@@ -51,7 +51,7 @@ class DividendForecastDeduplicationTest {
     fun sameMonthDifferentRecordDatesRemainSeparateEvenWhenAmountsMatch() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "forecast"),
-            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed")
+            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed", amount = 20.00)
         )
         assertEquals(2, removeSupersededDividendForecasts(events).size)
     }
