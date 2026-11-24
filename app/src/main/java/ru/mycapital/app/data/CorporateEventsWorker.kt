@@ -41,7 +41,7 @@ class CorporateEventsWorker(
             if (fetchedEvents.isEmpty()) throw java.io.IOException("Источник вернул 0 предстоящих дивидендов")
             val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
             // Add issuer-confirmed announcements that may not yet be present in the public feed.
-            val events = mergeOfficialDividendAnnouncements(fetchedEvents, today)
+            val events = removeSupersededDividendForecasts(mergeOfficialDividendAnnouncements(fetchedEvents, today))
             providerDividendEvents = events
             feedEvents = events.size
             setProgress(Data.Builder().putString("summary", "Long/Short: получено событий $feedEvents; проверяю совпадения с тикерами портфеля…").build())
