@@ -104,13 +104,25 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Install and verify official MOEX NCA root CA
+        run: |
+          set -euo pipefail
+          CERT="$RUNNER_TEMP/russian_trusted_root_ca.pem"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt" \
+            --output "$CERT"
+          ACTUAL="$(openssl x509 -in "$CERT" -noout -fingerprint -sha256 | sed 's/.*=//' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31"
+          echo "MOEX NCA root SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED" || (echo "ERROR: Official NCA root fingerprint mismatch" && exit 1)
+          openssl x509 -in "$CERT" -noout -subject -dates
+          cat /etc/ssl/certs/ca-certificates.crt "$CERT" > "$RUNNER_TEMP/moex-ca-bundle.pem"
+          echo "SSL_CERT_FILE=$RUNNER_TEMP/moex-ca-bundle.pem" >> "$GITHUB_ENV"
       - name: Verify live MOEX history for affected instruments
         run: |
           python3 - <<'PY'
           import json
           import time
-          import ssl
-          from urllib.error import URLError
           from urllib.request import Request, urlopen
           
           BASE = "https://iss.moex.com/iss"
@@ -121,17 +133,8 @@ jobs:
               "SU26244RMFS2": ("bonds", ["TQOB", "TQCB"]),
           }
 
-          # Probe MOEX TLS once before live checks. A certificate failure skips
-          # only external smoke checks; Gradle tests/build/signing still run.
-          probe = Request(BASE + "/index.json", headers={"User-Agent": "MyCapital-CI/1.0"})
-          try:
-              with urlopen(probe, timeout=20) as response:
-                  response.read(1)
-          except URLError as exc:
-              if isinstance(exc.reason, ssl.SSLCertVerificationError):
-                  print(f"::warning::Live market-data smoke checks skipped: MOEX TLS verification failed: {exc.reason}")
-                  raise SystemExit(0)
-              raise
+          # TLS verification is intentionally strict. The official NCA root is
+          # installed into the runner trust bundle in the preceding workflow step.
 
           def get_json(url):
               last_error = None
