@@ -6,6 +6,7 @@ import androidx.work.Data
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.room.withTransaction
 
 class QuoteRefreshWorker(
     appContext: Context,
@@ -33,7 +34,19 @@ class QuoteRefreshWorker(
             try {
                 val quote = client.getQuote(asset.ticker, asset.assetType)
                 if (quote != null) {
-                    dao.updateAssetPrice(asset.id, quote.price, System.currentTimeMillis())
+                    val receivedAt = System.currentTimeMillis()
+                    PortfolioDatabase.getInstance(applicationContext).withTransaction {
+                        dao.insertQuoteHistory(
+                            QuoteHistoryEntity(
+                                ticker = quote.ticker,
+                                source = "MOEX_ISS",
+                                receivedAt = receivedAt,
+                                price = quote.price,
+                                board = quote.board
+                            )
+                        )
+                        dao.updateAssetPrice(asset.id, quote.price, receivedAt)
+                    }
                     updated++
                 } else {
                     unavailable++
