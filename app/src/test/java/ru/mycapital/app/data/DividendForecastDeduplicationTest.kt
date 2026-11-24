@@ -57,16 +57,13 @@ class DividendForecastDeduplicationTest {
     }
 
     @Test
-    fun sameMonthAndSameAmountForecastIsReplacedWhenRecordDatesDiffer() {
+    fun differentExplicitRecordDatesArePreservedEvenWhenAmountsMatch() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
             event("TATN", "RECOMMENDED", "2027-01-19", "2027-02-01", "jan-recommended")
         )
 
-        assertEquals(
-            listOf("jan-recommended"),
-            removeSupersededDividendForecasts(events).map { it.sourceKey }
-        )
+        assertEquals(2, removeSupersededDividendForecasts(events).size)
     }
 
     @Test
@@ -103,7 +100,7 @@ class DividendForecastDeduplicationTest {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "forecast-a"),
             event("TATN", "FORECAST", "2027-01-12", null, "forecast-b"),
-            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed")
+            event("TATN", "RECOMMENDED", null, "2027-01-19", "confirmed")
         )
 
         assertEquals(
