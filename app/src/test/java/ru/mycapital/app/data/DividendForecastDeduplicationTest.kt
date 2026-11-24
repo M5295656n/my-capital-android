@@ -70,6 +70,35 @@ class DividendForecastDeduplicationTest {
     }
 
     @Test
+    fun paymentDateOnlyRecommendationReplacesSameMonthSameAmountForecast() {
+        val events = listOf(
+            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
+            event("TATN", "RECOMMENDED", null, "2027-01-19", "jan-recommended")
+        )
+
+        assertEquals(
+            listOf("jan-recommended"),
+            removeSupersededDividendForecasts(events).map { it.sourceKey }
+        )
+        assertEquals(
+            true,
+            hasProviderDividendOnRecordDate(
+                "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 31.44
+            )
+        )
+    }
+
+    @Test
+    fun distinctExplicitRecordDatesRemainSeparateWithSameMonthAndAmount() {
+        val events = listOf(
+            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
+            event("TATN", "RECOMMENDED", "2027-01-19", "2027-01-25", "jan-recommended")
+        )
+
+        assertEquals(2, removeSupersededDividendForecasts(events).size)
+    }
+
+    @Test
     fun oneConfirmedEventCanReplaceOnlyOneMatchingForecast() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "forecast-a"),
