@@ -18,6 +18,14 @@ class DividendForecastDeduplicationTest {
         assertEquals(listOf("jan-confirmed"), removeSupersededDividendForecasts(events).map { it.sourceKey })
     }
 
+    @Test fun januaryPaymentDateMatchesEvenWhenOfficialRecordDateIsInDecember() {
+        val events = listOf(
+            event("TATN", "FORECAST", "2027-01-08", null, "jan-forecast"),
+            event("TATN", "RECOMMENDED", "2026-12-18", "2027-01-15", "jan-confirmed")
+        )
+        assertEquals(listOf("jan-confirmed"), removeSupersededDividendForecasts(events).map { it.sourceKey })
+    }
+
     @Test fun differentAmountDoesNotReplaceForecast() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast", 31.44),
