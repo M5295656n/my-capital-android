@@ -2,15 +2,14 @@ package ru.mycapital.app.data
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneOffset
 
 /**
- * Removes a provider forecast only when it points to the same issuer record date
- * as a confirmed event. Payment dates are deliberately not compared with record
- * dates: they describe different stages of the same dividend lifecycle.
- *
- * Month-level matching and amount-only matching are unsafe for issuers that pay
- * dividends more than once per year, so independent events are always retained.
+ * A provider recommendation may carry a slightly different record date from
+ * the earlier forecast for the same dividend. Match those rows by issuer,
+ * calendar month and per-share amount, consuming each confirmed event once.
+ * This prevents one confirmed event from deleting multiple independent forecasts.
  */
 internal fun removeSupersededDividendForecasts(
     events: List<DividendCalendarEvent>
@@ -19,28 +18,55 @@ internal fun removeSupersededDividendForecasts(
         Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
     }
 
-    val confirmed = events.filter {
-        it.status.equals("ANNOUNCED", true) || it.status.equals("RECOMMENDED", true)
+    val confirmed = events.withIndex().filter {
+        it.value.status.equals("ANNOUNCED", true) || it.value.status.equals("RECOMMENDED", true)
     }
+    val consumedConfirmed = mutableSetOf<Int>()
+
     return events.filterNot { forecast ->
         if (!forecast.status.equals("FORECAST", true)) return@filterNot false
         val forecastDate = recordDate(forecast.recordDate) ?: return@filterNot false
-        confirmed.any { announcement ->
-            forecast.ticker.equals(announcement.ticker, ignoreCase = true) &&
-                announcement.recordDate != null &&
-                recordDate(announcement.recordDate) == forecastDate
+        val match = confirmed.firstOrNull { indexed ->
+            if (indexed.index in consumedConfirmed) return@firstOrNull false
+            val announcement = indexed.value
+            if (!forecast.ticker.equals(announcement.ticker, ignoreCase = true)) return@firstOrNull false
+            val confirmedDate = recordDate(announcement.recordDate) ?: return@firstOrNull false
+            val sameRecordDate = confirmedDate == forecastDate
+            val sameMonthAndAmount = YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
+                forecast.amountPerUnit.isFinite() && announcement.amountPerUnit.isFinite() &&
+                kotlin.math.abs(forecast.amountPerUnit - announcement.amountPerUnit) <= 0.01
+            sameRecordDate || sameMonthAndAmount
+        }
+        if (match == null) false else {
+            consumedConfirmed += match.index
+            true
         }
     }
 }
 
-/** Only a confirmed record date can replace a history forecast for that date. */
+/**
+ * Check whether a provider-confirmed event replaces a history forecast.
+ * Exact record dates always match; different dates in the same month match
+ * only when the estimated per-share amount is also supplied and agrees.
+ */
 internal fun hasProviderDividendOnRecordDate(
     ticker: String,
     forecastDate: LocalDate,
-    events: List<DividendCalendarEvent>
+    events: List<DividendCalendarEvent>,
+    amountPerShare: Double? = null
 ): Boolean = events.asSequence()
     .filter { it.ticker.equals(ticker, ignoreCase = true) }
     .filter { it.status.equals("ANNOUNCED", true) || it.status.equals("RECOMMENDED", true) }
-    .mapNotNull { it.recordDate }
-    .map { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
-    .any { it == forecastDate }
+    .mapNotNull { event ->
+        val date = event.recordDate?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+        } ?: return@mapNotNull null
+        date to event.amountPerUnit
+    }
+    .any { (confirmedDate, confirmedAmount) ->
+        confirmedDate == forecastDate ||
+            (amountPerShare != null &&
+                YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
+                amountPerShare.isFinite() && confirmedAmount.isFinite() &&
+                kotlin.math.abs(amountPerShare - confirmedAmount) <= 0.01)
+    }
