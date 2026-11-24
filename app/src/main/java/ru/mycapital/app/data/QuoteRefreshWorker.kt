@@ -14,7 +14,8 @@ class QuoteRefreshWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val dao = PortfolioDatabase.getInstance(applicationContext).portfolioDao()
+        val database = PortfolioDatabase.getInstance(applicationContext)
+        val dao = database.portfolioDao()
         val assets = dao.getAssets()
         if (assets.isEmpty()) {
             return@withContext Result.success(Data.Builder().putString("summary", "В портфеле нет активов для обновления.").build())
@@ -35,7 +36,7 @@ class QuoteRefreshWorker(
                 val quote = client.getQuote(asset.ticker, asset.assetType)
                 if (quote != null) {
                     val receivedAt = System.currentTimeMillis()
-                    PortfolioDatabase.getInstance(applicationContext).withTransaction {
+                    database.withTransaction {
                         dao.insertQuoteHistory(
                             QuoteHistoryEntity(
                                 ticker = quote.ticker,
