@@ -134,7 +134,7 @@ class CorporateEventsWorker(
                     horizonMonths = 24,
                     futureAnchorDates = confirmedFutureDates
                 ).filterNot { forecast ->
-                    hasProviderDividendOnRecordDate(asset.ticker, forecast.recordDate, providerDividendEvents)
+                    hasProviderDividendOnRecordDate(asset.ticker, forecast.recordDate, providerDividendEvents, forecast.amountPerShare)
                 }
 
                 database.withTransaction {
