@@ -17,9 +17,13 @@ private fun removeDuplicateDividendEvents(events: List<DividendCalendarEvent>): 
                 kotlin.math.abs(existing.amountPerUnit - candidate.amountPerUnit) > 0.01) return@indexOfFirst false
             val existingRecordDate = eventDate(existing.recordDate)
             val existingPaymentDate = eventDate(existing.paymentDate)
+            // The calendar is grouped by expected cash-payment date, so compare
+            // payment dates first. Record dates are only a fallback when a source
+            // does not publish a payment date.
             when {
+                existingPaymentDate != null && candidatePaymentDate != null -> existingPaymentDate == candidatePaymentDate
                 existingRecordDate != null && candidateRecordDate != null -> existingRecordDate == candidateRecordDate
-                else -> existingPaymentDate != null && candidatePaymentDate != null && existingPaymentDate == candidatePaymentDate
+                else -> false
             }
         }
         if (duplicateIndex < 0) result += candidate
@@ -59,12 +63,12 @@ internal fun removeSupersededDividendForecasts(events: List<DividendCalendarEven
     val consumedConfirmed = mutableSetOf<Int>()
     return normalizedEvents.filterNot { forecast ->
         if (!forecast.status.equals("FORECAST", true)) return@filterNot false
-        val forecastDate = eventDate(forecast.recordDate) ?: eventDate(forecast.paymentDate) ?: return@filterNot false
+        val forecastDate = eventDate(forecast.paymentDate) ?: eventDate(forecast.recordDate) ?: return@filterNot false
         val match = confirmed.firstOrNull { indexed ->
             if (indexed.index in consumedConfirmed) return@firstOrNull false
             val announcement = indexed.value
             if (!forecast.ticker.equals(announcement.ticker, ignoreCase = true)) return@firstOrNull false
-            val confirmedDate = eventDate(announcement.recordDate) ?: eventDate(announcement.paymentDate)
+            val confirmedDate = eventDate(announcement.paymentDate) ?: eventDate(announcement.recordDate)
                 ?: return@firstOrNull false
             val sameMonth = YearMonth.from(confirmedDate) == YearMonth.from(forecastDate)
             val sameAmount = forecast.amountPerUnit.isFinite() && announcement.amountPerUnit.isFinite() &&
@@ -82,7 +86,7 @@ internal fun hasProviderDividendOnRecordDate(
     .filter { it.ticker.equals(ticker, ignoreCase = true) }
     .filter { it.status.equals("ANNOUNCED", true) || it.status.equals("RECOMMENDED", true) }
     .mapNotNull { event ->
-        val dateMillis = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
+        val dateMillis = event.paymentDate ?: event.recordDate ?: return@mapNotNull null
         val date = Instant.ofEpochMilli(dateMillis).atZone(ZoneOffset.UTC).toLocalDate()
         Pair(date, event.amountPerUnit)
     }
