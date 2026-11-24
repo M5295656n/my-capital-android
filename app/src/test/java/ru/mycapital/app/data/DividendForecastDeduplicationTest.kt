@@ -9,63 +9,90 @@ class DividendForecastDeduplicationTest {
     private fun millis(date: String) =
         LocalDate.parse(date).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
 
+    private fun event(
+        ticker: String,
+        status: String,
+        recordDate: String?,
+        paymentDate: String?,
+        key: String,
+        amount: Double = 31.44
+    ) = DividendCalendarEvent(
+        ticker, amount, status, recordDate?.let(::millis), paymentDate?.let(::millis), key
+    )
+
     @Test
-    fun removesForecastWhenConfirmedEventHasSameRecordDateAndLaterPaymentDate() {
+    fun removesOnlyForecastWithTheSameIssuerRecordDate() {
         val events = listOf(
-            DividendCalendarEvent("TATN", 31.44, "FORECAST", millis("2027-01-10"), null, "forecast"),
-            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED", millis("2027-01-10"), millis("2027-01-19"), "recommended")
+            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
+            event("TATN", "RECOMMENDED", "2027-01-10", "2027-01-19", "jan-confirmed"),
+            event("TATN", "FORECAST", "2027-05-10", null, "may-forecast"),
+            event("TATN", "FORECAST", "2027-09-10", null, "sep-forecast")
         )
-        val result = removeSupersededDividendForecasts(events)
-        assertEquals(listOf("recommended"), result.map { it.sourceKey })
+        assertEquals(
+            setOf("jan-confirmed", "may-forecast", "sep-forecast"),
+            removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet()
+        )
     }
 
     @Test
-    fun removesForecastWhenOnlyCrossRoleRecordAndPaymentDatesAreAvailable() {
+    fun paymentDateNeverSuppressesAnIndependentRecordDateForecast() {
         val events = listOf(
-            DividendCalendarEvent("TATN", 31.44, "FORECAST", millis("2027-01-10"), null, "forecast"),
-            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED", null, millis("2027-01-19"), "recommended")
+            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
+            event("TATN", "RECOMMENDED", "2026-12-20", "2027-01-19", "dec-record-jan-payment")
         )
-        assertEquals(listOf("recommended"), removeSupersededDividendForecasts(events).map { it.sourceKey })
+        assertEquals(2, removeSupersededDividendForecasts(events).size)
+        assertEquals(
+            false,
+            hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events)
+        )
     }
 
     @Test
-    fun doesNotRemoveDifferentTickerOrDifferentAmountForecast() {
+    fun sameMonthDifferentRecordDatesRemainSeparateEvenWhenAmountsMatch() {
         val events = listOf(
-            DividendCalendarEvent("TATN", 31.44, "FORECAST", millis("2027-01-10"), null, "forecast-tatn"),
-            DividendCalendarEvent("SBER", 31.44, "RECOMMENDED", null, millis("2027-01-19"), "other-ticker"),
-            DividendCalendarEvent("TATN", 20.00, "RECOMMENDED", null, millis("2027-01-19"), "other-amount")
+            event("TATN", "FORECAST", "2027-01-10", null, "forecast"),
+            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed")
+        )
+        assertEquals(2, removeSupersededDividendForecasts(events).size)
+    }
+
+    @Test
+    fun differentTickersAndIndependentConfirmedEventsArePreserved() {
+        val events = listOf(
+            event("TATN", "FORECAST", "2027-01-10", null, "tatn-forecast"),
+            event("SBER", "RECOMMENDED", "2027-01-10", null, "sber-confirmed"),
+            event("TATN", "RECOMMENDED", "2027-05-10", null, "tatn-may-confirmed")
         )
         assertEquals(3, removeSupersededDividendForecasts(events).size)
     }
 
     @Test
-    fun keepsSeparateConfirmedEventsAndForecastInAnotherMonth() {
+    fun historyForecastIsSuppressedOnlyByExactConfirmedRecordDate() {
         val events = listOf(
-            DividendCalendarEvent("TATN", 31.44, "FORECAST", millis("2027-01-10"), null, "jan-forecast"),
-            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED", null, millis("2027-01-19"), "jan-confirmed"),
-            DividendCalendarEvent("TATN", 12.00, "FORECAST", millis("2027-07-10"), null, "july-forecast")
+            event("TATN", "RECOMMENDED", "2027-01-10", "2027-02-19", "jan-confirmed")
         )
-        assertEquals(setOf("jan-confirmed", "july-forecast"),
-            removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet())
-    }
-    @Test
-    fun historyForecastIsSuppressedByPaymentMonthEvenWhenRecordDateIsInAnotherMonth() {
-        val events = listOf(
-            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED",
-                millis("2026-12-20"), millis("2027-01-19"), "recommended")
+        assertEquals(
+            true,
+            hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events)
         )
-        assertEquals(true, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-01-10"), events))
-        assertEquals(false, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-02-10"), events))
+        assertEquals(
+            false,
+            hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-02-10"), events)
+        )
     }
 
     @Test
-    fun historyForecastIsSuppressedByRecordDateMonthWhenPaymentDateIsLater() {
+    fun quarterlyIssuerKeepsThreeIndependentForecastPeriods() {
         val events = listOf(
-            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED",
-                millis("2027-01-10"), millis("2027-02-19"), "recommended")
+            event("ISSUER", "FORECAST", "2027-01-10", null, "jan"),
+            event("ISSUER", "FORECAST", "2027-05-10", null, "may"),
+            event("ISSUER", "FORECAST", "2027-09-10", null, "sep"),
+            event("ISSUER", "RECOMMENDED", "2027-01-10", "2027-01-25", "jan-confirmed")
         )
-        assertEquals(true, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-01-25"), events))
-        assertEquals(true, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-02-10"), events))
+        val result = removeSupersededDividendForecasts(events)
+        assertEquals(
+            setOf("jan-confirmed", "may", "sep"),
+            result.map { it.sourceKey }.toSet()
+        )
     }
-
 }
