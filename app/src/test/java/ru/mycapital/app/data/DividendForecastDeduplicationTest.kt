@@ -48,4 +48,24 @@ class DividendForecastDeduplicationTest {
         assertEquals(setOf("jan-confirmed", "july-forecast"),
             removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet())
     }
+    @Test
+    fun historyForecastIsSuppressedByPaymentMonthEvenWhenRecordDateIsInAnotherMonth() {
+        val events = listOf(
+            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED",
+                millis("2026-12-20"), millis("2027-01-19"), "recommended")
+        )
+        assertEquals(true, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-01-10"), events))
+        assertEquals(false, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-02-10"), events))
+    }
+
+    @Test
+    fun historyForecastIsSuppressedByRecordDateMonthWhenPaymentDateIsLater() {
+        val events = listOf(
+            DividendCalendarEvent("TATN", 31.44, "RECOMMENDED",
+                millis("2027-01-10"), millis("2027-02-19"), "recommended")
+        )
+        assertEquals(true, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-01-25"), events))
+        assertEquals(true, hasProviderDividendInMonth("TATN", LocalDate.parse("2027-02-10"), events))
+    }
+
 }
