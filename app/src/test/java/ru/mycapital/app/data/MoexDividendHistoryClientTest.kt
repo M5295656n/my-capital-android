@@ -212,10 +212,10 @@ class MoexDividendHistoryClientTest {
         )
         assertEquals(
             listOf(
-                LocalDate.of(2027, 1, 18),
-                LocalDate.of(2027, 4, 18),
-                LocalDate.of(2027, 7, 17),
-                LocalDate.of(2027, 10, 15)
+                LocalDate.of(2027, 1, 19),
+                LocalDate.of(2027, 4, 20),
+                LocalDate.of(2027, 7, 20),
+                LocalDate.of(2027, 10, 19)
             ),
             forecasts.map { it.recordDate }
         )
