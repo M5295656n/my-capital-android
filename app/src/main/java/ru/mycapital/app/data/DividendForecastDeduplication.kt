@@ -93,7 +93,11 @@ internal fun removeSupersededDividendForecasts(
                 ?: recordDate(announcement.paymentDate)
                 ?: return@firstOrNull false
             val sameRecordDate = announcement.recordDate != null && confirmedDate == forecastDate
-            val sameMonthAndAmount = YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
+            // A different explicit registry date may represent a second genuine
+            // payout in the same month. Month/amount fallback is safe only when
+            // the confirmed feed omitted the registry date and supplied paymentDate.
+            val sameMonthAndAmount = announcement.recordDate == null &&
+                YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
                 forecast.amountPerUnit.isFinite() && announcement.amountPerUnit.isFinite() &&
                 kotlin.math.abs(forecast.amountPerUnit - announcement.amountPerUnit) <= 0.01
             sameRecordDate || sameMonthAndAmount
@@ -121,11 +125,11 @@ internal fun hasProviderDividendOnRecordDate(
     .mapNotNull { event ->
         val dateMillis = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
         val date = Instant.ofEpochMilli(dateMillis).atZone(ZoneOffset.UTC).toLocalDate()
-        date to event.amountPerUnit
+        Triple(date, event.amountPerUnit, event.recordDate == null)
     }
-    .any { (confirmedDate, confirmedAmount) ->
+    .any { (confirmedDate, confirmedAmount, recordDateMissing) ->
         confirmedDate == forecastDate ||
-            (amountPerShare != null &&
+            (recordDateMissing && amountPerShare != null &&
                 YearMonth.from(confirmedDate) == YearMonth.from(forecastDate) &&
                 amountPerShare.isFinite() && confirmedAmount.isFinite() &&
                 kotlin.math.abs(amountPerShare - confirmedAmount) <= 0.01)
