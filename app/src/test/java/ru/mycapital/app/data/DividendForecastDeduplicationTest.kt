@@ -6,158 +6,55 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DividendForecastDeduplicationTest {
-    private fun millis(date: String) =
-        LocalDate.parse(date).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+    private fun millis(date: String) = LocalDate.parse(date).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+    private fun event(ticker: String, status: String, recordDate: String?, paymentDate: String?, key: String, amount: Double = 31.44) =
+        DividendCalendarEvent(ticker, amount, status, recordDate?.let(::millis), paymentDate?.let(::millis), key)
 
-    private fun event(
-        ticker: String,
-        status: String,
-        recordDate: String?,
-        paymentDate: String?,
-        key: String,
-        amount: Double = 31.44
-    ) = DividendCalendarEvent(
-        ticker, amount, status, recordDate?.let(::millis), paymentDate?.let(::millis), key
-    )
-
-    @Test
-    fun removesOnlyForecastWithTheSameIssuerRecordDate() {
+    @Test fun differentEstimatedAndOfficialDatesInSameMonthReplaceForecast() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
-            event("TATN", "RECOMMENDED", "2027-01-10", "2027-01-19", "jan-confirmed"),
-            event("TATN", "FORECAST", "2027-05-10", null, "may-forecast"),
-            event("TATN", "FORECAST", "2027-09-10", null, "sep-forecast")
+            event("TATN", "RECOMMENDED", "2027-01-19", "2027-01-28", "jan-confirmed")
         )
-        assertEquals(
-            setOf("jan-confirmed", "may-forecast", "sep-forecast"),
-            removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet()
-        )
+        assertEquals(listOf("jan-confirmed"), removeSupersededDividendForecasts(events).map { it.sourceKey })
     }
 
-    @Test
-    fun paymentDateNeverSuppressesAnIndependentRecordDateForecast() {
+    @Test fun differentAmountDoesNotReplaceForecast() {
         val events = listOf(
-            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
-            event("TATN", "RECOMMENDED", "2026-12-20", "2027-01-19", "dec-record-jan-payment")
+            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast", 31.44),
+            event("TATN", "RECOMMENDED", "2027-01-19", null, "jan-confirmed", 20.00)
         )
         assertEquals(2, removeSupersededDividendForecasts(events).size)
-        assertEquals(
-            false,
-            hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events)
-        )
     }
 
-    @Test
-    fun sameMonthDifferentRecordDatesRemainSeparateEvenWhenAmountsMatch() {
+    @Test fun twoConfirmedTatneftPayoutsInSameMonthRemainSeparate() {
+        val events = listOf(
+            event("TATN", "RECOMMENDED", "2027-01-10", "2027-01-19", "confirmed-a", 31.44),
+            event("TATN", "ANNOUNCED", "2027-01-20", "2027-01-29", "confirmed-b", 20.00)
+        )
+        assertEquals(setOf("confirmed-a", "confirmed-b"), removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet())
+    }
+
+    @Test fun forecastIsReplacedOnlyOnceWhenMultipleConfirmedEventsExist() {
         val events = listOf(
             event("TATN", "FORECAST", "2027-01-10", null, "forecast"),
-            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed", amount = 20.00)
+            event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed-a"),
+            event("TATN", "ANNOUNCED", "2027-01-25", null, "confirmed-b", 20.00)
         )
-        assertEquals(2, removeSupersededDividendForecasts(events).size)
+        assertEquals(setOf("confirmed-a", "confirmed-b"), removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet())
     }
 
-    @Test
-    fun differentExplicitRecordDatesArePreservedEvenWhenAmountsMatch() {
+    @Test fun differentTickersAndMonthsRemainIndependent() {
         val events = listOf(
-            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
-            event("TATN", "RECOMMENDED", "2027-01-19", "2027-02-01", "jan-recommended")
-        )
-
-        assertEquals(2, removeSupersededDividendForecasts(events).size)
-    }
-
-    @Test
-    fun paymentDateOnlyRecommendationReplacesSameMonthSameAmountForecast() {
-        val events = listOf(
-            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
-            event("TATN", "RECOMMENDED", null, "2027-01-19", "jan-recommended")
-        )
-
-        assertEquals(
-            listOf("jan-recommended"),
-            removeSupersededDividendForecasts(events).map { it.sourceKey }
-        )
-        assertEquals(
-            true,
-            hasProviderDividendOnRecordDate(
-                "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 31.44
-            )
-        )
-    }
-
-    @Test
-    fun distinctExplicitRecordDatesRemainSeparateWithSameMonthAndAmount() {
-        val events = listOf(
-            event("TATN", "FORECAST", "2027-01-10", null, "jan-forecast"),
-            event("TATN", "RECOMMENDED", "2027-01-19", "2027-01-25", "jan-recommended")
-        )
-
-        assertEquals(2, removeSupersededDividendForecasts(events).size)
-    }
-
-    @Test
-    fun oneConfirmedEventCanReplaceOnlyOneMatchingForecast() {
-        val events = listOf(
-            event("TATN", "FORECAST", "2027-01-10", null, "forecast-a"),
-            event("TATN", "FORECAST", "2027-01-12", null, "forecast-b"),
-            event("TATN", "RECOMMENDED", null, "2027-01-19", "confirmed")
-        )
-
-        assertEquals(
-            setOf("forecast-b", "confirmed"),
-            removeSupersededDividendForecasts(events).map { it.sourceKey }.toSet()
-        )
-    }
-
-    @Test
-    fun differentTickersAndIndependentConfirmedEventsArePreserved() {
-        val events = listOf(
-            event("TATN", "FORECAST", "2027-01-10", null, "tatn-forecast"),
-            event("SBER", "RECOMMENDED", "2027-01-10", null, "sber-confirmed"),
-            event("TATN", "RECOMMENDED", "2027-05-10", null, "tatn-may-confirmed")
+            event("TATN", "FORECAST", "2027-01-10", null, "tatn-jan"),
+            event("SBER", "RECOMMENDED", "2027-01-10", null, "sber-jan"),
+            event("TATN", "FORECAST", "2027-05-10", null, "tatn-may")
         )
         assertEquals(3, removeSupersededDividendForecasts(events).size)
     }
 
-    @Test
-    fun historyForecastIsSuppressedOnlyByExactConfirmedRecordDate() {
-        val events = listOf(
-            event("TATN", "RECOMMENDED", "2027-01-10", "2027-02-19", "jan-confirmed")
-        )
-        assertEquals(
-            true,
-            hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events)
-        )
-        assertEquals(
-            false,
-            hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-02-10"), events)
-        )
-        assertEquals(
-            true,
-            hasProviderDividendOnRecordDate(
-                "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 31.44
-            )
-        )
-        assertEquals(
-            true,
-            hasProviderDividendOnRecordDate(
-                "TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 20.0
-            )
-        )
-    }
-
-    @Test
-    fun quarterlyIssuerKeepsThreeIndependentForecastPeriods() {
-        val events = listOf(
-            event("ISSUER", "FORECAST", "2027-01-10", null, "jan"),
-            event("ISSUER", "FORECAST", "2027-05-10", null, "may"),
-            event("ISSUER", "FORECAST", "2027-09-10", null, "sep"),
-            event("ISSUER", "RECOMMENDED", "2027-01-10", "2027-01-25", "jan-confirmed")
-        )
-        val result = removeSupersededDividendForecasts(events)
-        assertEquals(
-            setOf("jan-confirmed", "may", "sep"),
-            result.map { it.sourceKey }.toSet()
-        )
+    @Test fun historyForecastMatcherUsesMonthAndAmountWhenDatesDiffer() {
+        val events = listOf(event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed"))
+        assertEquals(true, hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 31.44))
+        assertEquals(false, hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 20.0))
     }
 }
