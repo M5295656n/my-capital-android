@@ -122,9 +122,10 @@ class CorporateEventsWorker(
                 val confirmedFutureDates = providerDividendEvents.asSequence()
                     .filter { it.ticker.equals(asset.ticker, ignoreCase = true) }
                     .filter { it.status == "ANNOUNCED" || it.status == "RECOMMENDED" }
-                    .mapNotNull { it.recordDate ?: it.paymentDate }
+                    .flatMap { sequenceOf(it.recordDate, it.paymentDate).filterNotNull() }
                     .map { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
                     .filter { !it.isBefore(today) }
+                    .distinct()
                     .toList()
                 val forecasts = calculateHistoricalDividendForecasts(
                     ticker = asset.ticker,
@@ -133,18 +134,7 @@ class CorporateEventsWorker(
                     horizonMonths = 24,
                     futureAnchorDates = confirmedFutureDates
                 ).filterNot { forecast ->
-                    val forecastMonth = java.time.YearMonth.from(forecast.recordDate)
-                    providerDividendEvents.any { event ->
-                        if (!event.ticker.equals(asset.ticker, ignoreCase = true)) {
-                            false
-                        } else {
-                            val timestamp = event.recordDate ?: event.paymentDate
-                            timestamp != null && java.time.YearMonth.from(
-                                java.time.Instant.ofEpochMilli(timestamp)
-                                    .atZone(java.time.ZoneOffset.UTC).toLocalDate()
-                            ) == forecastMonth
-                        }
-                    }
+                    hasProviderDividendInMonth(asset.ticker, forecast.recordDate, providerDividendEvents)
                 }
 
                 database.withTransaction {
