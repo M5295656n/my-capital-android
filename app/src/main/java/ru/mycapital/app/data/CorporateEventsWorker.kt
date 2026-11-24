@@ -122,7 +122,7 @@ class CorporateEventsWorker(
                 val confirmedFutureDates = providerDividendEvents.asSequence()
                     .filter { it.ticker.equals(asset.ticker, ignoreCase = true) }
                     .filter { it.status == "ANNOUNCED" || it.status == "RECOMMENDED" }
-                    .flatMap { sequenceOf(it.recordDate, it.paymentDate).filterNotNull() }
+                    .mapNotNull { it.recordDate }
                     .map { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
                     .filter { !it.isBefore(today) }
                     .distinct()
@@ -134,7 +134,7 @@ class CorporateEventsWorker(
                     horizonMonths = 24,
                     futureAnchorDates = confirmedFutureDates
                 ).filterNot { forecast ->
-                    hasProviderDividendInMonth(asset.ticker, forecast.recordDate, providerDividendEvents)
+                    hasProviderDividendOnRecordDate(asset.ticker, forecast.recordDate, providerDividendEvents)
                 }
 
                 database.withTransaction {
