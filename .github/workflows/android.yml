@@ -16,6 +16,7 @@ on:
 jobs:
   instrumented-filter:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     outputs:
       required: ${{ steps.filter.outputs.required }}
     steps:
