@@ -432,10 +432,8 @@ jobs:
                       dividend_history[ticker] = sorted(merged.values())
                       print(f"{ticker}: alias-resolved dividend history verified, records={len(merged)}")
                   except Exception as alias_error:
-                      # Dividend-history coverage is an issuer-data diagnostic, not
-                      # a prerequisite for compiling, testing, or signing the app.
-                      # Keep the failure visible while allowing core CI to continue.
-                      print(f"WARNING: {ticker}: dividend history not verified: {alias_error}")
+                      print(f"ERROR: {ticker}: dividend history not verified: {alias_error}")
+                      raise RuntimeError(f"{ticker}: dividend history verification failed") from alias_error
 
           failures = []
           for ticker, (market, fallback_boards) in INSTRUMENTS.items():
@@ -496,7 +494,7 @@ jobs:
           missing = sorted(set(("TATN", "OZPH", "T", "X5")) - set(verified))
           print(f"Dividend history verified: {verified or 'none'}")
           if missing:
-              print(f"WARNING: dividend history remains unverified for: {missing}; app build/tests will continue, and forecasts must not be marked fixed.")
+              raise SystemExit(f"Dividend history verification failed for required issuers: {missing}")
           PY
       - uses: actions/setup-java@v4
         with:
