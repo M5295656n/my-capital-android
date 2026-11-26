@@ -121,13 +121,17 @@ internal fun calculateHistoricalDividendForecasts(
     // Quarterly issuers may not repeat the same record month in two separate
     // years. When recent observations show a stable 2–5 month cadence, project
     // it from the latest confirmed upcoming event or latest historical record.
+    // Use a wider sample: some issuers skip or delay one distribution, so an
+    // 18-month window can contain too few observations or an unusually long gap.
+    // Ignore very short corrections and long annual/special-dividend gaps when
+    // estimating the recurring 2–5 month rhythm.
     val cadenceRows = usable
-        .filter { !it.recordDate.isBefore(today.minusMonths(18)) }
+        .filter { !it.recordDate.isBefore(today.minusMonths(30)) }
         .sortedBy { it.recordDate }
     if (cadenceRows.size >= 3) {
         val intervals = cadenceRows.zipWithNext { first, second ->
             java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
-        }.filter { it > 0.0 }
+        }.filter { it in 45.0..180.0 }
         if (intervals.size >= 2) {
             val cadenceDays = median(intervals)
             if (cadenceDays in 60.0..150.0) {
