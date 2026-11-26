@@ -252,9 +252,9 @@ internal class MoexDividendHistoryClient {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
 
-        // Resolve the canonical ISIN from the direct security description first.
-        // The broad securities search endpoint is supplementary: it can omit the
-        // exact ticker row or fail transiently, and must never block direct history.
+        // Prefer the ISIN attached to the exact SECID row returned by securities search.
+        // Description labels can be localized or ambiguous (for example, TATN/TATNP);
+        // therefore description is only a fallback, never the primary identity source.
         val description = runCatching {
             requestJson("https://iss.moex.com/iss/securities/$normalized.json?iss.meta=off")
         }.getOrNull()
@@ -276,7 +276,7 @@ internal class MoexDividendHistoryClient {
                 it.optString("secid").equals(normalized, ignoreCase = true)
             }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
         }.getOrNull()
-        val isin = descriptionIsin ?: tickerSearchIsin
+        val isin = tickerSearchIsin ?: descriptionIsin
 
         val relatedSecids = linkedSetOf(normalized)
         if (isin != null) {
@@ -300,6 +300,17 @@ internal class MoexDividendHistoryClient {
                 val payload = requestJson(
                     "https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off"
                 )
+                val dividendBlock = payload.optJSONObject("dividends")
+                    ?: throw IOException("MOEX не вернул блок dividends для SECID $secid")
+                val dividendColumns = dividendBlock.optJSONArray("columns")
+                    ?: throw IOException("MOEX не вернул columns для dividends SECID $secid")
+                val columnNames = (0 until dividendColumns.length())
+                    .map { dividendColumns.optString(it).lowercase(Locale.ROOT) }
+                if ("value" !in columnNames ||
+                    ("registryclosedate" !in columnNames && "recorddate" !in columnNames)
+                ) {
+                    throw IOException("MOEX вернул неполную структуру dividends для SECID $secid: $columnNames")
+                }
                 successfulHistoryEndpoints++
                 table(payload, "dividends").forEach rowLoop@{ row ->
                     val dateText = row.optString("registryclosedate")
