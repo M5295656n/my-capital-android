@@ -330,6 +330,78 @@ jobs:
                   offset += len(rows)
               return by_date
           
+          def verify_dividend_history(ticker):
+              url = f"{BASE}/securities/{ticker}/dividends.json?iss.meta=off"
+              payload = get_json(url)
+              block = payload.get("dividends", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.lower(): i for i, name in enumerate(columns)}
+              date_index = indexes.get("registryclosedate", indexes.get("recorddate"))
+              amount_index = indexes.get("value")
+              currency_index = indexes.get("currencyid")
+              if date_index is None or amount_index is None:
+                  raise RuntimeError(f"{ticker}: MOEX dividend history has unexpected columns: {columns}")
+              valid = []
+              for row in rows:
+                  try:
+                      date = str(row[date_index])[:10]
+                      amount = float(row[amount_index])
+                      currency = str(row[currency_index]).upper() if currency_index is not None and row[currency_index] else "RUB"
+                      if len(date) == 10 and amount > 0 and currency == "RUB":
+                          valid.append((date, amount))
+                  except (TypeError, ValueError, IndexError):
+                      continue
+              if not valid:
+                  raise RuntimeError(f"{ticker}: MOEX dividend endpoint returned no valid positive RUB records; rows={len(rows)}, columns={columns}")
+              valid.sort(key=lambda item: item[0])
+              print(f"{ticker}: MOEX dividend history verified, valid_rub_rows={len(valid)}, range={valid[0][0]}..{valid[-1][0]}")
+              return valid
+
+          # This is the regression check for the four issuers whose 2027
+          # forecasts were reported missing or incomplete. A successful HTTP
+          # response without actual dividend rows must fail the workflow.
+          dividend_history = {}
+          for ticker in ("TATN", "OZPH", "T", "X5"):
+              try:
+                  dividend_history[ticker] = verify_dividend_history(ticker)
+              except Exception as exc:
+                  # The ticker may have historical aliases. Resolve its ISIN
+                  # and inspect every security ID attached to that same issue.
+                  try:
+                      description = get_json(f"{BASE}/securities/{ticker}.json?iss.meta=off")
+                      fields = description.get("description", {})
+                      dcols, drows = fields.get("columns", []), fields.get("data", [])
+                      isin = None
+                      for row in drows:
+                          if len(row) >= 2 and str(row[0]).lower() == "isin" and row[1]:
+                              isin = str(row[1])
+                              break
+                      if not isin:
+                          raise RuntimeError(f"ISIN not found; direct endpoint error: {exc}")
+                      related = get_json(f"{BASE}/securities.json?q={isin}&iss.meta=off")
+                      sec_block = related.get("securities", {})
+                      scols, srows = sec_block.get("columns", []), sec_block.get("data", [])
+                      sidx = {name.lower(): i for i, name in enumerate(scols)}
+                      isin_i, secid_i = sidx.get("isin"), sidx.get("secid")
+                      secids = [ticker]
+                      if isin_i is not None and secid_i is not None:
+                          secids += [str(row[secid_i]) for row in srows
+                                     if len(row) > max(isin_i, secid_i) and str(row[isin_i]).upper() == isin.upper()]
+                      merged = {}
+                      for secid in dict.fromkeys(secids):
+                          try:
+                              for date, amount in verify_dividend_history(secid):
+                                  merged[(date, amount)] = (date, amount)
+                          except Exception as alias_error:
+                              print(f"{ticker}: alias {secid} unavailable: {alias_error}")
+                      if not merged:
+                          raise RuntimeError(f"no valid dividend records across aliases; direct endpoint error: {exc}")
+                      dividend_history[ticker] = sorted(merged.values())
+                      print(f"{ticker}: alias-resolved dividend history verified, records={len(merged)}")
+                  except Exception as alias_error:
+                      raise RuntimeError(f"{ticker}: dividend history verification failed: {alias_error}") from alias_error
+
           failures = []
           for ticker, (market, fallback_boards) in INSTRUMENTS.items():
               meta_url = f"{BASE}/securities/{ticker}.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary,market"
@@ -384,7 +456,7 @@ jobs:
                       print(f"{ticker}: coupon_schedule_rows={len(coupons)}")
           if failures:
               raise SystemExit("\n".join(failures))
-          print("MOEX live-history smoke check passed for all four instruments.")
+          print("MOEX live-history smoke check passed; dividend records verified for TATN, OZPH, T and X5.")
           PY
       - uses: actions/setup-java@v4
         with:
