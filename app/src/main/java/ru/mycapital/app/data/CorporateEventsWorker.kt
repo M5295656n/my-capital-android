@@ -112,12 +112,17 @@ class CorporateEventsWorker(
         // Only equity assets are eligible; funds, currencies and metals are not inferred.
         val historyEquities = equities.filter {
             it.assetType.contains("акци", ignoreCase = true) ||
-                normalizeDividendTicker(it.ticker) in setOf("T", "X5")
+                normalizeDividendTicker(it.ticker) in setOf("T", "X5", "TATN", "OZPH")
         }
         val historyClient = MoexDividendHistoryClient()
         for (asset in historyEquities) {
             try {
                 val historyResult = historyClient.getHistory(asset.ticker)
+                if (!historyResult.annualCoverageVerified) {
+                    throw java.io.IOException(
+                        "MOEX вернул неполную историю для ${asset.ticker}; прежний прогноз сохранён"
+                    )
+                }
                 val history = historyResult.dividends
                 if (history.isEmpty()) {
                     throw java.io.IOException(
