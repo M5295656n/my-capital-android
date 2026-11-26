@@ -260,8 +260,11 @@ internal class MoexDividendHistoryClient {
         }.getOrNull()
         val descriptionIsin = table(description ?: JSONObject(), "description")
             .firstNotNullOfOrNull { row ->
-                if (row.optString("name").equals("ISIN", ignoreCase = true)) {
-                    row.optString("value").takeIf { it.isNotBlank() && it != "null" }
+                if (row.optString("name").contains("ISIN", ignoreCase = true)) {
+                    row.optString("value")
+                        .replace(" ", "")
+                        .uppercase(Locale.ROOT)
+                        .takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{10}")) }
                 } else null
             }
 
