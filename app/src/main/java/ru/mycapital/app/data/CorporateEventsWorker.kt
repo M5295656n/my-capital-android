@@ -110,9 +110,12 @@ class CorporateEventsWorker(
 
         // Build a separate, clearly labelled estimate from MOEX dividend history.
         // Only equity assets are eligible; funds, currencies and metals are not inferred.
+        // Every portfolio share is eligible for history-based forecasting.
+        // Do not maintain a hard-coded ticker allowlist: new and existing shares
+        // must follow the same path. Non-equity instruments were excluded above
+        // by isBondInstrument and are additionally gated here by the asset type.
         val historyEquities = equities.filter {
-            it.assetType.contains("акци", ignoreCase = true) ||
-                normalizeDividendTicker(it.ticker) in setOf("T", "X5", "TATN", "OZPH")
+            it.assetType.contains("акци", ignoreCase = true)
         }
         val historyClient = MoexDividendHistoryClient()
         for (asset in historyEquities) {
