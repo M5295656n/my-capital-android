@@ -124,6 +124,7 @@ jobs:
           import json
           import time
           from urllib.request import Request, urlopen
+          from urllib.parse import quote
           
           BASE = "https://iss.moex.com/iss"
           INSTRUMENTS = {
@@ -372,14 +373,31 @@ jobs:
                       description = get_json(f"{BASE}/securities/{ticker}.json?iss.meta=off")
                       fields = description.get("description", {})
                       dcols, drows = fields.get("columns", []), fields.get("data", [])
+                      # ISS description rows are not guaranteed to put the
+                      # field identifier in column zero: some responses use
+                      # the Russian display label "ISIN код".
+                      name_i = next((i for i, name in enumerate(dcols)
+                                     if str(name).strip().lower() in ("name", "shortname", "title")), 0)
+                      value_i = next((i for i, name in enumerate(dcols)
+                                      if str(name).strip().lower() in ("value", "valuepr", "description")), len(dcols) - 1)
                       isin = None
                       for row in drows:
-                          if len(row) >= 2 and str(row[0]).lower() == "isin" and row[1]:
-                              isin = str(row[1])
-                              break
+                          if not row:
+                              continue
+                          labels = " ".join(str(cell) for cell in row if cell is not None).lower()
+                          if "isin" in labels:
+                              candidates = [str(row[i]).strip() for i in (value_i, len(row)-1, name_i)
+                                            if 0 <= i < len(row) and row[i] is not None]
+                              isin = next((value for value in candidates
+                                           if len(value.replace(" ", "")) in (12,  isin_length := 12)
+                                           and value.replace(" ", "").isalnum()
+                                           and "isin" not in value.lower()), None)
+                              if isin:
+                                  isin = isin.replace(" ", "").upper()
+                                  break
                       if not isin:
-                          raise RuntimeError(f"ISIN not found; direct endpoint error: {exc}")
-                      related = get_json(f"{BASE}/securities.json?q={isin}&iss.meta=off")
+                          raise RuntimeError(f"ISIN not found in description columns={dcols}; direct endpoint error: {exc}")
+                      related = get_json(f"{BASE}/securities.json?q={quote(isin, safe='')}&iss.meta=off")
                       sec_block = related.get("securities", {})
                       scols, srows = sec_block.get("columns", []), sec_block.get("data", [])
                       sidx = {name.lower(): i for i, name in enumerate(scols)}
