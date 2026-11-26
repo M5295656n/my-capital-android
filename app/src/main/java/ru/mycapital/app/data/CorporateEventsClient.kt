@@ -39,6 +39,29 @@ internal fun isBondInstrument(ticker: String, name: String = "", assetType: Stri
         Regex("^SU\\d{5}RMFS\\d$").matches(normalizedTicker)
 }
 
+/** Parse the equity class from the MOEX ISS description dictionary. */
+internal fun parseMoexEquityClassification(body: String): Boolean? {
+    val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
+    val block = root.optJSONObject("description") ?: return null
+    val columns = block.optJSONArray("columns") ?: return null
+    val rows = block.optJSONArray("data") ?: return null
+    val indexes = (0 until columns.length()).associate { columns.optString(it).lowercase(Locale.ROOT) to it }
+    val nameIndex = indexes["name"] ?: return null
+    val valueIndex = indexes["value"] ?: return null
+    var type = ""
+    var group = ""
+    for (i in 0 until rows.length()) {
+        val row = rows.optJSONArray(i) ?: continue
+        if (nameIndex >= row.length() || valueIndex >= row.length()) continue
+        when (row.optString(nameIndex).uppercase(Locale.ROOT)) {
+            "TYPENAME" -> type = row.optString(valueIndex).lowercase(Locale.ROOT)
+            "GROUPNAME" -> group = row.optString(valueIndex).lowercase(Locale.ROOT)
+        }
+    }
+    if (type.isBlank() && group.isBlank()) return null
+    if (listOf("облигац", "bond", "фонд", "пай", "валют", "драгметалл").any { type.contains(it) || group.contains(it) }) return false
+    return type.startsWith("акция") || type.startsWith("share") || group.contains("акци") || group.contains("shares")
+}
 class UnsupportedCorporateEventsInstrumentException(message: String) : IOException(message)
 
 data class ImportedPayoutEvent(
@@ -76,6 +99,22 @@ internal fun parseBondMaturityEvent(
 }
 
 class CorporateEventsClient {
+    private val classificationClient = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS).callTimeout(10, TimeUnit.SECONDS).build()
+
+    fun isEquityForDividendHistory(ticker: String, assetType: String): Boolean {
+        if (assetType.contains("акци", ignoreCase = true)) return true
+        if (listOf("облигац", "фонд", "пай", "валют", "металл").any { assetType.contains(it, ignoreCase = true) }) return false
+        val encoded = java.net.URLEncoder.encode(ticker.trim().uppercase(Locale.ROOT), Charsets.UTF_8.name())
+        val url = "https://iss.moex.com/iss/securities/$encoded.json?iss.meta=off&iss.only=description&description.columns=name,value"
+        val request = Request.Builder().url(url).header("Accept", "application/json").header("User-Agent", "MyCapital-Android/0.4").build()
+        return runCatching {
+            classificationClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) null else parseMoexEquityClassification(response.body?.string().orEmpty())
+            }
+        }.getOrNull() == true
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
