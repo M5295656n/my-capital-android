@@ -389,7 +389,7 @@ jobs:
                               candidates = [str(row[i]).strip() for i in (value_i, len(row)-1, name_i)
                                             if 0 <= i < len(row) and row[i] is not None]
                               isin = next((value for value in candidates
-                                           if len(value.replace(" ", "")) in (12,  isin_length := 12)
+                                           if len(value.replace(" ", "")) == 12
                                            and value.replace(" ", "").isalnum()
                                            and "isin" not in value.lower()), None)
                               if isin:
