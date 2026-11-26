@@ -114,8 +114,9 @@ class CorporateEventsWorker(
         // Do not maintain a hard-coded ticker allowlist: new and existing shares
         // must follow the same path. Non-equity instruments were excluded above
         // by isBondInstrument and are additionally gated here by the asset type.
-        val historyEquities = equities.filter {
-            it.assetType.contains("акци", ignoreCase = true)
+        val classificationClient = CorporateEventsClient()
+        val historyEquities = equities.filter { asset ->
+            classificationClient.isEquityForDividendHistory(asset.ticker, asset.assetType)
         }
         val historyClient = MoexDividendHistoryClient()
         for (asset in historyEquities) {
