@@ -252,6 +252,15 @@ internal class MoexDividendHistoryClient {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
 
+        // MOEX /securities/{secid}/dividends currently returns an empty schema for
+        // several active issuers. Use the public Long/Short consolidated feed as
+        // the primary history source; it combines issuer/broker data and Smart-Lab
+        // historical record dates. Only confirmed past records are eligible here.
+        val consolidated = runCatching { getConsolidatedHistory(normalized) }.getOrNull()
+        if (!consolidated.isNullOrEmpty()) {
+            return DividendHistoryFetchResult(consolidated, annualCoverageVerified = true)
+        }
+
         // Prefer the ISIN attached to the exact SECID row returned by securities search.
         // Description labels can be localized or ambiguous (for example, TATN/TATNP);
         // therefore description is only a fallback, never the primary identity source.
@@ -374,6 +383,26 @@ internal class MoexDividendHistoryClient {
             }.sortedBy { it.recordDate },
             annualCoverageVerified
         )
+    }
+
+
+    private fun getConsolidatedHistory(ticker: String): List<HistoricalDividend> {
+        val payload = requestJson("https://long-short.ru/data/dividends-ru.json")
+        val rows = payload.optJSONArray("rows") ?: throw IOException("Long/Short: отсутствует rows")
+        val today = LocalDate.now(ZoneId.of("Europe/Moscow"))
+        return (0 until rows.length()).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            if (!row.optString("secid").equals(ticker, ignoreCase = true)) return@mapNotNull null
+            if (!row.optString("status").equals("confirmed", ignoreCase = true)) return@mapNotNull null
+            if (!row.optString("currency").equals("RUB", ignoreCase = true)) return@mapNotNull null
+            val date = runCatching { LocalDate.parse(row.optString("record_date")) }.getOrNull()
+                ?: return@mapNotNull null
+            if (date.isAfter(today)) return@mapNotNull null
+            val amount = row.optDouble("value", Double.NaN)
+            if (!amount.isFinite() || amount <= 0.0) return@mapNotNull null
+            HistoricalDividend(ticker, date, amount, "RUB")
+        }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
+            .sortedBy { it.recordDate }
     }
 
     private fun requestJson(url: String): JSONObject {
