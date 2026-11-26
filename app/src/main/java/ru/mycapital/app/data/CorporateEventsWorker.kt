@@ -117,10 +117,17 @@ class CorporateEventsWorker(
         val historyClient = MoexDividendHistoryClient()
         for (asset in historyEquities) {
             try {
-                val history = historyClient.getHistory(asset.ticker).dividends
+                val historyResult = historyClient.getHistory(asset.ticker)
+                val history = historyResult.dividends
+                if (history.isEmpty()) {
+                    throw java.io.IOException(
+                        "MOEX ответил без записей о дивидендах для ${asset.ticker}; прежний прогноз сохранён"
+                    )
+                }
                 val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                val normalizedTicker = normalizeDividendTicker(asset.ticker)
                 val confirmedFutureDates = providerDividendEvents.asSequence()
-                    .filter { it.ticker.equals(asset.ticker, ignoreCase = true) }
+                    .filter { normalizeDividendTicker(it.ticker) == normalizedTicker }
                     .filter { it.status == "ANNOUNCED" || it.status == "RECOMMENDED" }
                     .mapNotNull { it.recordDate }
                     .map { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
@@ -135,6 +142,11 @@ class CorporateEventsWorker(
                     futureAnchorDates = confirmedFutureDates
                 ).filterNot { forecast ->
                     hasProviderDividendOnRecordDate(asset.ticker, forecast.recordDate, providerDividendEvents, forecast.amountPerShare)
+                }
+                if (forecasts.isEmpty()) {
+                    throw java.io.IOException(
+                        "История MOEX содержит ${history.size} записей, но алгоритм не построил прогноз для ${asset.ticker}; прежний прогноз сохранён"
+                    )
                 }
 
                 database.withTransaction {
