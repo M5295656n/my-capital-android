@@ -222,6 +222,49 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun quarterlyCadenceIgnoresOneLongSkippedPeriod() {
+        val history = listOf(
+            dividend("2025-05-10", 10.0),
+            dividend("2025-08-10", 11.0),
+            dividend("2025-11-10", 12.0),
+            dividend("2026-02-10", 13.0),
+            // One delayed/missed distribution must not turn the whole series annual.
+            dividend("2026-10-10", 14.0)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "TATN",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(4, forecasts.size)
+        assertEquals(listOf(1, 4, 7, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun frequentIssuerCadenceProducesThreeOrFourAnnualEstimates() {
+        val history = listOf(
+            dividend("2025-06-01", 0.25),
+            dividend("2025-09-01", 0.26),
+            dividend("2025-12-01", 0.27),
+            dividend("2026-03-01", 0.28),
+            dividend("2026-06-01", 0.29),
+            dividend("2026-09-01", 0.30)
+        ).map { it.copy(secid = "OZPH") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "OZPH",
+            dividends = history,
+            today = LocalDate.of(2026, 10, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(4, forecasts.size)
+    }
+
+    @Test
     fun doesNotForecastMonthWithOnlyOneHistoricalOccurrence() {
         val forecasts = calculateHistoricalDividendForecasts(
             ticker = "T",
