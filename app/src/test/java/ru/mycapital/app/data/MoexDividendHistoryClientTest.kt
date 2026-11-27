@@ -58,6 +58,29 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun forwardYieldPrefersCashPaymentDateOverRegistryDate() {
+        val events = listOf(
+            DividendCalendarEvent(
+                ticker = "SBER",
+                amountPerUnit = 25.0,
+                status = "ANNOUNCED",
+                recordDate = LocalDate.of(2027, 11, 1).atStartOfDay(ZoneId.of("Europe/Moscow")).toInstant().toEpochMilli(),
+                paymentDate = LocalDate.of(2026, 12, 1).atStartOfDay(ZoneId.of("Europe/Moscow")).toInstant().toEpochMilli(),
+                sourceKey = "SBER:cash-date"
+            )
+        )
+
+        val yield = calculateForwardDividendYieldPercent(
+            events = events,
+            ticker = "SBER",
+            currentPrice = 250.0,
+            today = LocalDate.of(2026, 11, 14)
+        )
+
+        assertEquals(10.0, yield!!, 0.000001)
+    }
+
+    @Test
     fun forecastsRecurringDividendMonthFromRecentHistoryUsingMedianAmountAndDate() {
         val history = listOf(
             dividend("2023-05-18", 4.0),
