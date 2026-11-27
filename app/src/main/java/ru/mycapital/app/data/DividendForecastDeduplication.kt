@@ -92,9 +92,10 @@ internal fun removeSupersededDividendForecasts(events: List<DividendCalendarEven
 }
 
 /**
- * Suppress only one history estimate for each confirmed event. Using a simple
- * any-match here would remove every same-month estimate when the issuer has
- * announced just one of several independent payments.
+ * Suppress one history estimate for each provider event in the same expected
+ * month. Provider forecasts and history forecasts are two estimates of the same
+ * expected cash flow, not two separate payouts. One-to-one matching preserves
+ * multiple independent same-month events when the provider actually supplies them.
  */
 internal fun removeHistoryForecastsSupersededByProvider(
     ticker: String,
@@ -104,7 +105,8 @@ internal fun removeHistoryForecastsSupersededByProvider(
     val confirmed = events.withIndex().filter { indexed ->
         indexed.value.ticker.equals(ticker, ignoreCase = true) &&
             (indexed.value.status.equals("ANNOUNCED", true) ||
-                indexed.value.status.equals("RECOMMENDED", true))
+                indexed.value.status.equals("RECOMMENDED", true) ||
+                indexed.value.status.equals("FORECAST", true))
     }
     val consumed = mutableSetOf<Int>()
     return forecasts.filterNot { forecast ->
