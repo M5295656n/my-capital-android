@@ -119,7 +119,13 @@ class CorporateEventsWorker(
             classificationClient.isEquityForDividendHistory(asset.ticker, asset.assetType)
         }
         val historyClient = MoexDividendHistoryClient()
-        for (asset in historyEquities) {
+        for ((index, asset) in historyEquities.withIndex()) {
+            setProgress(Data.Builder()
+                .putString("summary", "Прогнозы дивидендов: проверяю ${asset.ticker} (${index + 1} из ${historyEquities.size})…")
+                .putInt("history_tickers_total", historyEquities.size)
+                .putInt("history_tickers_processed", index)
+                .putInt("history_forecasts", historyForecastsSaved)
+                .build())
             try {
                 val historyResult = historyClient.getHistory(asset.ticker)
                 if (!historyResult.annualCoverageVerified) {
@@ -209,8 +215,11 @@ class CorporateEventsWorker(
                     }
                 }
             } catch (error: Exception) {
-                // History-based forecasts are supplemental. Preserve the last good
-                // forecast cache if MOEX is temporarily unavailable for one ticker.
+                // A failed ticker must trigger WorkManager retry. Previously this
+                // error was only logged, so the worker could report SUCCESS while
+                // the portfolio's history forecasts had never been refreshed.
+                // Keep the last good forecast cache for this ticker.
+                transientFailures++
                 if (errors.size < 8) {
                     errors += "Прогноз ${asset.ticker}: история MOEX не обновлена (${error.message ?: error.javaClass.simpleName})"
                 }
