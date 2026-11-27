@@ -2,6 +2,7 @@
 """Live schema and coverage check for the public historical dividend datasets."""
 import json
 import sys
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 from urllib.error import HTTPError, URLError
@@ -10,6 +11,7 @@ from urllib.request import Request, urlopen
 BASE = "https://raw.githubusercontent.com/amchercashin/heroincome-data/main/data/stocks"
 MAX_AGE_DAYS = 30
 REQUIRED = {"TATN", "OZPH", "T", "X5"}
+LIVE_FIXTURES = {}
 
 
 def fetch_json(url):
@@ -64,7 +66,7 @@ def inspect_dataset(source, ticker):
     if not isinstance(payments, list):
         raise RuntimeError(f"{source}/{ticker}: payments is not an array")
     valid = [row for row in payments if validate_payment(source, row)]
-    return ticker, len(payments), len(valid)
+    return ticker, len(payments), len(valid), payload
 
 
 def check_source(source):
@@ -77,13 +79,15 @@ def check_source(source):
     if int(index.get("tickersCount", len(tickers))) != len(tickers):
         raise RuntimeError(f"{source}: tickersCount does not match unique index rows")
     results, errors = {}, []
+    LIVE_FIXTURES[source] = {"index": index, "histories": {}}
     with ThreadPoolExecutor(max_workers=12) as pool:
         futures = {pool.submit(inspect_dataset, source, ticker): ticker for ticker in tickers}
         for future in as_completed(futures):
             ticker = futures[future]
             try:
-                _, total, valid = future.result()
+                _, total, valid, payload = future.result()
                 results[ticker] = (total, valid)
+                LIVE_FIXTURES[source]["histories"][ticker] = payload
             except Exception as exc:
                 errors.append(f"{ticker}: {exc}")
     coverage = sum(1 for _, valid in results.values() if valid > 0)
@@ -110,6 +114,10 @@ def main():
         all_tickers.update(tickers)
     print(f"Combined indexed universe: {len(all_tickers)} unique tickers")
     print("Required issuers TATN/OZPH/T/X: both public indexes include each; live JSON validation passed.")
+    fixture_path = Path("app/build/dividend-audit/fixtures.json")
+    fixture_path.parent.mkdir(parents=True, exist_ok=True)
+    fixture_path.write_text(json.dumps(LIVE_FIXTURES, ensure_ascii=False), encoding="utf-8")
+    print(f"Saved live issuer histories for production forecast audit: {fixture_path}")
 
 
 if __name__ == "__main__":
