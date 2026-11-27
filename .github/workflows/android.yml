@@ -6,10 +6,10 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/dividend-forecast-dedup-2026-11-24, fix/payouts-all-equities-2026-11-27, fix/dividend-frequency-overforecast-2026-11-27 ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/dividend-forecast-dedup-2026-11-24, fix/payouts-all-equities-2026-11-27, fix/dividend-frequency-overforecast-2026-11-27, fix/dividend-forecast-frequency-all-issuers-2026-11-27 ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/payouts-all-equities-2026-11-27 ]
+    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/payouts-all-equities-2026-11-27, fix/dividend-forecast-frequency-all-issuers-2026-11-27 ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 
@@ -40,7 +40,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$BRANCH_REF" = "refs/heads/fix/payouts-all-equities-2026-11-27" ] || [ "$BRANCH_REF" = "refs/heads/fix/dividend-frequency-overforecast-2026-11-27" ]; then
+          if [ "$BRANCH_REF" = "refs/heads/fix/payouts-all-equities-2026-11-27" ] || [ "$BRANCH_REF" = "refs/heads/fix/dividend-frequency-overforecast-2026-11-27" ] || [ "$BRANCH_REF" = "refs/heads/fix/dividend-forecast-frequency-all-issuers-2026-11-27" ]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Dividend payouts validation branch: full Room instrumentation suite enabled."
             exit 0
@@ -533,11 +533,11 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
-          RELEASE_APK="app/build/outputs/apk/release/MyCapital-0.4.32.apk"
+          RELEASE_APK="app/build/outputs/apk/release/MyCapital-0.4.33.apk"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           BADGING="$("$AAPT" dump badging "$SOURCE_APK")"
           printf '%s\\n' "$BADGING"
-          printf '%s\\n' "$BADGING" | grep -F "versionCode='142' versionName='0.4.32'"
+          printf '%s\\n' "$BADGING" | grep -F "versionCode='143' versionName='0.4.33'"
           cp "$SOURCE_APK" "$RELEASE_APK"
           test -s "$RELEASE_APK"
       - name: Verify release APK signing certificate
@@ -563,6 +563,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: my-capital-0.4.31-release-apk
+          name: my-capital-0.4.33-release-apk
           path: app/build/outputs/apk/release/MyCapital-0.4.32.apk
           if-no-files-found: error
