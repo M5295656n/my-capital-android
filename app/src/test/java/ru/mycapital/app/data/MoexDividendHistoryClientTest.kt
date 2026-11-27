@@ -550,7 +550,7 @@ class MoexDividendHistoryClientTest {
         ).map { it.copy(secid = "TATN") }
 
         val forecasts = calculateHistoricalDividendForecasts(
-            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 14
+            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 12
         )
 
         assertEquals(3, forecasts.size)
