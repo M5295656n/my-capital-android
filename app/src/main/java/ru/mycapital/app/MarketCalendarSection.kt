@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.mycapital.app.data.MarketCalendarItemEntity
 import ru.mycapital.app.data.PayoutEntity
+import ru.mycapital.app.data.payoutDisplayTimestamp
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
