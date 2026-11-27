@@ -163,7 +163,16 @@ internal fun calculateHistoricalDividendForecasts(
         }
     }
 
-    return forecasts.distinctBy { it.recordDate }.sortedBy { it.recordDate }
+    val reconciled = mutableListOf<HistoricalDividendForecast>()
+    forecasts.sortedBy { it.recordDate }.forEach { candidate ->
+        val duplicateIndex = reconciled.indexOfFirst { existing ->
+            kotlin.math.abs(
+                java.time.temporal.ChronoUnit.DAYS.between(existing.recordDate, candidate.recordDate)
+            ) <= 21L && kotlin.math.abs(existing.amountPerShare - candidate.amountPerShare) <= 0.01
+        }
+        if (duplicateIndex < 0) reconciled += candidate
+    }
+    return reconciled.sortedBy { it.recordDate }
 }
 
 /** Forward dividend yield based on payout records already stored in the portfolio database. */
