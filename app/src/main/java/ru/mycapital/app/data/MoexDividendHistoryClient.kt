@@ -90,7 +90,10 @@ internal fun calculateHistoricalDividendForecasts(
     val usable = rawHistory.groupBy { java.time.YearMonth.from(it.recordDate) }
         .values
         .filter { it.map(HistoricalDividend::recordDate).distinct().size == 1 }
-        .map { rows -> rows.maxBy { it.amountPerShare } }
+        .map { rows ->
+            val representative = rows.first()
+            representative.copy(amountPerShare = rows.map { it.amountPerShare }.average())
+        }
         .sortedBy { it.recordDate }
 
     if (usable.size < 3) return emptyList()
@@ -106,7 +109,7 @@ internal fun calculateHistoricalDividendForecasts(
     // Use the recent 42-month cadence window. A missed quarter may create a
     // long gap, so classify intervals individually and require repeated support.
     val cadenceRows = usable.filter { !it.recordDate.isBefore(today.minusMonths(42)) }
-    if (cadenceRows.size < 3) return emptyList()
+    if (cadenceRows.size < 2) return emptyList()
     val intervals = cadenceRows.zipWithNext { first, second ->
         java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
     }
