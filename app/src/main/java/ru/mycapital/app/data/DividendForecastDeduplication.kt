@@ -99,15 +99,19 @@ internal fun removeHistoryForecastsSupersededByProvider(
         val match = confirmed.firstOrNull { indexed ->
             if (indexed.index in consumed) return@firstOrNull false
             val event = indexed.value
-            val confirmedDate = eventDateForDividendDedup(event.recordDate)
-                ?: eventDateForDividendDedup(event.paymentDate)
-                ?: return@firstOrNull false
-            val sameDate = confirmedDate == forecast.recordDate
-            val sameMonthAndAmount =
-                YearMonth.from(confirmedDate) == YearMonth.from(forecast.recordDate) &&
-                    forecast.amountPerShare.isFinite() && event.amountPerUnit.isFinite() &&
-                    kotlin.math.abs(forecast.amountPerShare - event.amountPerUnit) <= 0.01
-            sameDate || sameMonthAndAmount
+            val confirmedDates = listOfNotNull(
+                eventDateForDividendDedup(event.recordDate),
+                eventDateForDividendDedup(event.paymentDate)
+            )
+            if (confirmedDates.isEmpty()) return@firstOrNull false
+            confirmedDates.any { confirmedDate ->
+                val sameDate = confirmedDate == forecast.recordDate
+                val sameMonthAndAmount =
+                    YearMonth.from(confirmedDate) == YearMonth.from(forecast.recordDate) &&
+                        forecast.amountPerShare.isFinite() && event.amountPerUnit.isFinite() &&
+                        kotlin.math.abs(forecast.amountPerShare - event.amountPerUnit) <= 0.01
+                sameDate || sameMonthAndAmount
+            }
         }
         if (match == null) false else {
             consumed += match.index
