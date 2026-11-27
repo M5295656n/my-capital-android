@@ -187,9 +187,10 @@ internal fun calculateForwardDividendYieldPercentFromPayouts(
 
 internal data class DividendHistoryFetchResult(
     val dividends: List<HistoricalDividend>,
-    // True when the direct security history endpoint loaded successfully.
-    // In that case, a year with no dividend records is a verified zero, not missing data.
-    val annualCoverageVerified: Boolean
+    // The current portfolio SECID must be available before forecasts are trusted.
+    val annualCoverageVerified: Boolean,
+    // Empty history is authoritative only when every related SECID was checked.
+    val allRelatedSecidsVerified: Boolean = annualCoverageVerified
 )
 
 internal fun calculateForwardDividendYieldPercent(
@@ -299,9 +300,10 @@ internal class MoexDividendHistoryClient {
             }
         }
 
-        var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
         var successfulHistoryEndpoints = 0
+        var currentSecidVerified = false
+        var allRelatedSecidsVerified = true
         var lastHistoryError: Exception? = null
         relatedSecids.forEach { secid ->
             try {
@@ -320,6 +322,7 @@ internal class MoexDividendHistoryClient {
                     throw IOException("MOEX вернул неполную структуру dividends для SECID $secid: $columnNames")
                 }
                 successfulHistoryEndpoints++
+                if (secid.equals(normalized, ignoreCase = true)) currentSecidVerified = true
                 table(payload, "dividends").forEach rowLoop@{ row ->
                     val dateText = row.optString("registryclosedate")
                         .takeIf { it.isNotBlank() && it != "null" }
@@ -333,14 +336,14 @@ internal class MoexDividendHistoryClient {
                     }
                 }
             } catch (error: Exception) {
-                annualCoverageVerified = false
+                allRelatedSecidsVerified = false
                 lastHistoryError = error
             }
         }
         // A retired SECID can legitimately stop serving history while the current
         // SECID remains available. Keep usable partial history; fail only when none
         // of the candidate security IDs could be queried.
-        if (successfulHistoryEndpoints == 0) {
+        if (successfulHistoryEndpoints == 0 || !currentSecidVerified) {
             throw IOException(
                 "Не удалось получить историю дивидендов MOEX для $normalized: " +
                     (lastHistoryError?.message ?: "нет доступных SECID")
@@ -380,7 +383,8 @@ internal class MoexDividendHistoryClient {
             splitAdjusted.distinctBy {
                 "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}"
             }.sortedBy { it.recordDate },
-            annualCoverageVerified
+            annualCoverageVerified = currentSecidVerified,
+            allRelatedSecidsVerified = allRelatedSecidsVerified
         )
     }
 
