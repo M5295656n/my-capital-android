@@ -543,7 +543,7 @@ jobs:
       - name: Verify release APK signing certificate
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/MyCapital-0.4.32.apk"
+          APK="app/build/outputs/apk/release/MyCapital-0.4.33.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
           printf '%s' "$VERIFY_OUTPUT"
@@ -564,5 +564,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: my-capital-0.4.33-release-apk
-          path: app/build/outputs/apk/release/MyCapital-0.4.32.apk
+          path: app/build/outputs/apk/release/MyCapital-0.4.33.apk
           if-no-files-found: error
