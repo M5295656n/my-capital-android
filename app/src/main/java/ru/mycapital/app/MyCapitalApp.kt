@@ -37,9 +37,9 @@ internal fun MyCapitalApp() {
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(Screen.Overview) }
     var selectedAssetDetail by remember { mutableStateOf<AssetEntity?>(null) }
-    var showImoexChart by remember { mutableStateOf(false) }
+    var selectedMarketChartTicker by remember { mutableStateOf<String?>(null) }
     BackHandler(enabled = selectedAssetDetail != null) { selectedAssetDetail = null }
-    BackHandler(enabled = showImoexChart) { showImoexChart = false }
+    BackHandler(enabled = selectedMarketChartTicker != null) { selectedMarketChartTicker = null }
     var showAddAsset by remember { mutableStateOf(false) }
     var showAddPayout by remember { mutableStateOf(false) }
     var assetToEdit by remember { mutableStateOf<AssetEntity?>(null) }
@@ -151,19 +151,26 @@ internal fun MyCapitalApp() {
                     }
                 }
             },
-            bottomBar = { if (selectedAssetDetail == null && !showImoexChart) AppBottomNavigationBar(selected) { selected = it } }
+            bottomBar = { if (selectedAssetDetail == null && selectedMarketChartTicker == null) AppBottomNavigationBar(selected) { selected = it } }
         ) { padding ->
             if (selectedAssetDetail != null) {
                 val detail = assets.firstOrNull { it.id == selectedAssetDetail!!.id } ?: selectedAssetDetail!!
                 AssetDetailScreen(detail, assets, operations, payouts, { selectedAssetDetail = null }, Modifier.padding(padding))
-            } else if (showImoexChart) {
+            } else if (selectedMarketChartTicker == "IMOEX") {
                 ImoexIndexChartScreen(
                     quote = dashboardMarketData.quotes.firstOrNull { it.ticker == "IMOEX" },
-                    onBack = { showImoexChart = false },
+                    onBack = { selectedMarketChartTicker = null },
+                    modifier = Modifier.padding(padding)
+                )
+            } else if (selectedMarketChartTicker != null) {
+                MarketInstrumentChartScreen(
+                    ticker = selectedMarketChartTicker!!,
+                    quote = dashboardMarketData.quotes.firstOrNull { it.ticker == selectedMarketChartTicker },
+                    onBack = { selectedMarketChartTicker = null },
                     modifier = Modifier.padding(padding)
                 )
             } else when (selected) {
-                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, portfolioHistory.onRangeChange, historyResult, historyLoading, historyLoadError, portfolioHistory.refresh, dashboardMarketData, refreshDashboardMarketData, refreshAllMarketData, isRefreshingMarketData, quoteSyncMessage, onOpenSettings = { selected = Screen.More }, onOpenIndexChart = { showImoexChart = true }, modifier = Modifier.padding(padding))
+                Screen.Overview -> OverviewScreen(assets, total, cashBalance ?: 0.0, payouts, operations, portfolioSnapshots, selectedHistoryRange, portfolioHistory.onRangeChange, historyResult, historyLoading, historyLoadError, portfolioHistory.refresh, dashboardMarketData, refreshDashboardMarketData, refreshAllMarketData, isRefreshingMarketData, quoteSyncMessage, onOpenSettings = { selected = Screen.More }, onOpenMarketChart = { selectedMarketChartTicker = it }, modifier = Modifier.padding(padding))
                 Screen.Assets -> AssetsScreen(assets, operations, payouts, brokerAccounts, brokerAccountAssets, cashBalance ?: 0.0, brokerAccountCash, onOpenAsset = { selectedAssetDetail = it }, onEditAsset = { assetToEdit = it }, onDeleteAsset = { assetToDelete = it }, modifier = Modifier.padding(padding))
                 Screen.Accounts -> AccountsScreen(brokerAccounts, brokerAccountCash, brokerAccountAssets, assets, operations, payouts, { account -> scope.launch(Dispatchers.IO) { dao.upsertBrokerAccount(account) } }, Modifier.padding(padding))
                 Screen.Operations -> OperationsScreen(operations, brokerAccounts, selectedOperationAccount, { selectedOperationAccount = it }, onAddCashFlow = { showCashFlow = true }, modifier = Modifier.padding(padding))
