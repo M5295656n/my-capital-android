@@ -98,8 +98,8 @@ class MoexDividendHistoryClientTest {
         assertEquals(1, forecasts.size)
         assertEquals("T", forecasts.single().ticker)
         assertEquals(4.8, forecasts.single().amountPerShare, 0.000001)
-        assertEquals(LocalDate.of(2027, 5, 22), forecasts.single().recordDate)
-        assertEquals("MYCAPITAL_HISTORY:T:2027-05-22", forecasts.single().sourceKey)
+        assertEquals(LocalDate.of(2027, 5, 24), forecasts.single().recordDate)
+        assertEquals("MYCAPITAL_HISTORY:T:2027-05-24", forecasts.single().sourceKey)
     }
 
     @Test
@@ -235,10 +235,10 @@ class MoexDividendHistoryClientTest {
         )
         assertEquals(
             listOf(
-                LocalDate.of(2027, 1, 20),
-                LocalDate.of(2027, 4, 22),
-                LocalDate.of(2027, 7, 23),
-                LocalDate.of(2027, 10, 23)
+                LocalDate.of(2027, 1, 19),
+                LocalDate.of(2027, 4, 20),
+                LocalDate.of(2027, 7, 20),
+                LocalDate.of(2027, 10, 19)
             ),
             forecasts.map { it.recordDate }
         )
