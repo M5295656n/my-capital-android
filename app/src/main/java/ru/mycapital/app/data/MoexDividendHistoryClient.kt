@@ -96,7 +96,8 @@ internal fun calculateHistoricalDividendForecasts(
     }
 
     val endDate = java.time.YearMonth.from(today).plusMonths(horizonMonths.toLong()).atEndOfMonth()
-    val forecasts = mutableListOf<HistoricalDividendForecast>()
+    val annualSlotForecasts = mutableListOf<HistoricalDividendForecast>()
+    val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
 
     // First identify independent annual payment slots. This is essential for
     // issuers with 2-4 separate distributions per year: sorting all dates into
@@ -116,7 +117,7 @@ internal fun calculateHistoricalDividendForecasts(
                 var date = latest.recordDate.plusDays(annualStep)
                 while (!date.isAfter(endDate)) {
                     if (!date.isBefore(today)) {
-                        forecasts += HistoricalDividendForecast(
+                        annualSlotForecasts += HistoricalDividendForecast(
                             normalizedTicker, amount, date,
                             "MYCAPITAL_HISTORY:$normalizedTicker:$date"
                         )
@@ -153,7 +154,7 @@ internal fun calculateHistoricalDividendForecasts(
             var date = anchor.plusDays(stepDays)
             while (!date.isAfter(endDate)) {
                 if (!date.isBefore(today)) {
-                    forecasts += HistoricalDividendForecast(
+                    cadenceForecasts += HistoricalDividendForecast(
                         normalizedTicker, amount, date,
                         "MYCAPITAL_HISTORY:$normalizedTicker:$date"
                     )
@@ -162,6 +163,11 @@ internal fun calculateHistoricalDividendForecasts(
             }
         }
     }
+
+    // Prefer a coherent interval cadence when it is supported by repeated
+    // observations. Use calendar-year slots only when cadence inference is
+    // inconclusive (e.g. two parallel annual dividend periods).
+    val forecasts = if (cadenceForecasts.isNotEmpty()) cadenceForecasts else annualSlotForecasts
 
     val reconciled = mutableListOf<HistoricalDividendForecast>()
     forecasts.sortedBy { it.recordDate }.forEach { candidate ->
