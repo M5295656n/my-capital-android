@@ -288,6 +288,27 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun forecastsTwoRecurringPaymentsWithinTheSameMonthSeparately() {
+        val history = listOf(
+            dividend("2024-05-10", 1.0),
+            dividend("2024-05-25", 2.0),
+            dividend("2025-05-12", 1.2),
+            dividend("2025-05-27", 2.2)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "TATN",
+            dividends = history,
+            today = LocalDate.of(2026, 1, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(2, forecasts.size)
+        assertEquals(listOf(11, 26), forecasts.map { it.recordDate.dayOfMonth })
+        assertEquals(listOf(1.1, 2.1), forecasts.map { it.amountPerShare })
+    }
+
+    @Test
     fun forecastsAnnualDividendWhenRecordMonthDriftsBetweenYears() {
         val history = listOf(
             dividend("2024-04-15", 3.0),
