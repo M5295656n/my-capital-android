@@ -191,10 +191,8 @@ class CorporateEventsWorker(
                             quantity = asset.quantity,
                             totalAmount = forecast.amountPerShare * asset.quantity,
                             taxAmount = 0.0,
-                            // MOEX history gives the estimated registry/record date,
-                            // not the cash payment date. Keep expectedDate null so UI
-                            // never labels the record date as an expected cash receipt.
-                            expectedDate = null,
+                            // Keep the historical estimate on the forecast timeline.
+                            expectedDate = estimatedRecordDate,
                             actualDate = null,
                             status = "FORECAST",
                             sourceKey = forecast.sourceKey,
