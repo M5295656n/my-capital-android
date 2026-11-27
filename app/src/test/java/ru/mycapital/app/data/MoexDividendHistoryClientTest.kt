@@ -611,6 +611,36 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun yandexRealAprilAndSeptemberPaymentSlotsDoNotBecomeThreeSemiannualCadenceForecasts() {
+        // Paid-history rows from the public issuer datasets:
+        // two recurring annual slots (April and September), with the gaps
+        // alternating around 147/210 days. Interval voting incorrectly picks
+        // a semiannual cadence and invents additional payments.
+        val history = listOf(
+            dividend("2024-09-20", 80.0),
+            dividend("2025-04-28", 80.0),
+            dividend("2025-09-29", 80.0),
+            dividend("2026-04-27", 110.0),
+            dividend("2026-09-21", 110.0)
+        ).map { it.copy(secid = "YDEX") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "YDEX", history, LocalDate.of(2026, 11, 27), horizonMonths = 24
+        )
+
+        assertEquals(4, forecasts.size)
+        assertEquals(
+            listOf(
+                LocalDate.of(2027, 4, 27),
+                LocalDate.of(2027, 9, 21),
+                LocalDate.of(2028, 4, 27),
+                LocalDate.of(2028, 9, 21)
+            ),
+            forecasts.map { it.recordDate }
+        )
+    }
+
+    @Test
     fun motherAndChildShiftingSemiannualPaymentsDoNotBecomeQuarterlyForecasts() {
         // Real paid-history pattern: 2024 had three exceptional distributions,
         // while the latest two calendar years each had two; dates drifted from
