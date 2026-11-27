@@ -538,6 +538,51 @@ class MoexDividendHistoryClientTest {
         assertEquals(0, parseDohodHistoricalDividends("SBER", index, staleHistory, LocalDate.of(2026, 11, 27)).size)
     }
 
+    @Test
+    fun tatneftThreeRecurringAnnualSlotsDoNotBecomeFourQuarterlyForecasts() {
+        val history = listOf(
+            dividend("2023-07-11", 27.71), dividend("2023-10-11", 27.54),
+            dividend("2024-01-09", 35.17), dividend("2024-07-09", 25.17),
+            dividend("2024-10-08", 38.20), dividend("2025-01-08", 17.39),
+            dividend("2025-06-02", 43.11), dividend("2025-10-14", 14.35),
+            dividend("2026-01-11", 8.13), dividend("2026-07-15", 11.61),
+            dividend("2026-10-13", 32.88)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 14
+        )
+
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(1, 7, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun annualSlotAdvancesOneCalendarYearAfterAMissedYear() {
+        val history = listOf(
+            dividend("2023-07-11", 27.71),
+            dividend("2024-07-09", 25.17),
+            dividend("2026-07-15", 11.61)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 14
+        )
+
+        assertEquals(listOf(LocalDate.of(2027, 7, 15)), forecasts.map { it.recordDate })
+    }
+
+    @Test
+    fun rejectsHistoryFileWhoseTickerDoesNotMatchRequestedTicker() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["TATN"]}"""
+        val wrongIssuer = """{"ticker":"TATNP","scrapedAt":"2026-11-27T05:00:00Z","payments":[{"recordDate":"2026-10-13","amount":32.88,"isForecast":false}]}"""
+
+        assertEquals(
+            0,
+            parseDohodHistoricalDividends("TATN", index, wrongIssuer, LocalDate.of(2026, 11, 27)).size
+        )
+    }
+
     private fun dividend(date: String, amount: Double) =
         HistoricalDividend("SBER", LocalDate.parse(date), amount, "RUB")
 }
