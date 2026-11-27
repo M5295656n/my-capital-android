@@ -39,6 +39,16 @@ internal fun isBondInstrument(ticker: String, name: String = "", assetType: Stri
         Regex("^SU\\d{5}RMFS\\d$").matches(normalizedTicker)
 }
 
+/** Decide whether a holding should receive dividend-history processing. */
+internal fun shouldIncludeInDividendHistory(assetType: String, moexClassification: Boolean?): Boolean {
+    if (assetType.contains("акци", ignoreCase = true) || assetType.contains("share", ignoreCase = true)) return true
+    if (listOf("облигац", "офз", "bond", "фонд", "пай", "валют", "металл").any {
+            assetType.contains(it, ignoreCase = true)
+        }) return false
+    // If metadata is unavailable, let the history endpoint validate the ticker.
+    return moexClassification != false
+}
+
 /** Parse the equity class from the MOEX ISS description dictionary. */
 internal fun parseMoexEquityClassification(body: String): Boolean? {
     val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
@@ -103,16 +113,19 @@ class CorporateEventsClient {
         .readTimeout(8, TimeUnit.SECONDS).callTimeout(10, TimeUnit.SECONDS).build()
 
     fun isEquityForDividendHistory(ticker: String, assetType: String): Boolean {
-        if (assetType.contains("акци", ignoreCase = true)) return true
-        if (listOf("облигац", "фонд", "пай", "валют", "металл").any { assetType.contains(it, ignoreCase = true) }) return false
+        if (assetType.contains("акци", ignoreCase = true) || assetType.contains("share", ignoreCase = true)) return true
+        if (listOf("облигац", "офз", "bond", "фонд", "пай", "валют", "металл").any {
+                assetType.contains(it, ignoreCase = true)
+            }) return false
         val encoded = java.net.URLEncoder.encode(ticker.trim().uppercase(Locale.ROOT), Charsets.UTF_8.name())
         val url = "https://iss.moex.com/iss/securities/$encoded.json?iss.meta=off&iss.only=description&description.columns=name,value"
         val request = Request.Builder().url(url).header("Accept", "application/json").header("User-Agent", "MyCapital-Android/0.4").build()
-        return runCatching {
+        val classification = runCatching {
             classificationClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) null else parseMoexEquityClassification(response.body?.string().orEmpty())
             }
-        }.getOrNull() == true
+        }.getOrNull()
+        return shouldIncludeInDividendHistory(assetType, classification)
     }
 
     private val client = OkHttpClient.Builder()
