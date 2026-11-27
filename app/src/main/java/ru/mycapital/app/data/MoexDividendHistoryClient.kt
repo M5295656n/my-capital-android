@@ -122,7 +122,7 @@ internal fun calculateHistoricalDividendForecasts(
                             "MYCAPITAL_HISTORY:$normalizedTicker:$date"
                         )
                     }
-                    date = date.plusDays(annualStep)
+                    date = date.plusYears(1)
                 }
             }
         }
