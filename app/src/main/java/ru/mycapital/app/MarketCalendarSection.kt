@@ -40,7 +40,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.mycapital.app.data.MarketCalendarItemEntity
 import ru.mycapital.app.data.PayoutEntity
-import ru.mycapital.app.data.payoutDisplayTimestamp
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -143,16 +142,13 @@ internal fun MarketCalendarSection(
     }
     val payoutItems = remember(payouts) {
         payouts.mapNotNull { payout ->
-            val timestamp = payoutDisplayTimestamp(payout) ?: return@mapNotNull null
+            val timestamp = payout.expectedDate ?: payout.actualDate ?: return@mapNotNull null
             CalendarDisplayItem(
                 key = payout.sourceKey ?: "payout:${payout.id}",
                 date = java.time.Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate(),
                 category = "Выплаты",
                 title = "${payout.payoutType}: ${payout.ticker}",
-                description = (if (payout.sourceName == "MyCapital · история MOEX" && payout.status == "FORECAST")
-                    "Прогноз по истории MOEX: дата в календаре — оценка даты отсечки, а не дата поступления денег. "
-                    else "") +
-                    "Сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
+                description = "Ожидаемая сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
                 source = payout.sourceName ?: "Портфель",
                 url = null,
                 detailsUrl = null,
