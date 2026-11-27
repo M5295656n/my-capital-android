@@ -28,6 +28,16 @@ class BondInstrumentClassifierTest {
         assertTrue(parseMoexEquityClassification("{}") == null)
     }
     @Test
+    fun genericHoldingsAreNotSilentlySkippedWhenMoexClassificationIsUnavailable() {
+        assertTrue(shouldIncludeInDividendHistory("Другое", null))
+        assertTrue(shouldIncludeInDividendHistory("", null))
+        assertTrue(shouldIncludeInDividendHistory("Акция", false))
+        assertFalse(shouldIncludeInDividendHistory("Другое", false))
+        assertFalse(shouldIncludeInDividendHistory("Облигация", null))
+        assertFalse(shouldIncludeInDividendHistory("Фонд", null))
+    }
+
+    @Test
     fun doesNotClassifyEquitiesAsBonds() {
         assertFalse(isBondInstrument("SBER", "Сбербанк", "Акция"))
         assertFalse(isBondInstrument("X5", "Корп центр ИКС 5", "Другое"))
