@@ -265,6 +265,24 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun doesNotForecastIrregularOneOffPaymentsWithoutRecurringCadence() {
+        val history = listOf(
+            dividend("2024-02-15", 12.0),
+            dividend("2025-09-20", 18.0),
+            dividend("2026-11-02", 25.0)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 14),
+            horizonMonths = 12
+        )
+
+        assertEquals(0, forecasts.size)
+    }
+
+    @Test
     fun doesNotForecastMonthWithOnlyOneHistoricalOccurrence() {
         val forecasts = calculateHistoricalDividendForecasts(
             ticker = "T",
