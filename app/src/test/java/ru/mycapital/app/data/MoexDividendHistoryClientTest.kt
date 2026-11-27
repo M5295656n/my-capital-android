@@ -459,6 +459,41 @@ class MoexDividendHistoryClientTest {
         assertEquals(listOf(3, 7, 11), forecasts.map { it.recordDate.monthValue })
     }
 
+    @Test
+    fun forecastsThreePaymentsPerYearFromFourMonthCadence() {
+        val history = listOf(
+            dividend("2025-02-01", 1.0),
+            dividend("2025-06-01", 1.1),
+            dividend("2025-10-01", 1.2),
+            dividend("2026-02-01", 1.3),
+            dividend("2026-06-01", 1.4),
+            dividend("2026-10-01", 1.5)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 1), horizonMonths = 12
+        )
+
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(2, 6, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun forecastsEachIndependentAnnualDividendSlotWithoutCollapsingThem() {
+        val history = listOf(
+            dividend("2024-03-10", 2.0), dividend("2025-03-12", 2.2),
+            dividend("2024-07-10", 3.0), dividend("2025-07-12", 3.2),
+            dividend("2024-11-10", 4.0), dividend("2025-11-12", 4.2)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 1, 1), horizonMonths = 12
+        )
+
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(3, 7, 11), forecasts.map { it.recordDate.monthValue })
+    }
+
     private fun dividend(date: String, amount: Double) =
         HistoricalDividend("SBER", LocalDate.parse(date), amount, "RUB")
 }
