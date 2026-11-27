@@ -96,7 +96,7 @@ internal fun calculateHistoricalDividendForecasts(
         }
         .sortedBy { it.recordDate }
 
-    if (usable.size < 3) return emptyList()
+    if (usable.size < 2) return emptyList()
 
     fun median(values: List<Double>): Double {
         val sorted = values.sorted()
@@ -126,8 +126,7 @@ internal fun calculateHistoricalDividendForecasts(
     if (supportingIntervals.size < minSupport) return emptyList()
 
     val stepDays = Math.round(median(supportingIntervals)).coerceAtLeast(1L)
-    val recentRows = cadenceRows.takeLast(4)
-    val amount = median(recentRows.takeLast(3).map { it.amountPerShare })
+    val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
     if (!amount.isFinite() || amount <= 0.0) return emptyList()
 
     val endDate = java.time.YearMonth.from(today)
