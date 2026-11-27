@@ -173,9 +173,16 @@ internal fun calculateHistoricalDividendForecasts(
     // the shorter gap for a quarterly/three-per-year cadence and multiply the
     // forecast. Four recurring slots remain eligible for a genuine quarterly
     // schedule; one slot remains the annual-payer path.
-    val hasTwoOrThreeAnnualSlots =
-        recurringAnnualSlotMonths.size in 2..3 && annualSlotForecasts.isNotEmpty()
-    val forecasts = if (hasTwoOrThreeAnnualSlots) {
+    val hasStableAnnualSlotsAgainstNoisyCadence =
+        annualSlotForecasts.isNotEmpty() && (
+            // Three irregular annual installments can look quarterly to an
+            // interval vote (e.g. 3/6/3-month gaps).
+            (recurringAnnualSlotMonths.size == 3 && selectedCadence == "QUARTERLY") ||
+                // Two annual periods can look like three-per-year when one gap
+                // is short and the other is long (e.g. 4/8-month gaps).
+                (recurringAnnualSlotMonths.size == 2 && selectedCadence == "THREE_PER_YEAR")
+            )
+    val forecasts = if (hasStableAnnualSlotsAgainstNoisyCadence) {
         annualSlotForecasts
     } else if (cadenceForecasts.isNotEmpty()) {
         cadenceForecasts
