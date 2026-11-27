@@ -144,7 +144,11 @@ internal fun calculateHistoricalDividendForecasts(
             val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
             var date = anchor.plusDays(stepDays)
             while (!date.isAfter(endMonth.atEndOfMonth())) {
-                if (!date.isBefore(today) && amount.isFinite() && amount > 0.0) {
+                val sameMonthlyEstimate = forecasts.any { existing ->
+                    java.time.YearMonth.from(existing.recordDate) == java.time.YearMonth.from(date) &&
+                        kotlin.math.abs(existing.amountPerShare - amount) <= 0.01
+                }
+                if (!date.isBefore(today) && amount.isFinite() && amount > 0.0 && !sameMonthlyEstimate) {
                     cadenceForecasts += HistoricalDividendForecast(
                         ticker = normalizedTicker,
                         amountPerShare = amount,
