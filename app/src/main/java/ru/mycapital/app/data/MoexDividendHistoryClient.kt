@@ -265,6 +265,75 @@ internal fun calculateDividendHistoryMetrics(
     return DividendHistoryMetrics(growth, rubleDividends.size)
 }
 
+/**
+ * Historical dividend data moved out of the old public MOEX ISS dividends route.
+ * Read the public, periodically refreshed issuer datasets first; MOEX ISS remains
+ * a last-resort compatibility source. One provider is selected per ticker so
+ * differently dated rows from different aggregators are never added together.
+ */
+internal fun parseDohodHistoricalDividends(
+    ticker: String,
+    indexJson: String,
+    historyJson: String,
+    today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))
+): List<HistoricalDividend> {
+    val normalized = ticker.trim().uppercase(Locale.ROOT)
+    val index = JSONObject(indexJson)
+    val tickers = index.optJSONArray("tickers") ?: return emptyList()
+    if ((0 until tickers.length()).none { tickers.optString(it).equals(normalized, true) }) return emptyList()
+    val history = JSONObject(historyJson)
+    if (!isRecentDividendDataset(history.optString("scrapedAt"), today)) return emptyList()
+    val payments = history.optJSONArray("payments") ?: return emptyList()
+    val rows = mutableListOf<HistoricalDividend>()
+    for (i in 0 until payments.length()) {
+        val payment = payments.optJSONObject(i) ?: continue
+        if (payment.optBoolean("isForecast", false)) continue
+        val date = runCatching { LocalDate.parse(payment.optString("recordDate")) }.getOrNull() ?: continue
+        val amount = payment.optDouble("amount", Double.NaN)
+        if (!amount.isFinite() || amount <= 0.0 || date.isAfter(today)) continue
+        rows += HistoricalDividend(normalized, date, amount, "RUB")
+    }
+    return rows.distinctBy {
+        "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}"
+    }.sortedBy { it.recordDate }
+}
+
+internal fun parseSmartlabHistoricalDividends(
+    ticker: String,
+    indexJson: String,
+    historyJson: String,
+    today: LocalDate = LocalDate.now(ZoneId.of("Europe/Moscow"))
+): List<HistoricalDividend> {
+    val normalized = ticker.trim().uppercase(Locale.ROOT)
+    val index = JSONObject(indexJson)
+    val tickers = index.optJSONArray("tickers") ?: return emptyList()
+    if ((0 until tickers.length()).none { tickers.optString(it).equals(normalized, true) }) return emptyList()
+    val history = JSONObject(historyJson)
+    if (!isRecentDividendDataset(history.optString("scrapedAt"), today)) return emptyList()
+    val payments = history.optJSONArray("payments") ?: return emptyList()
+    val rows = mutableListOf<HistoricalDividend>()
+    for (i in 0 until payments.length()) {
+        val payment = payments.optJSONObject(i) ?: continue
+        if (!payment.optString("status").equals("paid", true)) continue
+        val currency = payment.optString("currency").ifBlank { "RUB" }
+        if (!currency.equals("RUB", true)) continue
+        val date = runCatching { LocalDate.parse(payment.optString("recordDate")) }.getOrNull() ?: continue
+        val amount = payment.optDouble("amount", Double.NaN)
+        if (!amount.isFinite() || amount <= 0.0 || date.isAfter(today)) continue
+        rows += HistoricalDividend(normalized, date, amount, "RUB")
+    }
+    return rows.distinctBy {
+        "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}"
+    }.sortedBy { it.recordDate }
+}
+
+private fun isRecentDividendDataset(scrapedAt: String, today: LocalDate): Boolean {
+    val scrapedDate = runCatching { java.time.Instant.parse(scrapedAt).atZone(ZoneId.of("Europe/Moscow")).toLocalDate() }
+        .getOrNull() ?: return false
+    val ageDays = java.time.temporal.ChronoUnit.DAYS.between(scrapedDate, today)
+    return ageDays in 0..30
+}
+
 internal class MoexDividendHistoryClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -276,11 +345,10 @@ internal class MoexDividendHistoryClient {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
 
-        // Historical forecasts require a multi-year record-date series.
-        // Long/Short dividends-ru.csv is a current/upcoming calendar, not a
-        // complete historical archive, so it must never be treated as history.
-        // Keep MOEX history retrieval as the current source until a full,
-        // independently validated historical provider is integrated.
+        // Public historical data is now preferred: the former unauthenticated
+        // MOEX ISS /securities/{secid}/dividends route no longer exposes dividends.
+        // Dohod is selected first; Smart-Lab is used only when Dohod has no complete
+        // dataset for this ticker. Never merge their rows for one issuer.
 
         // Prefer the ISIN attached to the exact SECID row returned by securities search.
         // Description labels can be localized or ambiguous (for example, TATN/TATNP);
@@ -326,8 +394,16 @@ internal class MoexDividendHistoryClient {
         var currentSecidVerified = false
         var allRelatedSecidsVerified = true
         var lastHistoryError: Exception? = null
-        relatedSecids.forEach { secid ->
-            try {
+
+        val publishedHistory = fetchAlternativeDividendHistory(normalized)
+        if (!publishedHistory.isNullOrEmpty()) {
+            result += publishedHistory.map { it.copy(secid = normalized) }
+            successfulHistoryEndpoints = 1
+            currentSecidVerified = true
+            allRelatedSecidsVerified = true
+        } else {
+            relatedSecids.forEach { secid ->
+                try {
                 val payload = requestJson(
                     "https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off"
                 )
@@ -356,9 +432,10 @@ internal class MoexDividendHistoryClient {
                         result += HistoricalDividend(secid, date, amount, currency)
                     }
                 }
-            } catch (error: Exception) {
-                allRelatedSecidsVerified = false
-                lastHistoryError = error
+                } catch (error: Exception) {
+                    allRelatedSecidsVerified = false
+                    lastHistoryError = error
+                }
             }
         }
         // A retired SECID can legitimately stop serving history while the current
@@ -409,6 +486,28 @@ internal class MoexDividendHistoryClient {
         )
     }
 
+
+    private var dohodIndex: JSONObject? = null
+    private var smartlabIndex: JSONObject? = null
+
+    private fun fetchAlternativeDividendHistory(ticker: String): List<HistoricalDividend>? {
+        val base = "https://raw.githubusercontent.com/amchercashin/heroincome-data/main/data/stocks"
+        val today = LocalDate.now(ZoneId.of("Europe/Moscow"))
+        val dohod = runCatching {
+            val index = dohodIndex ?: requestJson("$base/dohod/index.json").also { dohodIndex = it }
+            val history = requestJson("$base/dohod/$ticker.json")
+            parseDohodHistoricalDividends(ticker, index.toString(), history.toString(), today)
+                .takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        if (dohod != null) return dohod
+
+        return runCatching {
+            val index = smartlabIndex ?: requestJson("$base/smartlab/index.json").also { smartlabIndex = it }
+            val history = requestJson("$base/smartlab/$ticker.json")
+            parseSmartlabHistoricalDividends(ticker, index.toString(), history.toString(), today)
+                .takeIf { it.isNotEmpty() }
+        }.getOrNull()
+    }
 
     private fun requestJson(url: String): JSONObject {
         val request = Request.Builder().url(url)
