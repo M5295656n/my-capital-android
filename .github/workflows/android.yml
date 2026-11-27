@@ -50,7 +50,7 @@ jobs:
           fi
 
           cat changed-files.txt
-          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
+          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio|CorporateEventsWorker|PayoutsScreen|PayoutVisibility).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Data-layer or Android integration files changed: instrumented suite enabled."
           else
@@ -119,6 +119,8 @@ jobs:
           openssl x509 -in "$CERT" -noout -subject -dates
           cat /etc/ssl/certs/ca-certificates.crt "$CERT" > "$RUNNER_TEMP/moex-ca-bundle.pem"
           echo "SSL_CERT_FILE=$RUNNER_TEMP/moex-ca-bundle.pem" >> "$GITHUB_ENV"
+      - name: Verify all public dividend-history datasets and source coverage
+        run: python3 scripts/verify_dividend_history_sources.py
       - name: Verify live MOEX history for affected instruments
         run: |
           python3 - <<'PY'
