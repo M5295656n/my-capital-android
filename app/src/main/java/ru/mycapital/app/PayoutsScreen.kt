@@ -71,7 +71,7 @@ internal fun PayoutsScreen(
     }
     val filtered = remember(visiblePayouts, periodDates, statusFilter, typeFilter) {
         visiblePayouts.filter { payout ->
-            val millis = payout.actualDate ?: payout.expectedDate ?: return@filter false
+            val millis = payoutDisplayTimestamp(payout) ?: return@filter false
             val date = java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
             val inPeriod = !date.isBefore(periodDates.first) && !date.isAfter(periodDates.second)
             val statusOk = statusFilter == "Все" || when (statusFilter) {
@@ -86,7 +86,7 @@ internal fun PayoutsScreen(
                 (typeFilter == "Купоны" && payout.payoutType.contains("Купон", true)) ||
                 (typeFilter == "Погашения" && (payout.payoutType.contains("Погаш", true) || payout.payoutType.contains("Амортизац", true)))
             inPeriod && statusOk && typeOk
-        }.sortedWith(compareBy<PayoutEntity> { it.actualDate ?: it.expectedDate ?: Long.MAX_VALUE }.thenBy { it.ticker })
+        }.sortedWith(compareBy<PayoutEntity> { payoutDisplayTimestamp(it) ?: Long.MAX_VALUE }.thenBy { it.ticker })
     }
     fun payoutAmount(p: PayoutEntity): Double =
         if (p.status == "RECEIVED") (p.reportedNetAmount ?: (p.totalAmount - p.taxAmount)).coerceAtLeast(0.0)
@@ -95,7 +95,7 @@ internal fun PayoutsScreen(
     // Keep redemption rows visible below, but exclude them from income metrics.
     val totalAmount = filtered.filter { isIncomePayoutType(it.payoutType) }.sumOf(::payoutAmount)
     val monthly = filtered.groupBy { payout ->
-        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
+        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payoutDisplayTimestamp(payout)!!).atZone(zone).toLocalDate())
     }.toSortedMap()
     val monthlyTotals = monthly.mapValues { (_, items) -> items.sumOf(::payoutAmount) }
     val monthAverage = if (monthly.isNotEmpty()) totalAmount / monthly.size else 0.0
@@ -111,7 +111,7 @@ internal fun PayoutsScreen(
         (0 until 12).map { first.plusMonths(it.toLong()) }
     }
     val chartPayouts = visiblePayouts.filter { payout ->
-        val dateMillis = payout.actualDate ?: payout.expectedDate ?: return@filter false
+        val dateMillis = payoutDisplayTimestamp(payout) ?: return@filter false
         val date = java.time.Instant.ofEpochMilli(dateMillis).atZone(zone).toLocalDate()
         val month = java.time.YearMonth.from(date)
         val inChartPeriod = !month.isBefore(chartMonths.first()) && !month.isAfter(chartMonths.last())
@@ -231,7 +231,7 @@ internal fun PayoutsScreen(
                             }
                         }
                     }
-                    val byDate = itemsForMonth.groupBy { java.time.Instant.ofEpochMilli(it.actualDate ?: it.expectedDate!!).atZone(zone).toLocalDate() }.toSortedMap()
+                    val byDate = itemsForMonth.groupBy { java.time.Instant.ofEpochMilli(payoutDisplayTimestamp(it)!!).atZone(zone).toLocalDate() }.toSortedMap()
                     byDate.forEach { (date, dayItems) ->
                         item(key = "date-$date") {
                             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -306,7 +306,11 @@ internal fun PayoutsScreen(
                                             )
                                             if (expanded) {
                                                 HorizontalDivider()
-                                                payout.recordDate?.let { Text("Дата отсечки: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
+                                                payout.recordDate?.let {
+                                                    val recordLabel = if (payout.sourceName == "MyCapital · история MOEX" && payout.status == "FORECAST")
+                                                        "Оценка даты отсечки по истории" else "Дата отсечки"
+                                                    Text(recordLabel + ": " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")))
+                                                }
                                                 payout.expectedDate?.let { Text("Ожидаемая дата выплаты: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
                                                 payout.actualDate?.let { Text("Получено: " + java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))) }
                                                 if (payout.status != "RECEIVED" && (isUpcomingDividendStatus(payout.status) || payout.status == "EXPECTED")) {
