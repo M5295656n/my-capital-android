@@ -132,7 +132,7 @@ internal fun calculateHistoricalDividendForecasts(
     // interval. A skipped payment creates a long interval and does not erase
     // the shorter repeated intervals that establish the issuer's normal cycle.
     val cadenceRows = history.filter { !it.recordDate.isBefore(today.minusMonths(42)) }
-    if (cadenceRows.size >= 3) {
+    if (cadenceRows.size >= 2) {
         val intervals = cadenceRows.zipWithNext { first, second ->
             java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
         }
