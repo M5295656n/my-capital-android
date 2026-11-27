@@ -211,7 +211,7 @@ internal fun calculateHistoricalDividendForecasts(
             (recurringAnnualSlotMonths.size == 3 && selectedCadence == "QUARTERLY") ||
                 // Two annual periods can look like three-per-year when one gap
                 // is short and the other long (e.g. 4/8-month gaps).
-                (recurringAnnualSlotMonths.size == 2 && selectedCadence == "THREE_PER_YEAR")
+                (recurringAnnualSlotMonths.size == 2 && selectedCadence in setOf("THREE_PER_YEAR", "SEMIANNUAL"))
             )
     val forecasts = when {
         recentTwoPerYearForecasts.isNotEmpty() -> recentTwoPerYearForecasts
