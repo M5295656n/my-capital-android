@@ -98,6 +98,7 @@ internal fun calculateHistoricalDividendForecasts(
     val endDate = java.time.YearMonth.from(today).plusMonths(horizonMonths.toLong()).atEndOfMonth()
     val annualSlotForecasts = mutableListOf<HistoricalDividendForecast>()
     val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
+    var selectedCadence: String? = null
 
     // First identify independent annual payment slots. This is essential for
     // issuers with 2-4 separate distributions per year: sorting all dates into
@@ -111,10 +112,9 @@ internal fun calculateHistoricalDividendForecasts(
             if (yearGaps.all { it in 1..2 }) {
                 val latest = yearlyRows.last()
                 val amount = median(yearlyRows.takeLast(3).map { it.amountPerShare })
-                val annualStep = median(yearlyRows.zipWithNext { a, b ->
-                    java.time.temporal.ChronoUnit.DAYS.between(a.recordDate, b.recordDate).toDouble()
-                }).toLong().coerceAtLeast(1L)
-                var date = latest.recordDate.plusDays(annualStep)
+                // A missing year must not turn a biennial gap into a 18-month forecast.
+                // Once a recurring month slot is established, advance by calendar year.
+                var date = latest.recordDate.plusYears(1)
                 while (!date.isAfter(endDate)) {
                     if (!date.isBefore(today)) {
                         annualSlotForecasts += HistoricalDividendForecast(
@@ -143,6 +143,7 @@ internal fun calculateHistoricalDividendForecasts(
             "ANNUAL" to intervals.filter { it in 300.0..430.0 }
         )
         val selected = candidates.maxByOrNull { it.second.size }
+        selectedCadence = selected?.first
         val support = selected?.second.orEmpty()
         val requiredSupport = if (selected?.first == "ANNUAL" && cadenceRows.size == 2) 1 else 2
         if (support.size >= requiredSupport) {
@@ -167,7 +168,14 @@ internal fun calculateHistoricalDividendForecasts(
     // Prefer a coherent interval cadence when it is supported by repeated
     // observations. Use calendar-year slots only when cadence inference is
     // inconclusive (e.g. two parallel annual dividend periods).
-    val forecasts = if (cadenceForecasts.isNotEmpty()) cadenceForecasts else annualSlotForecasts
+    // Some issuers pay three distinct annual installments with uneven 3/6-month
+    // gaps. A naive dominant-interval vote can mislabel those as quarterly.
+    // When three independent month slots recur across years, retain those slots
+    // instead of manufacturing a fourth quarterly payment.
+    val forecasts = if (
+        selectedCadence == "QUARTERLY" && annualSlotForecasts.size in 3..4 &&
+        cadenceForecasts.size > annualSlotForecasts.size
+    ) annualSlotForecasts else if (cadenceForecasts.isNotEmpty()) cadenceForecasts else annualSlotForecasts
 
     val reconciled = mutableListOf<HistoricalDividendForecast>()
     forecasts.sortedBy { it.recordDate }.forEach { candidate ->
@@ -282,6 +290,7 @@ internal fun parseDohodHistoricalDividends(
     val tickers = index.optJSONArray("tickers") ?: return emptyList()
     if ((0 until tickers.length()).none { tickers.optString(it).equals(normalized, true) }) return emptyList()
     val history = JSONObject(historyJson)
+    if (!history.optString("ticker").equals(normalized, ignoreCase = true)) return emptyList()
     if (!isRecentDividendDataset(history.optString("scrapedAt"), today)) return emptyList()
     val payments = history.optJSONArray("payments") ?: return emptyList()
     val rows = mutableListOf<HistoricalDividend>()
@@ -309,6 +318,7 @@ internal fun parseSmartlabHistoricalDividends(
     val tickers = index.optJSONArray("tickers") ?: return emptyList()
     if ((0 until tickers.length()).none { tickers.optString(it).equals(normalized, true) }) return emptyList()
     val history = JSONObject(historyJson)
+    if (!history.optString("ticker").equals(normalized, ignoreCase = true)) return emptyList()
     if (!isRecentDividendDataset(history.optString("scrapedAt"), today)) return emptyList()
     val payments = history.optJSONArray("payments") ?: return emptyList()
     val rows = mutableListOf<HistoricalDividend>()
@@ -525,8 +535,8 @@ internal class MoexDividendHistoryClient {
             .header("User-Agent", "MyCapital-Android/0.3.91")
             .build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("MOEX ISS вернул HTTP ${response.code}")
-            return JSONObject(response.body?.string() ?: throw IOException("Пустой ответ MOEX ISS"))
+            if (!response.isSuccessful) throw IOException("Источник истории дивидендов вернул HTTP ${response.code}: ${url.substringBefore('?')}")
+            return JSONObject(response.body?.string() ?: throw IOException("Пустой ответ источника истории дивидендов"))
         }
     }
 
