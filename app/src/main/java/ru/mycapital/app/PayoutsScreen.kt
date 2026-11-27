@@ -122,7 +122,7 @@ internal fun PayoutsScreen(
         inChartPeriod && typeOk && isIncomePayoutType(payout.payoutType)
     }
     val chartMonthly = chartPayouts.groupBy { payout ->
-        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payout.actualDate ?: payout.expectedDate!!).atZone(zone).toLocalDate())
+        java.time.YearMonth.from(java.time.Instant.ofEpochMilli(payoutDisplayTimestamp(payout)!!).atZone(zone).toLocalDate())
     }
     val receivedByMonth = chartMonths.associateWith { month ->
         chartMonthly[month].orEmpty().filter { it.status == "RECEIVED" }.sumOf(::payoutAmount)
