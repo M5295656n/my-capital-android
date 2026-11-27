@@ -115,7 +115,7 @@ internal fun calculateHistoricalDividendForecasts(
         recurringByMonthAndOrdinal.entries
             .filter { it.key.first == month.monthValue }
             .sortedBy { it.key.second }
-            .forEach { (_, observations) ->
+            .forEach { (periodKey, observations) ->
                 val recent = observations.sortedBy { it.recordDate }.takeLast(3)
                 val estimatedDay = median(recent.map { it.recordDate.dayOfMonth.toDouble() })
                     .let { Math.round(it).toInt() }.coerceIn(1, month.lengthOfMonth())
@@ -127,7 +127,11 @@ internal fun calculateHistoricalDividendForecasts(
                             ticker = normalizedTicker,
                             amountPerShare = amount,
                             recordDate = date,
-                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                            sourceKey = if (periodKey.second == 0) {
+                                "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                            } else {
+                                "MYCAPITAL_HISTORY:$normalizedTicker:$date:P${periodKey.second + 1}"
+                            }
                         )
                     }
                 }
