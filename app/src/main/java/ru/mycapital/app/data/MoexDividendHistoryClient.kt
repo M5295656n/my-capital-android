@@ -76,87 +76,64 @@ internal fun calculateHistoricalDividendForecasts(
     if (normalizedTicker.isBlank()) return emptyList()
 
     val historyStart = today.minusYears(5)
-    val rawHistory = dividends.filter {
+    // Preserve distinct real events even when an issuer paid more than once
+    // in a calendar month. Only exact same-date/same-amount rows are duplicates.
+    val history = dividends.asSequence().filter {
         it.secid.equals(normalizedTicker, ignoreCase = true) &&
             it.currency.equals("RUB", ignoreCase = true) &&
             it.amountPerShare.isFinite() && it.amountPerShare > 0.0 &&
             !it.recordDate.isBefore(historyStart) && !it.recordDate.isAfter(today)
     }.distinctBy {
         "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}"
-    }
-
-    // More than one distinct event in a calendar month is contradictory for
-    // this forecast model. Exclude that month rather than creating two payouts.
-    val usable = rawHistory.groupBy { java.time.YearMonth.from(it.recordDate) }
-        .values
-        .filter { it.map(HistoricalDividend::recordDate).distinct().size == 1 }
-        .map { rows ->
-            val representative = rows.first()
-            representative.copy(amountPerShare = rows.map { it.amountPerShare }.average())
-        }
-        .sortedBy { it.recordDate }
-
-    if (usable.size < 2) return emptyList()
+    }.sortedBy { it.recordDate }.toList()
+    if (history.size < 3) return emptyList()
 
     fun median(values: List<Double>): Double {
         val sorted = values.sorted()
         val middle = sorted.size / 2
-        return if (sorted.size % 2 == 0) {
-            (sorted[middle - 1] + sorted[middle]) / 2.0
-        } else sorted[middle]
+        return if (sorted.size % 2 == 0) (sorted[middle - 1] + sorted[middle]) / 2.0
+        else sorted[middle]
     }
 
-    // Use the recent 42-month cadence window. A missed quarter may create a
-    // long gap, so classify intervals individually and require repeated support.
-    val cadenceRows = usable.filter { !it.recordDate.isBefore(today.minusMonths(42)) }
-    if (cadenceRows.size < 2) return emptyList()
+    // Use a rolling 42-month window. Long gaps caused by a skipped distribution
+    // are ignored when identifying cadence; the dominant repeated interval wins.
+    val cadenceRows = history.filter { !it.recordDate.isBefore(today.minusMonths(42)) }
+    if (cadenceRows.size < 3) return emptyList()
     val intervals = cadenceRows.zipWithNext { first, second ->
         java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
     }
-    val quarterly = intervals.filter { it in 75.0..149.0 }
-    val semiannual = intervals.filter { it in 150.0..239.0 }
-    val annual = intervals.filter { it in 300.0..430.0 }
+    val candidates = listOf(
+        "QUARTERLY" to intervals.filter { it in 75.0..109.0 },
+        "THREE_PER_YEAR" to intervals.filter { it in 110.0..149.0 },
+        "SEMIANNUAL" to intervals.filter { it in 150.0..239.0 },
+        "ANNUAL" to intervals.filter { it in 300.0..430.0 }
+    )
+    val selected = candidates.maxByOrNull { it.second.size } ?: return emptyList()
+    val support = selected.second
+    val requiredSupport = if (selected.first == "ANNUAL") 2 else 2
+    if (support.size < requiredSupport) return emptyList()
 
-    val (supportingIntervals, minSupport) = when {
-        quarterly.size >= 2 -> quarterly to 2
-        semiannual.size >= 2 -> semiannual to 2
-        // One annual interval is enough only when the history contains exactly
-        // two observations. With 3+ observations, require two consecutive annual
-        // intervals so an isolated late payment cannot create a false schedule.
-        annual.isNotEmpty() && (
-            cadenceRows.size == 2 ||
-                intervals.takeLast(2).all { it in 300.0..430.0 }
-            ) -> annual to 1
-        else -> return emptyList()
-    }
-    if (supportingIntervals.size < minSupport) return emptyList()
-
-    val stepDays = Math.round(median(supportingIntervals)).coerceAtLeast(1L)
+    val stepDays = Math.round(median(support)).coerceAtLeast(1L)
+    // Use only the most recent observations as the amount estimate; do not
+    // average unrelated events that happen to fall in the same month.
     val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
     if (!amount.isFinite() || amount <= 0.0) return emptyList()
 
-    val endDate = java.time.YearMonth.from(today)
-        .plusMonths(horizonMonths.toLong()).atEndOfMonth()
-    val anchor = (cadenceRows.map { it.recordDate } +
-        futureAnchorDates.filter { !it.isBefore(today) }).maxOrNull()
-        ?: cadenceRows.last().recordDate
+    val endDate = java.time.YearMonth.from(today).plusMonths(horizonMonths.toLong()).atEndOfMonth()
+    val lastCadenceEvent = cadenceRows.last().recordDate
+    val anchor = (listOf(lastCadenceEvent) + futureAnchorDates.filter { !it.isBefore(today) }).maxOrNull()
+        ?: lastCadenceEvent
 
     val forecasts = mutableListOf<HistoricalDividendForecast>()
     var date = anchor.plusDays(stepDays)
-    var previousForecastMonth: java.time.YearMonth? = null
     while (!date.isAfter(endDate)) {
-        val month = java.time.YearMonth.from(date)
-        val lastMonth = previousForecastMonth ?: java.time.YearMonth.from(anchor)
-        val monthGap = java.time.temporal.ChronoUnit.MONTHS.between(lastMonth, month)
-        // A forecast must never land in the same or immediately following month.
-        if (!date.isBefore(today) && monthGap >= 2L) {
+        if (!date.isBefore(today)) {
             forecasts += HistoricalDividendForecast(
                 ticker = normalizedTicker,
                 amountPerShare = amount,
                 recordDate = date,
                 sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
             )
-            previousForecastMonth = month
         }
         date = date.plusDays(stepDays)
     }
