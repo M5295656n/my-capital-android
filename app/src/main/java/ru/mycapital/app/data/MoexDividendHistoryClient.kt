@@ -110,7 +110,7 @@ internal fun calculateHistoricalDividendForecasts(
     )
     val selected = candidates.maxByOrNull { it.second.size } ?: return emptyList()
     val support = selected.second
-    val requiredSupport = if (selected.first == "ANNUAL") 2 else 2
+    val requiredSupport = if (selected.first == "ANNUAL" && cadenceRows.size == 2) 1 else 2
     if (support.size < requiredSupport) return emptyList()
 
     val stepDays = Math.round(median(support)).coerceAtLeast(1L)
