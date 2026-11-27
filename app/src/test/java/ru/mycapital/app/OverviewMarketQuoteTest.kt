@@ -194,6 +194,22 @@ class OverviewMarketQuoteTest {
         assertNull(calculateQuoteChangePercent(91.0, 0.0))
         assertNull(calculateQuoteChangePercent(Double.NaN, 90.0))
     }
+    @Test
+    fun cbrDynamicXmlHistoryParsesDailyRatesAndSkipsInvalidRecords() {
+        val xml = """<?xml version="1.0" encoding="windows-1251"?>
+            <ValCurs ID="R01235" DateRange1="01.11.2026" DateRange2="03.11.2026">
+              <Record Date="01.11.2026"><Nominal>1</Nominal><Value>78,25</Value></Record>
+              <Record Date="02.11.2026"><Nominal>1</Nominal><Value>79,10</Value></Record>
+              <Record Date="03.11.2026"><Nominal>1</Nominal><Value>invalid</Value></Record>
+            </ValCurs>"""
+
+        val history = parseCbrDynamicRateXml(xml)
+
+        assertEquals(listOf("2026-11-01", "2026-11-02"), history.map { it.first })
+        assertEquals(78.25, history[0].second, 0.000001)
+        assertEquals(79.10, history[1].second, 0.000001)
+    }
+
 }
 
 // CI coverage includes the native MOEX index marketdata schema.
