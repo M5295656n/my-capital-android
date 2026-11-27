@@ -110,7 +110,10 @@ internal fun calculateHistoricalDividendForecasts(
             if (yearGaps.all { it in 1..2 }) {
                 val latest = yearlyRows.last()
                 val amount = median(yearlyRows.takeLast(3).map { it.amountPerShare })
-                var date = latest.recordDate.plusYears(1)
+                val annualStep = median(yearlyRows.zipWithNext { a, b ->
+                    java.time.temporal.ChronoUnit.DAYS.between(a.recordDate, b.recordDate).toDouble()
+                }).toLong().coerceAtLeast(1L)
+                var date = latest.recordDate.plusDays(annualStep)
                 while (!date.isAfter(endDate)) {
                     if (!date.isBefore(today)) {
                         forecasts += HistoricalDividendForecast(
@@ -118,7 +121,7 @@ internal fun calculateHistoricalDividendForecasts(
                             "MYCAPITAL_HISTORY:$normalizedTicker:$date"
                         )
                     }
-                    date = date.plusYears(1)
+                    date = date.plusDays(annualStep)
                 }
             }
         }
