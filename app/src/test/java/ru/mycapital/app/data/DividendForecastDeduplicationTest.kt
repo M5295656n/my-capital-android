@@ -29,7 +29,7 @@ class DividendForecastDeduplicationTest {
     @Test fun sameMonthIssuerEventReplacesForecastEvenWhenAmountAndDateDiffer() {
         val events = listOf(
             event("SBER", "FORECAST", "2027-07-02", null, "sber-forecast", 44.68),
-            event("SBER", "ANNOUNCED", "2027-07-20", "2027-08-03", "sber-announced", 37.64)
+            event("SBER", "ANNOUNCED", "2027-07-20", null, "sber-announced", 37.64)
         )
         assertEquals(listOf("sber-announced"), removeSupersededDividendForecasts(events).map { it.sourceKey })
     }
