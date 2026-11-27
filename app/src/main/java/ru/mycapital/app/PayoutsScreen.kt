@@ -18,6 +18,7 @@ import ru.mycapital.app.data.AssetEntity
 import ru.mycapital.app.data.BrokerAccountAssetEntity
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.PayoutEntity
+import ru.mycapital.app.data.payoutDisplayTimestamp
 import ru.mycapital.app.data.isIncomePayoutType
 
 @Composable
