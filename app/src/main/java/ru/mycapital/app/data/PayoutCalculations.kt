@@ -2,6 +2,10 @@ package ru.mycapital.app.data
 
 import java.util.Locale
 
+/** Cash-flow date for display. History-only estimates may know the record date but not payment date. */
+internal fun payoutDisplayTimestamp(payout: PayoutEntity): Long? =
+    payout.actualDate ?: payout.expectedDate ?: payout.recordDate
+
 internal fun calculatePayoutNetAmount(grossAmount: Double, taxAmount: Double): Double {
     require(grossAmount.isFinite() && grossAmount > 0.0) { "Сумма выплаты должна быть положительной" }
     require(taxAmount.isFinite() && taxAmount >= 0.0 && taxAmount <= grossAmount) {
