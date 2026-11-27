@@ -17,8 +17,8 @@ android {
         applicationId = "ru.mycapital.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 139
-        versionName = "0.4.29"
+        versionCode = 140
+        versionName = "0.4.30"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
