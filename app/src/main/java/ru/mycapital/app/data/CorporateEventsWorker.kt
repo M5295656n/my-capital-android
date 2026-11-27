@@ -130,15 +130,10 @@ class CorporateEventsWorker(
                     )
                 }
                 val history = historyResult.dividends
-                // A successfully loaded, complete history with zero dividend rows
-                // is a verified absence of dividends, not a temporary source failure.
-                // Remove only our unreceived history estimates; preserve issuer events
-                // and broker-reported/received payouts.
                 if (history.isEmpty()) {
-                    database.withTransaction {
-                        dao.deleteUnreceivedMyCapitalHistoryDividendForecastsForTicker(asset.ticker)
-                    }
-                    continue
+                    throw java.io.IOException(
+                        "MOEX ответил без записей о дивидендах для ${asset.ticker}; прежний прогноз сохранён"
+                    )
                 }
                 val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
                 val normalizedTicker = normalizeDividendTicker(asset.ticker)
@@ -160,13 +155,9 @@ class CorporateEventsWorker(
                     hasProviderDividendOnRecordDate(asset.ticker, forecast.recordDate, providerDividendEvents, forecast.amountPerShare)
                 }
                 if (forecasts.isEmpty()) {
-                    // Complete history was loaded, but it contains no repeatable
-                    // payment pattern. Keeping last year's estimate would present
-                    // an obsolete payout as still expected.
-                    database.withTransaction {
-                        dao.deleteUnreceivedMyCapitalHistoryDividendForecastsForTicker(asset.ticker)
-                    }
-                    continue
+                    throw java.io.IOException(
+                        "История MOEX содержит ${history.size} записей, но алгоритм не построил прогноз для ${asset.ticker}; прежний прогноз сохранён"
+                    )
                 }
 
                 database.withTransaction {
