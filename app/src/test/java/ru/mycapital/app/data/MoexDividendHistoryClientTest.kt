@@ -558,6 +558,49 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun tatneftThreeAnnualSlotsRemainThreePerYearAcrossTheWorkersTwentyFourMonthHorizon() {
+        val history = listOf(
+            dividend("2023-07-11", 27.71), dividend("2023-10-11", 27.54),
+            dividend("2024-01-09", 35.17), dividend("2024-07-09", 25.17),
+            dividend("2024-10-08", 38.20), dividend("2025-01-08", 17.39),
+            dividend("2025-06-02", 43.11), dividend("2025-10-14", 14.35),
+            dividend("2026-01-11", 8.13), dividend("2026-07-15", 11.61),
+            dividend("2026-10-13", 32.88)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 24
+        )
+
+        assertEquals(6, forecasts.size)
+        assertEquals(
+            listOf(1, 7, 10, 1, 7, 10),
+            forecasts.map { it.recordDate.monthValue }
+        )
+        assertEquals(
+            listOf(2027, 2027, 2027, 2028, 2028, 2028),
+            forecasts.map { it.recordDate.year }
+        )
+    }
+
+    @Test
+    fun annualPayerGetsOneForecastInEachFutureCalendarYear() {
+        val history = listOf(
+            dividend("2024-05-15", 10.0),
+            dividend("2025-05-16", 11.0),
+            dividend("2026-05-15", 12.0)
+        ).map { it.copy(secid = "SBER") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "SBER", history, LocalDate.of(2026, 11, 27), horizonMonths = 24
+        )
+
+        assertEquals(2, forecasts.size)
+        assertEquals(listOf(2027, 2028), forecasts.map { it.recordDate.year })
+        assertEquals(listOf(5, 5), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
     fun annualSlotAdvancesOneCalendarYearAfterAMissedYear() {
         val history = listOf(
             dividend("2023-07-11", 27.71),
