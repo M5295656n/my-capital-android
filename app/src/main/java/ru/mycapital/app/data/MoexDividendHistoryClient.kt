@@ -505,6 +505,9 @@ internal class MoexDividendHistoryClient {
     private fun fetchAlternativeDividendHistory(ticker: String): List<HistoricalDividend>? {
         val base = "https://raw.githubusercontent.com/amchercashin/heroincome-data/main/data/stocks"
         val today = LocalDate.now(ZoneId.of("Europe/Moscow"))
+
+        // Fetch both independent archives and choose the more complete single
+        // issuer series. Never merge providers: their record dates may differ.
         val dohod = runCatching {
             if (!dohodIndexAttempted) {
                 dohodIndexAttempted = true
@@ -515,9 +518,8 @@ internal class MoexDividendHistoryClient {
             parseDohodHistoricalDividends(ticker, index.toString(), history.toString(), today)
                 .takeIf { it.isNotEmpty() }
         }.getOrNull()
-        if (dohod != null) return dohod
 
-        return runCatching {
+        val smartlab = runCatching {
             if (!smartlabIndexAttempted) {
                 smartlabIndexAttempted = true
                 smartlabIndex = runCatching { requestJson("$base/smartlab/index.json") }.getOrNull()
@@ -527,6 +529,16 @@ internal class MoexDividendHistoryClient {
             parseSmartlabHistoricalDividends(ticker, index.toString(), history.toString(), today)
                 .takeIf { it.isNotEmpty() }
         }.getOrNull()
+
+        if (dohod == null) return smartlab
+        if (smartlab == null) return dohod
+        val dohodStart = dohod.minOfOrNull { it.recordDate } ?: LocalDate.MAX
+        val smartlabStart = smartlab.minOfOrNull { it.recordDate } ?: LocalDate.MAX
+        return when {
+            smartlab.size > dohod.size -> smartlab
+            smartlab.size == dohod.size && smartlabStart.isBefore(dohodStart) -> smartlab
+            else -> dohod
+        }
     }
 
     private fun requestJson(url: String): JSONObject {
