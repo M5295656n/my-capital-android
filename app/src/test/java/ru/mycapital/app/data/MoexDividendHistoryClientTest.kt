@@ -494,6 +494,50 @@ class MoexDividendHistoryClientTest {
         assertEquals(listOf(3, 7, 11), forecasts.map { it.recordDate.monthValue })
     }
 
+    @Test
+    fun parsesCompleteDohodHistoryAndExcludesItsForecastRows() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["TATN"]}"""
+        val history = """{
+            "ticker":"TATN","scrapedAt":"2026-11-27T05:00:00Z",
+            "payments":[
+                {"recordDate":"2026-10-13","amount":32.88,"isForecast":false},
+                {"recordDate":"2026-07-15","amount":11.61,"isForecast":false},
+                {"recordDate":"2027-01-10","amount":31.44,"isForecast":true},
+                {"recordDate":"2027-07-15","amount":0,"isForecast":true}
+            ]
+        }"""
+        val rows = parseDohodHistoricalDividends("TATN", index, history, LocalDate.of(2026, 11, 27))
+        assertEquals(2, rows.size)
+        assertEquals(listOf(LocalDate.of(2026, 7, 15), LocalDate.of(2026, 10, 13)), rows.map { it.recordDate })
+        assertEquals(listOf(11.61, 32.88), rows.map { it.amountPerShare })
+    }
+
+    @Test
+    fun parsesSmartlabPaidHistoryAsFallbackAndIgnoresRecommendationsAndForeignCurrency() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["T"]}"""
+        val history = """{
+            "ticker":"T","scrapedAt":"2026-11-27T05:00:00Z",
+            "payments":[
+                {"recordDate":"2026-10-12","amount":4.7,"currency":"RUB","status":"paid"},
+                {"recordDate":"2026-12-14","amount":4.8,"currency":"RUB","status":"recommended"},
+                {"recordDate":"2025-10-06","amount":2.0,"currency":"USD","status":"paid"}
+            ]
+        }"""
+        val rows = parseSmartlabHistoricalDividends("T", index, history, LocalDate.of(2026, 11, 27))
+        assertEquals(1, rows.size)
+        assertEquals(LocalDate.of(2026, 10, 12), rows.single().recordDate)
+        assertEquals(4.7, rows.single().amountPerShare, 0.000001)
+    }
+
+    @Test
+    fun rejectsUnlistedTickerAndStaleDividendDataset() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["SBER"]}"""
+        val freshHistory = """{"ticker":"T","scrapedAt":"2026-11-27T05:00:00Z","payments":[{"recordDate":"2026-10-01","amount":1.0,"isForecast":false}]}"""
+        val staleHistory = """{"ticker":"SBER","scrapedAt":"2026-09-01T05:00:00Z","payments":[{"recordDate":"2026-10-01","amount":1.0,"isForecast":false}]}"""
+        assertEquals(0, parseDohodHistoricalDividends("T", index, freshHistory, LocalDate.of(2026, 11, 27)).size)
+        assertEquals(0, parseDohodHistoricalDividends("SBER", index, staleHistory, LocalDate.of(2026, 11, 27)).size)
+    }
+
     private fun dividend(date: String, amount: Double) =
         HistoricalDividend("SBER", LocalDate.parse(date), amount, "RUB")
 }
