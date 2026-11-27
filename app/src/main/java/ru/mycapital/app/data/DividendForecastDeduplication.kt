@@ -80,19 +80,22 @@ internal fun removeSupersededDividendForecasts(events: List<DividendCalendarEven
             if (!forecast.ticker.equals(announcement.ticker, ignoreCase = true)) return@firstOrNull false
             val confirmedDate = eventDate(announcement.paymentDate) ?: eventDate(announcement.recordDate)
                 ?: return@firstOrNull false
+            // An issuer-confirmed event in the same expected month supersedes
+            // one model estimate even when the estimate amount or registry date
+            // differs. Pair one-to-one so two separately announced payouts in
+            // the same month can still replace two independent estimates.
             val sameMonth = YearMonth.from(confirmedDate) == YearMonth.from(forecastDate)
-            val sameAmount = forecast.amountPerUnit.isFinite() && announcement.amountPerUnit.isFinite() &&
-                kotlin.math.abs(forecast.amountPerUnit - announcement.amountPerUnit) <= 0.01
-            sameMonth && sameAmount
+            sameMonth
         }
         if (match == null) false else { consumedConfirmed += match.index; true }
     }
 }
 
 /**
- * Suppress only one history estimate for each confirmed event. Using a simple
- * any-match here would remove every same-month estimate when the issuer has
- * announced just one of several independent payments.
+ * Suppress one history estimate for each provider event in the same expected
+ * month. Provider forecasts and history forecasts are two estimates of the same
+ * expected cash flow, not two separate payouts. One-to-one matching preserves
+ * multiple independent same-month events when the provider actually supplies them.
  */
 internal fun removeHistoryForecastsSupersededByProvider(
     ticker: String,
@@ -102,7 +105,8 @@ internal fun removeHistoryForecastsSupersededByProvider(
     val confirmed = events.withIndex().filter { indexed ->
         indexed.value.ticker.equals(ticker, ignoreCase = true) &&
             (indexed.value.status.equals("ANNOUNCED", true) ||
-                indexed.value.status.equals("RECOMMENDED", true))
+                indexed.value.status.equals("RECOMMENDED", true) ||
+                indexed.value.status.equals("FORECAST", true))
     }
     val consumed = mutableSetOf<Int>()
     return forecasts.filterNot { forecast ->
@@ -120,9 +124,10 @@ internal fun removeHistoryForecastsSupersededByProvider(
                 val closeDate = kotlin.math.abs(
                     java.time.temporal.ChronoUnit.DAYS.between(confirmedDate, forecast.recordDate)
                 ) <= 21L
-                // Match one forecast to one issuer event by amount or nearby event
-                // date. A month-only match can erase a second legitimate payout.
-                sameAmount || closeDate
+                val sameMonth = YearMonth.from(confirmedDate) == YearMonth.from(forecast.recordDate)
+                // Match one forecast to one issuer event by expected month, amount,
+                // or nearby date. One-to-one consumption preserves separate payouts.
+                sameMonth || sameAmount || closeDate
             }
         }
         if (match == null) false else {
