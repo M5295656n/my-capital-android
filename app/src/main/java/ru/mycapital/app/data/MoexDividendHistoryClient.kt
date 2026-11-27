@@ -443,7 +443,7 @@ internal class MoexDividendHistoryClient {
         // of the candidate security IDs could be queried.
         if (successfulHistoryEndpoints == 0 || !currentSecidVerified) {
             throw IOException(
-                "Не удалось получить историю дивидендов MOEX для $normalized: " +
+                "Не удалось получить историю дивидендов для $normalized из альтернативных источников и MOEX ISS: " +
                     (lastHistoryError?.message ?: "нет доступных SECID")
             )
         }
