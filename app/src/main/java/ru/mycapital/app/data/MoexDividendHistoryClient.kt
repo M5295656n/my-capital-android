@@ -204,14 +204,27 @@ internal fun calculateHistoricalDividendForecasts(
     // the shorter gap for a quarterly/three-per-year cadence and multiply the
     // forecast. Four recurring slots remain eligible for a genuine quarterly
     // schedule; one slot remains the annual-payer path.
+    // A genuinely regular six-month schedule (for example Apr/Oct) must stay
+    // on interval cadence. Switch to annual calendar slots only when the
+    // semiannual-labelled intervals are materially uneven, as with Yandex
+    // (roughly 5 months followed by 7 months).
+    val recentIntervals = cadenceRows.zipWithNext { first, second ->
+        java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
+    }
+    val hasUnevenSemiannualIntervals = selectedCadence == "SEMIANNUAL" &&
+        recentIntervals.size >= 2 &&
+        (recentIntervals.maxOrNull()!! - recentIntervals.minOrNull()!!) >= 30.0
+
     val hasStableAnnualSlotsAgainstNoisyCadence =
         annualSlotForecasts.isNotEmpty() && (
             // Three irregular annual installments can look quarterly to an
             // interval vote (e.g. 3/6/3-month gaps).
             (recurringAnnualSlotMonths.size == 3 && selectedCadence == "QUARTERLY") ||
                 // Two annual periods can look like three-per-year when one gap
-                // is short and the other long (e.g. 4/8-month gaps).
-                (recurringAnnualSlotMonths.size == 2 && selectedCadence in setOf("THREE_PER_YEAR", "SEMIANNUAL"))
+                // is short and the other long (e.g. 4/8-month gaps), or like
+                // semiannual when the gaps vary substantially from one slot to another.
+                (recurringAnnualSlotMonths.size == 2 &&
+                    (selectedCadence == "THREE_PER_YEAR" || hasUnevenSemiannualIntervals))
             )
     val forecasts = when {
         recentTwoPerYearForecasts.isNotEmpty() -> recentTwoPerYearForecasts
