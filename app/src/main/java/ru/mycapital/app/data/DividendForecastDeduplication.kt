@@ -13,10 +13,20 @@ private fun removeDuplicateDividendEvents(events: List<DividendCalendarEvent>): 
         val candidatePaymentDate = eventDate(candidate.paymentDate)
         val duplicateIndex = result.indexOfFirst { existing ->
             if (!existing.ticker.equals(candidate.ticker, ignoreCase = true)) return@indexOfFirst false
-            if (!existing.amountPerUnit.isFinite() || !candidate.amountPerUnit.isFinite() ||
-                kotlin.math.abs(existing.amountPerUnit - candidate.amountPerUnit) > 0.01) return@indexOfFirst false
             val existingRecordDate = eventDate(existing.recordDate)
             val existingPaymentDate = eventDate(existing.paymentDate)
+            val existingExpectedDate = existingPaymentDate ?: existingRecordDate
+            val candidateExpectedDate = candidatePaymentDate ?: candidateRecordDate
+            // Historical estimates are limited to one event per ticker/month.
+            // Two different model dates/amounts in the same month are not two
+            // independently confirmed issuer distributions.
+            val bothForecasts = existing.status.equals("FORECAST", true) &&
+                candidate.status.equals("FORECAST", true)
+            if (bothForecasts && existingExpectedDate != null && candidateExpectedDate != null &&
+                YearMonth.from(existingExpectedDate) == YearMonth.from(candidateExpectedDate)
+            ) return@indexOfFirst true
+            if (!existing.amountPerUnit.isFinite() || !candidate.amountPerUnit.isFinite() ||
+                kotlin.math.abs(existing.amountPerUnit - candidate.amountPerUnit) > 0.01) return@indexOfFirst false
             // The calendar is grouped by expected cash-payment date, so compare
             // payment dates first. Record dates are only a fallback when a source
             // does not publish a payment date.
