@@ -164,8 +164,7 @@ internal fun calculateHistoricalDividendForecasts(
                     val dayDifference = kotlin.math.abs(
                         java.time.temporal.ChronoUnit.DAYS.between(existing.recordDate, date)
                     )
-                    java.time.YearMonth.from(existing.recordDate) == java.time.YearMonth.from(date) &&
-                        dayDifference <= 7
+                    dayDifference <= 7
                 }
                 if (!date.isBefore(today) && amount.isFinite() && amount > 0.0 && !sameMonthlyEstimate) {
                     cadenceForecasts += HistoricalDividendForecast(
