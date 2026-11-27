@@ -97,6 +97,7 @@ internal fun calculateHistoricalDividendForecasts(
 
     val endDate = java.time.YearMonth.from(today).plusMonths(horizonMonths.toLong()).atEndOfMonth()
     val annualSlotForecasts = mutableListOf<HistoricalDividendForecast>()
+    val recurringAnnualSlotMonths = mutableSetOf<Int>()
     val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
     var selectedCadence: String? = null
 
@@ -110,6 +111,7 @@ internal fun calculateHistoricalDividendForecasts(
         if (oneEventPerYear && yearlyRows.size >= 2) {
             val yearGaps = yearlyRows.zipWithNext { a, b -> b.recordDate.year - a.recordDate.year }
             if (yearGaps.all { it in 1..2 }) {
+                recurringAnnualSlotMonths += monthRows.first().recordDate.monthValue
                 val latest = yearlyRows.last()
                 val amount = median(yearlyRows.takeLast(3).map { it.amountPerShare })
                 // A missing year must not turn a biennial gap into a 18-month forecast.
@@ -173,8 +175,12 @@ internal fun calculateHistoricalDividendForecasts(
     // When three independent month slots recur across years, retain those slots
     // instead of manufacturing a fourth quarterly payment.
     val forecasts = if (
-        selectedCadence == "QUARTERLY" && annualSlotForecasts.size in 3..4 &&
-        cadenceForecasts.size > annualSlotForecasts.size
+        // Count recurring annual slots, not the total number of generated rows:
+        // the worker forecasts 24 months, so three slots produce six rows.
+        // The previous 3..4 row-count guard only worked for a 12-month horizon
+        // and silently allowed a three-slot issuer to become quarterly at 24 months.
+        selectedCadence == "QUARTERLY" && recurringAnnualSlotMonths.size == 3 &&
+        annualSlotForecasts.isNotEmpty() && cadenceForecasts.size > annualSlotForecasts.size
     ) annualSlotForecasts else if (cadenceForecasts.isNotEmpty()) cadenceForecasts else annualSlotForecasts
 
     val reconciled = mutableListOf<HistoricalDividendForecast>()
