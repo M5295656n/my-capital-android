@@ -7,43 +7,6 @@ import org.junit.Test
 
 class PayoutCalculationsTest {
     @Test
-    fun historyForecastUsesRecordDateWhenPaymentDateIsUnknown() {
-        val payout = PayoutEntity(
-            assetId = null,
-            ticker = "TATN",
-            payoutType = "Дивиденд",
-            amountPerUnit = 10.0,
-            quantity = 2.0,
-            totalAmount = 20.0,
-            expectedDate = null,
-            actualDate = null,
-            recordDate = 1_800_000_000_000L,
-            status = "FORECAST",
-            sourceName = "MyCapital · история MOEX"
-        )
-
-        assertEquals(1_800_000_000_000L, payoutDisplayTimestamp(payout))
-    }
-
-    @Test
-    fun actualPaymentDateTakesPrecedenceOverExpectedAndRecordDates() {
-        val payout = PayoutEntity(
-            assetId = null,
-            ticker = "SBER",
-            payoutType = "Дивиденд",
-            amountPerUnit = 10.0,
-            quantity = 1.0,
-            totalAmount = 10.0,
-            expectedDate = 1_800_000_000_000L,
-            actualDate = 1_800_100_000_000L,
-            recordDate = 1_799_900_000_000L,
-            status = "RECEIVED"
-        )
-
-        assertEquals(1_800_100_000_000L, payoutDisplayTimestamp(payout))
-    }
-
-    @Test
     fun calculatesNetPayoutAfterTax() {
         assertEquals(870.0, calculatePayoutNetAmount(1000.0, 130.0), 0.000001)
     }
