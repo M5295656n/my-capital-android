@@ -89,6 +89,18 @@ class DividendForecastDeduplicationTest {
         assertEquals(0, remaining.size)
     }
 
+    @Test fun confirmedPaymentDoesNotHideDifferentIndependentForecastInSameMonth() {
+        val forecasts = listOf(
+            HistoricalDividendForecast("TATN", 31.44, LocalDate.parse("2027-01-10"), "forecast-main"),
+            HistoricalDividendForecast("TATN", 20.00, LocalDate.parse("2027-01-25"), "forecast-second")
+        )
+        val events = listOf(event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed-main", 31.44))
+
+        val remaining = removeHistoryForecastsSupersededByProvider("TATN", forecasts, events)
+
+        assertEquals(listOf("forecast-second"), remaining.map { it.sourceKey })
+    }
+
     @Test fun historyForecastMatcherUsesMonthAndAmountWhenDatesDiffer() {
         val events = listOf(event("TATN", "RECOMMENDED", "2027-01-19", null, "confirmed"))
         assertEquals(true, hasProviderDividendOnRecordDate("TATN", LocalDate.parse("2027-01-10"), events, amountPerShare = 31.44))
