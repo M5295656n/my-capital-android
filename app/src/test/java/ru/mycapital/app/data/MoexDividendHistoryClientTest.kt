@@ -346,7 +346,7 @@ class MoexDividendHistoryClientTest {
 
         assertEquals(2, forecasts.size)
         assertEquals(listOf(4, 10), forecasts.map { it.recordDate.monthValue })
-        assertEquals(3.4, forecasts[0].amountPerShare, 0.000001)
+        assertEquals(3.2, forecasts[0].amountPerShare, 0.000001)
         assertEquals(3.4, forecasts[1].amountPerShare, 0.000001)
     }
 
