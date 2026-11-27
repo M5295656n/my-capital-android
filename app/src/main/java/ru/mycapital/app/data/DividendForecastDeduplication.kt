@@ -105,12 +105,9 @@ internal fun removeHistoryForecastsSupersededByProvider(
             )
             if (confirmedDates.isEmpty()) return@firstOrNull false
             confirmedDates.any { confirmedDate ->
-                val sameDate = confirmedDate == forecast.recordDate
-                val sameMonthAndAmount =
-                    YearMonth.from(confirmedDate) == YearMonth.from(forecast.recordDate) &&
-                        forecast.amountPerShare.isFinite() && event.amountPerUnit.isFinite() &&
-                        kotlin.math.abs(forecast.amountPerShare - event.amountPerUnit) <= 0.01
-                sameDate || sameMonthAndAmount
+                // One issuer event per month: a confirmed payment supersedes
+                // the history estimate for that month even if its final amount differs.
+                YearMonth.from(confirmedDate) == YearMonth.from(forecast.recordDate)
             }
         }
         if (match == null) false else {
