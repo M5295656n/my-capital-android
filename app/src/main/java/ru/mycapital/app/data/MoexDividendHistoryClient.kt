@@ -163,22 +163,34 @@ internal fun calculateHistoricalDividendForecasts(
                 .maxOrNull() ?: cadenceRows.last().recordDate
             val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
             var date = anchor.plusDays(stepDays)
-            while (!date.isAfter(endMonth.atEndOfMonth())) {
-                val sameMonthlyEstimate = forecasts.any { existing ->
-                    val dayDifference = kotlin.math.abs(
+            // If an annual cadence projection lands near an already established
+            // calendar-month recurrence, prefer the month-based estimate. Otherwise
+            // a single historical payment can produce a second forecast nearby
+            // (for example May recurrence plus a June cadence projection).
+            val overlapsAnnualMonthForecast = cadenceDays in 300.0..430.0 &&
+                forecasts.any { existing ->
+                    kotlin.math.abs(
                         java.time.temporal.ChronoUnit.DAYS.between(existing.recordDate, date)
-                    )
-                    dayDifference <= 7
+                    ) <= 45
                 }
-                if (!date.isBefore(today) && amount.isFinite() && amount > 0.0 && !sameMonthlyEstimate) {
-                    cadenceForecasts += HistoricalDividendForecast(
-                        ticker = normalizedTicker,
-                        amountPerShare = amount,
-                        recordDate = date,
-                        sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
-                    )
+            if (!overlapsAnnualMonthForecast) {
+                while (!date.isAfter(endMonth.atEndOfMonth())) {
+                    val sameMonthlyEstimate = forecasts.any { existing ->
+                        val dayDifference = kotlin.math.abs(
+                            java.time.temporal.ChronoUnit.DAYS.between(existing.recordDate, date)
+                        )
+                        dayDifference <= 7
+                    }
+                    if (!date.isBefore(today) && amount.isFinite() && amount > 0.0 && !sameMonthlyEstimate) {
+                        cadenceForecasts += HistoricalDividendForecast(
+                            ticker = normalizedTicker,
+                            amountPerShare = amount,
+                            recordDate = date,
+                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                        )
+                    }
+                    date = date.plusDays(stepDays)
                 }
-                date = date.plusDays(stepDays)
             }
         }
     }
