@@ -79,6 +79,46 @@ internal fun removeSupersededDividendForecasts(events: List<DividendCalendarEven
     }
 }
 
+/**
+ * Suppress only one history estimate for each confirmed event. Using a simple
+ * any-match here would remove every same-month estimate when the issuer has
+ * announced just one of several independent payments.
+ */
+internal fun removeHistoryForecastsSupersededByProvider(
+    ticker: String,
+    forecasts: List<HistoricalDividendForecast>,
+    events: List<DividendCalendarEvent>
+): List<HistoricalDividendForecast> {
+    val confirmed = events.withIndex().filter { indexed ->
+        indexed.value.ticker.equals(ticker, ignoreCase = true) &&
+            (indexed.value.status.equals("ANNOUNCED", true) ||
+                indexed.value.status.equals("RECOMMENDED", true))
+    }
+    val consumed = mutableSetOf<Int>()
+    return forecasts.filterNot { forecast ->
+        val match = confirmed.firstOrNull { indexed ->
+            if (indexed.index in consumed) return@firstOrNull false
+            val event = indexed.value
+            val confirmedDate = eventDateForDividendDedup(event.recordDate)
+                ?: eventDateForDividendDedup(event.paymentDate)
+                ?: return@firstOrNull false
+            val sameDate = confirmedDate == forecast.recordDate
+            val sameMonthAndAmount =
+                YearMonth.from(confirmedDate) == YearMonth.from(forecast.recordDate) &&
+                    forecast.amountPerShare.isFinite() && event.amountPerUnit.isFinite() &&
+                    kotlin.math.abs(forecast.amountPerShare - event.amountPerUnit) <= 0.01
+            sameDate || sameMonthAndAmount
+        }
+        if (match == null) false else {
+            consumed += match.index
+            true
+        }
+    }
+}
+
+private fun eventDateForDividendDedup(value: Long?): LocalDate? =
+    value?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
+
 /** True when an issuer-confirmed payout supersedes a history estimate. */
 internal fun hasProviderDividendOnRecordDate(
     ticker: String, forecastDate: LocalDate, events: List<DividendCalendarEvent>, amountPerShare: Double? = null
