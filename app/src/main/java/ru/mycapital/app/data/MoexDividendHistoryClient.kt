@@ -489,12 +489,18 @@ internal class MoexDividendHistoryClient {
 
     private var dohodIndex: JSONObject? = null
     private var smartlabIndex: JSONObject? = null
+    private var dohodIndexAttempted = false
+    private var smartlabIndexAttempted = false
 
     private fun fetchAlternativeDividendHistory(ticker: String): List<HistoricalDividend>? {
         val base = "https://raw.githubusercontent.com/amchercashin/heroincome-data/main/data/stocks"
         val today = LocalDate.now(ZoneId.of("Europe/Moscow"))
         val dohod = runCatching {
-            val index = dohodIndex ?: requestJson("$base/dohod/index.json").also { dohodIndex = it }
+            if (!dohodIndexAttempted) {
+                dohodIndexAttempted = true
+                dohodIndex = runCatching { requestJson("$base/dohod/index.json") }.getOrNull()
+            }
+            val index = dohodIndex ?: return@runCatching null
             val history = requestJson("$base/dohod/$ticker.json")
             parseDohodHistoricalDividends(ticker, index.toString(), history.toString(), today)
                 .takeIf { it.isNotEmpty() }
@@ -502,7 +508,11 @@ internal class MoexDividendHistoryClient {
         if (dohod != null) return dohod
 
         return runCatching {
-            val index = smartlabIndex ?: requestJson("$base/smartlab/index.json").also { smartlabIndex = it }
+            if (!smartlabIndexAttempted) {
+                smartlabIndexAttempted = true
+                smartlabIndex = runCatching { requestJson("$base/smartlab/index.json") }.getOrNull()
+            }
+            val index = smartlabIndex ?: return@runCatching null
             val history = requestJson("$base/smartlab/$ticker.json")
             parseSmartlabHistoricalDividends(ticker, index.toString(), history.toString(), today)
                 .takeIf { it.isNotEmpty() }
