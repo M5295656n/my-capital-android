@@ -564,5 +564,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: my-capital-0.4.34-release-apk
-          path: app/build/outputs/apk/release/MyCapital-0.4.33.apk
+          path: app/build/outputs/apk/release/MyCapital-0.4.34.apk
           if-no-files-found: error
