@@ -167,6 +167,37 @@ internal fun calculateHistoricalDividendForecasts(
         }
     }
 
+    // Some issuers pay twice per year but move the registry dates between
+    // months from one year to the next. MDMG is a real example: its latest two
+    // calendar years each contain two paid events, while short 81-97 day gaps
+    // make an interval vote incorrectly label the series quarterly. Only use
+    // this fallback late in the calendar year, when the current year's second
+    // payment has had time to appear in the published paid history.
+    val latestCalendarYears = history.groupBy { it.recordDate.year }
+        .toSortedMap().entries.toList().takeLast(2)
+    val recentTwoPerYearForecasts = mutableListOf<HistoricalDividendForecast>()
+    val hasTwoPaymentsInEachRecentYear = today.monthValue >= 10 &&
+        latestCalendarYears.size == 2 &&
+        latestCalendarYears.all { it.value.size == 2 } &&
+        selectedCadence in setOf("QUARTERLY", "THREE_PER_YEAR")
+    if (hasTwoPaymentsInEachRecentYear) {
+        val previousYearRows = latestCalendarYears[0].value.sortedBy { it.recordDate }
+        val latestYearRows = latestCalendarYears[1].value.sortedBy { it.recordDate }
+        for (slot in 0..1) {
+            val amount = median(listOf(previousYearRows[slot].amountPerShare, latestYearRows[slot].amountPerShare))
+            var date = latestYearRows[slot].recordDate.plusYears(1)
+            while (!date.isAfter(endDate)) {
+                if (!date.isBefore(today)) {
+                    recentTwoPerYearForecasts += HistoricalDividendForecast(
+                        normalizedTicker, amount, date,
+                        "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                    )
+                }
+                date = date.plusYears(1)
+            }
+        }
+    }
+
     // Stable calendar-year slots are stronger evidence than a noisy interval
     // vote when an issuer has two or three distinct recurring installments.
     // With uneven gaps (for example 4 + 8 months), interval voting can mistake
@@ -179,15 +210,14 @@ internal fun calculateHistoricalDividendForecasts(
             // interval vote (e.g. 3/6/3-month gaps).
             (recurringAnnualSlotMonths.size == 3 && selectedCadence == "QUARTERLY") ||
                 // Two annual periods can look like three-per-year when one gap
-                // is short and the other is long (e.g. 4/8-month gaps).
+                // is short and the other long (e.g. 4/8-month gaps).
                 (recurringAnnualSlotMonths.size == 2 && selectedCadence == "THREE_PER_YEAR")
             )
-    val forecasts = if (hasStableAnnualSlotsAgainstNoisyCadence) {
-        annualSlotForecasts
-    } else if (cadenceForecasts.isNotEmpty()) {
-        cadenceForecasts
-    } else {
-        annualSlotForecasts
+    val forecasts = when {
+        recentTwoPerYearForecasts.isNotEmpty() -> recentTwoPerYearForecasts
+        hasStableAnnualSlotsAgainstNoisyCadence -> annualSlotForecasts
+        cadenceForecasts.isNotEmpty() -> cadenceForecasts
+        else -> annualSlotForecasts
     }
 
     // Forecasts represent expected issuer distributions, not separate source
