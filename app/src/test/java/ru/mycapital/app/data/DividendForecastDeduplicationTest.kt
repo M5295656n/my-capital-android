@@ -82,6 +82,19 @@ class DividendForecastDeduplicationTest {
         assertEquals(listOf("forecast-b"), remaining.map { it.sourceKey })
     }
 
+    @Test fun sameMonthProviderEventSupersedesHistoryForecastDespiteDifferentAmount() {
+        val forecasts = listOf(
+            HistoricalDividendForecast("MOEX", 20.44, LocalDate.parse("2027-07-09"), "moex-history-forecast")
+        )
+        val events = listOf(
+            event("MOEX", "ANNOUNCED", "2027-07-20", null, "moex-provider-event", 19.57)
+        )
+
+        val remaining = removeHistoryForecastsSupersededByProvider("MOEX", forecasts, events)
+
+        assertEquals(0, remaining.size)
+    }
+
     @Test fun twoConfirmedPayoutsSuppressTwoMatchingHistoryForecastsOneToOne() {
         val forecasts = listOf(
             HistoricalDividendForecast("TATN", 31.44, LocalDate.parse("2027-01-10"), "forecast-a"),
