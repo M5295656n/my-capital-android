@@ -144,7 +144,7 @@ class CorporateEventsWorker(
                         continue
                     }
                     throw java.io.IOException(
-                        "MOEX не вернул полную историю для ${asset.ticker}; прежний прогноз сохранён"
+                        "поставщик истории дивидендов не вернул полную историю для ${asset.ticker}; прежний прогноз сохранён"
                     )
                 }
                 val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
@@ -180,7 +180,7 @@ class CorporateEventsWorker(
                         continue
                     }
                     throw java.io.IOException(
-                        "История MOEX для ${asset.ticker} неполная; прежний прогноз сохранён"
+                        "История дивидендов для ${asset.ticker} неполная; прежний прогноз сохранён"
                     )
                 }
 
@@ -203,7 +203,7 @@ class CorporateEventsWorker(
                             status = "FORECAST",
                             sourceKey = forecast.sourceKey,
                             recordDate = estimatedRecordDate,
-                            sourceName = "MyCapital · история MOEX"
+                            sourceName = "MyCapital · история дивидендов"
                         )
                         val existing = dao.getPayoutBySourceKey(forecast.sourceKey)
                         if (existing == null) {
@@ -221,7 +221,7 @@ class CorporateEventsWorker(
                 // Keep the last good forecast cache for this ticker.
                 transientFailures++
                 if (errors.size < 8) {
-                    errors += "Прогноз ${asset.ticker}: история MOEX не обновлена (${error.message ?: error.javaClass.simpleName})"
+                    errors += "Прогноз ${asset.ticker}: история дивидендов не обновлена (${error.message ?: error.javaClass.simpleName})"
                 }
             }
         }
@@ -289,7 +289,7 @@ class CorporateEventsWorker(
         }
 
         val summary = buildString {
-            append("Акции: получено событий $feedEvents, совпадений $matchedDividends, записей $importedDividends; прогнозов по истории MOEX добавлено/обновлено $historyForecastsSaved. ")
+            append("Акции: получено событий $feedEvents, совпадений $matchedDividends, записей $importedDividends; прогнозов по истории дивидендов добавлено/обновлено $historyForecastsSaved. ")
             append("Облигации: найдено ${bondAssets.size}, получено будущих событий выплат (купоны, амортизации, погашения) $bondEventsReceived, записей добавлено/обновлено $bondPayoutsSaved, неподдерживаемых $unsupportedBonds.")
             if (errors.isNotEmpty()) append(" Ошибки: ").append(errors.joinToString("; "))
         }

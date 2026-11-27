@@ -459,6 +459,130 @@ class MoexDividendHistoryClientTest {
         assertEquals(listOf(3, 7, 11), forecasts.map { it.recordDate.monthValue })
     }
 
+    @Test
+    fun forecastsThreePaymentsPerYearFromFourMonthCadence() {
+        val history = listOf(
+            dividend("2025-02-01", 1.0),
+            dividend("2025-06-01", 1.1),
+            dividend("2025-10-01", 1.2),
+            dividend("2026-02-01", 1.3),
+            dividend("2026-06-01", 1.4),
+            dividend("2026-10-01", 1.5)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 1), horizonMonths = 12
+        )
+
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(1, 6, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun forecastsEachIndependentAnnualDividendSlotWithoutCollapsingThem() {
+        val history = listOf(
+            dividend("2024-03-10", 2.0), dividend("2025-03-12", 2.2),
+            dividend("2024-07-10", 3.0), dividend("2025-07-12", 3.2),
+            dividend("2024-11-10", 4.0), dividend("2025-11-12", 4.2)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 1, 1), horizonMonths = 12
+        )
+
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(3, 7, 11), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun parsesCompleteDohodHistoryAndExcludesItsForecastRows() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["TATN"]}"""
+        val history = """{
+            "ticker":"TATN","scrapedAt":"2026-11-27T05:00:00Z",
+            "payments":[
+                {"recordDate":"2026-10-13","amount":32.88,"isForecast":false},
+                {"recordDate":"2026-07-15","amount":11.61,"isForecast":false},
+                {"recordDate":"2027-01-10","amount":31.44,"isForecast":true},
+                {"recordDate":"2027-07-15","amount":0,"isForecast":true}
+            ]
+        }"""
+        val rows = parseDohodHistoricalDividends("TATN", index, history, LocalDate.of(2026, 11, 27))
+        assertEquals(2, rows.size)
+        assertEquals(listOf(LocalDate.of(2026, 7, 15), LocalDate.of(2026, 10, 13)), rows.map { it.recordDate })
+        assertEquals(listOf(11.61, 32.88), rows.map { it.amountPerShare })
+    }
+
+    @Test
+    fun parsesSmartlabPaidHistoryAsFallbackAndIgnoresRecommendationsAndForeignCurrency() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["T"]}"""
+        val history = """{
+            "ticker":"T","scrapedAt":"2026-11-27T05:00:00Z",
+            "payments":[
+                {"recordDate":"2026-10-12","amount":4.7,"currency":"RUB","status":"paid"},
+                {"recordDate":"2026-12-14","amount":4.8,"currency":"RUB","status":"recommended"},
+                {"recordDate":"2025-10-06","amount":2.0,"currency":"USD","status":"paid"}
+            ]
+        }"""
+        val rows = parseSmartlabHistoricalDividends("T", index, history, LocalDate.of(2026, 11, 27))
+        assertEquals(1, rows.size)
+        assertEquals(LocalDate.of(2026, 10, 12), rows.single().recordDate)
+        assertEquals(4.7, rows.single().amountPerShare, 0.000001)
+    }
+
+    @Test
+    fun rejectsUnlistedTickerAndStaleDividendDataset() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["SBER"]}"""
+        val freshHistory = """{"ticker":"T","scrapedAt":"2026-11-27T05:00:00Z","payments":[{"recordDate":"2026-10-01","amount":1.0,"isForecast":false}]}"""
+        val staleHistory = """{"ticker":"SBER","scrapedAt":"2026-09-01T05:00:00Z","payments":[{"recordDate":"2026-10-01","amount":1.0,"isForecast":false}]}"""
+        assertEquals(0, parseDohodHistoricalDividends("T", index, freshHistory, LocalDate.of(2026, 11, 27)).size)
+        assertEquals(0, parseDohodHistoricalDividends("SBER", index, staleHistory, LocalDate.of(2026, 11, 27)).size)
+    }
+
+    @Test
+    fun tatneftThreeRecurringAnnualSlotsDoNotBecomeFourQuarterlyForecasts() {
+        val history = listOf(
+            dividend("2023-07-11", 27.71), dividend("2023-10-11", 27.54),
+            dividend("2024-01-09", 35.17), dividend("2024-07-09", 25.17),
+            dividend("2024-10-08", 38.20), dividend("2025-01-08", 17.39),
+            dividend("2025-06-02", 43.11), dividend("2025-10-14", 14.35),
+            dividend("2026-01-11", 8.13), dividend("2026-07-15", 11.61),
+            dividend("2026-10-13", 32.88)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 12
+        )
+
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(1, 7, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun annualSlotAdvancesOneCalendarYearAfterAMissedYear() {
+        val history = listOf(
+            dividend("2023-07-11", 27.71),
+            dividend("2024-07-09", 25.17),
+            dividend("2026-07-15", 11.61)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "TATN", history, LocalDate.of(2026, 11, 27), horizonMonths = 14
+        )
+
+        assertEquals(listOf(LocalDate.of(2027, 7, 15)), forecasts.map { it.recordDate })
+    }
+
+    @Test
+    fun rejectsHistoryFileWhoseTickerDoesNotMatchRequestedTicker() {
+        val index = """{"updatedAt":"2026-11-27T05:00:00Z","tickers":["TATN"]}"""
+        val wrongIssuer = """{"ticker":"TATNP","scrapedAt":"2026-11-27T05:00:00Z","payments":[{"recordDate":"2026-10-13","amount":32.88,"isForecast":false}]}"""
+
+        assertEquals(
+            0,
+            parseDohodHistoricalDividends("TATN", index, wrongIssuer, LocalDate.of(2026, 11, 27)).size
+        )
+    }
+
     private fun dividend(date: String, amount: Double) =
         HistoricalDividend("SBER", LocalDate.parse(date), amount, "RUB")
 }

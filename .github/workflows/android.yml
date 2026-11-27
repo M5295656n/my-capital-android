@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/dividend-forecast-dedup-2026-11-24 ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/dividend-forecast-dedup-2026-11-24, fix/payouts-all-equities-2026-11-27 ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
     branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24 ]
@@ -27,6 +27,7 @@ jobs:
         id: filter
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BRANCH_REF: ${{ github.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
@@ -36,6 +37,12 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Manual run: full instrumented suite enabled."
+            exit 0
+          fi
+
+          if [ "$BRANCH_REF" = "refs/heads/fix/payouts-all-equities-2026-11-27" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Dividend payouts validation branch: full Room instrumentation suite enabled."
             exit 0
           fi
 
@@ -50,7 +57,7 @@ jobs:
           fi
 
           cat changed-files.txt
-          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
+          if grep -Eiq '(^app/src/androidTest/)|(^app/schemas/)|(^app/src/(main|test)/.*(Database|Dao|Migration|Repository|Backup|Restore|Import|BrokerReport|Portfolio|CorporateEventsWorker|PayoutsScreen|PayoutVisibility).*[.](kt|java)$)|(^app/src/main/.*/(database|dao|migration|backup|restore|import)/)|(^build[.]gradle([.]kts)?$)|(^gradle/libs[.]versions[.]toml$)' changed-files.txt; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Data-layer or Android integration files changed: instrumented suite enabled."
           else
@@ -119,6 +126,8 @@ jobs:
           openssl x509 -in "$CERT" -noout -subject -dates
           cat /etc/ssl/certs/ca-certificates.crt "$CERT" > "$RUNNER_TEMP/moex-ca-bundle.pem"
           echo "SSL_CERT_FILE=$RUNNER_TEMP/moex-ca-bundle.pem" >> "$GITHUB_ENV"
+      - name: Verify all public dividend-history datasets and source coverage
+        run: python3 scripts/verify_dividend_history_sources.py
       - name: Verify live MOEX history for affected instruments
         run: |
           python3 - <<'PY'
@@ -520,10 +529,21 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle assembleRelease
+      - name: Verify APK version and prepare release filename
+        run: |
+          set -euo pipefail
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+          RELEASE_APK="app/build/outputs/apk/release/MyCapital-0.4.31.apk"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          BADGING="$("$AAPT" dump badging "$SOURCE_APK")"
+          printf '%s\\n' "$BADGING"
+          printf '%s\\n' "$BADGING" | grep -F "versionCode='141' versionName='0.4.31'"
+          cp "$SOURCE_APK" "$RELEASE_APK"
+          test -s "$RELEASE_APK"
       - name: Verify release APK signing certificate
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release.apk"
+          APK="app/build/outputs/apk/release/MyCapital-0.4.31.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
           printf '%s' "$VERIFY_OUTPUT"
@@ -543,6 +563,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: my-capital-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: my-capital-0.4.31-release-apk
+          path: app/build/outputs/apk/release/MyCapital-0.4.31.apk
           if-no-files-found: error
