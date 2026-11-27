@@ -142,13 +142,16 @@ internal fun MarketCalendarSection(
     }
     val payoutItems = remember(payouts) {
         payouts.mapNotNull { payout ->
-            val timestamp = payout.expectedDate ?: payout.actualDate ?: return@mapNotNull null
+            val timestamp = payoutDisplayTimestamp(payout) ?: return@mapNotNull null
             CalendarDisplayItem(
                 key = payout.sourceKey ?: "payout:${payout.id}",
                 date = java.time.Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate(),
                 category = "Выплаты",
                 title = "${payout.payoutType}: ${payout.ticker}",
-                description = "Ожидаемая сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
+                description = (if (payout.sourceName == "MyCapital · история MOEX" && payout.status == "FORECAST")
+                    "Прогноз по истории MOEX: дата в календаре — оценка даты отсечки, а не дата поступления денег. "
+                    else "") +
+                    "Сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
                 source = payout.sourceName ?: "Портфель",
                 url = null,
                 detailsUrl = null,
