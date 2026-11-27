@@ -149,9 +149,13 @@ internal fun MarketCalendarSection(
                 date = java.time.Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate(),
                 category = "Выплаты",
                 title = "${payout.payoutType}: ${payout.ticker}",
-                description = (if (payout.sourceName == "MyCapital · история MOEX" && payout.status == "FORECAST")
-                    "Прогноз по истории MOEX: дата в календаре — оценка даты отсечки, а не дата поступления денег. "
-                    else "") +
+                description = (when {
+                    payout.sourceName == "MyCapital · история MOEX" && payout.status == "FORECAST" ->
+                        "Прогноз по истории MOEX: дата в календаре — оценка даты отсечки; дата поступления денег неизвестна. "
+                    payout.expectedDate == null && payout.recordDate != null ->
+                        "Дата в календаре — дата отсечки; дата поступления денег не опубликована. "
+                    else -> ""
+                }) +
                     "Сумма по текущей позиции: ${String.format(Locale("ru", "RU"), "%.2f", payout.totalAmount)} ₽. Статус: ${payout.status}.",
                 source = payout.sourceName ?: "Портфель",
                 url = null,
