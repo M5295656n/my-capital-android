@@ -31,8 +31,8 @@ internal fun calculatePayoutForecast(
     zoneId: ZoneId = ZoneId.of("UTC")
 ): PayoutForecastSummary {
     val datedExpected = payouts.mapNotNull { payout ->
-        if (!(payout.status == "EXPECTED" || isUpcomingDividendStatus(payout.status)) || payout.expectedDate == null) return@mapNotNull null
-        val timestamp = payout.expectedDate
+        if (!(payout.status == "EXPECTED" || isUpcomingDividendStatus(payout.status))) return@mapNotNull null
+        val timestamp = payout.expectedDate ?: payout.recordDate ?: return@mapNotNull null
         val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
         if (date.isBefore(today)) return@mapNotNull null
         date to payout.totalAmount
