@@ -120,7 +120,13 @@ internal fun calculateHistoricalDividendForecasts(
     val (supportingIntervals, minSupport) = when {
         quarterly.size >= 2 -> quarterly to 2
         semiannual.size >= 2 -> semiannual to 2
-        annual.isNotEmpty() -> annual to 1
+        // One annual interval is enough only when the history contains exactly
+        // two observations. With 3+ observations, require two consecutive annual
+        // intervals so an isolated late payment cannot create a false schedule.
+        annual.isNotEmpty() && (
+            cadenceRows.size == 2 ||
+                intervals.takeLast(2).all { it in 300.0..430.0 }
+            ) -> annual to 1
         else -> return emptyList()
     }
     if (supportingIntervals.size < minSupport) return emptyList()
