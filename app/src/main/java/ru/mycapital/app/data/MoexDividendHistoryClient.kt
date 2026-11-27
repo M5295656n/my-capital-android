@@ -167,30 +167,38 @@ internal fun calculateHistoricalDividendForecasts(
         }
     }
 
-    // Prefer a coherent interval cadence when it is supported by repeated
-    // observations. Use calendar-year slots only when cadence inference is
-    // inconclusive (e.g. two parallel annual dividend periods).
-    // Some issuers pay three distinct annual installments with uneven 3/6-month
-    // gaps. A naive dominant-interval vote can mislabel those as quarterly.
-    // When three independent month slots recur across years, retain those slots
-    // instead of manufacturing a fourth quarterly payment.
-    val forecasts = if (
-        // Count recurring annual slots, not the total number of generated rows:
-        // the worker forecasts 24 months, so three slots produce six rows.
-        // The previous 3..4 row-count guard only worked for a 12-month horizon
-        // and silently allowed a three-slot issuer to become quarterly at 24 months.
-        selectedCadence == "QUARTERLY" && recurringAnnualSlotMonths.size == 3 &&
-        annualSlotForecasts.isNotEmpty() && cadenceForecasts.size > annualSlotForecasts.size
-    ) annualSlotForecasts else if (cadenceForecasts.isNotEmpty()) cadenceForecasts else annualSlotForecasts
+    // Stable calendar-year slots are stronger evidence than a noisy interval
+    // vote when an issuer has two or three distinct recurring installments.
+    // With uneven gaps (for example 4 + 8 months), interval voting can mistake
+    // the shorter gap for a quarterly/three-per-year cadence and multiply the
+    // forecast. Four recurring slots remain eligible for a genuine quarterly
+    // schedule; one slot remains the annual-payer path.
+    val hasStableAnnualSlotsAgainstNoisyCadence =
+        annualSlotForecasts.isNotEmpty() && (
+            // Three irregular annual installments can look quarterly to an
+            // interval vote (e.g. 3/6/3-month gaps).
+            (recurringAnnualSlotMonths.size == 3 && selectedCadence == "QUARTERLY") ||
+                // Two annual periods can look like three-per-year when one gap
+                // is short and the other is long (e.g. 4/8-month gaps).
+                (recurringAnnualSlotMonths.size == 2 && selectedCadence == "THREE_PER_YEAR")
+            )
+    val forecasts = if (hasStableAnnualSlotsAgainstNoisyCadence) {
+        annualSlotForecasts
+    } else if (cadenceForecasts.isNotEmpty()) {
+        cadenceForecasts
+    } else {
+        annualSlotForecasts
+    }
 
+    // Forecasts represent expected issuer distributions, not separate source
+    // rows. Never create two estimated payouts for the same ticker in one
+    // calendar month, even when the inferred dates/amounts differ slightly.
     val reconciled = mutableListOf<HistoricalDividendForecast>()
     forecasts.sortedBy { it.recordDate }.forEach { candidate ->
-        val duplicateIndex = reconciled.indexOfFirst { existing ->
-            kotlin.math.abs(
-                java.time.temporal.ChronoUnit.DAYS.between(existing.recordDate, candidate.recordDate)
-            ) <= 21L && kotlin.math.abs(existing.amountPerShare - candidate.amountPerShare) <= 0.01
+        val alreadyForecastedMonth = reconciled.any { existing ->
+            java.time.YearMonth.from(existing.recordDate) == java.time.YearMonth.from(candidate.recordDate)
         }
-        if (duplicateIndex < 0) reconciled += candidate
+        if (!alreadyForecastedMonth) reconciled += candidate
     }
     return reconciled.sortedBy { it.recordDate }
 }

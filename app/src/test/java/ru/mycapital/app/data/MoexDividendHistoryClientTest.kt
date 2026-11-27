@@ -584,6 +584,33 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun twoAnnualDividendSlotsWinOverNoisyThreePerYearIntervalVoteAcrossTwentyFourMonths() {
+        val history = listOf(
+            dividend("2024-03-10", 2.0),
+            dividend("2024-11-10", 4.0),
+            dividend("2025-03-10", 2.2),
+            dividend("2025-11-10", 4.2),
+            dividend("2026-03-10", 2.4),
+            dividend("2026-11-10", 4.4)
+        ).map { it.copy(secid = "YDEX") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            "YDEX", history, LocalDate.of(2026, 11, 27), horizonMonths = 24
+        )
+
+        assertEquals(4, forecasts.size)
+        assertEquals(
+            listOf(
+                LocalDate.of(2027, 3, 10),
+                LocalDate.of(2027, 11, 10),
+                LocalDate.of(2028, 3, 10),
+                LocalDate.of(2028, 11, 10)
+            ),
+            forecasts.map { it.recordDate }
+        )
+    }
+
+    @Test
     fun annualPayerGetsOneForecastInEachFutureCalendarYear() {
         val history = listOf(
             dividend("2024-05-15", 10.0),
