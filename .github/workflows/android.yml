@@ -28,6 +28,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BRANCH_REF: ${{ github.ref }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
@@ -40,7 +41,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$BRANCH_REF" = "refs/heads/fix/payouts-all-equities-2026-11-27" ] || [ "$BRANCH_REF" = "refs/heads/fix/dividend-frequency-overforecast-2026-11-27" ] || [ "$BRANCH_REF" = "refs/heads/fix/dividend-forecast-frequency-all-issuers-2026-11-27" ] || [ "$BRANCH_REF" = "refs/heads/fix/dividend-forecast-shifting-two-per-year-2026-11-27" ]; then
+          if [ "$HEAD_BRANCH" = "fix/payouts-all-equities-2026-11-27" ] || [ "$HEAD_BRANCH" = "fix/dividend-frequency-overforecast-2026-11-27" ] || [ "$HEAD_BRANCH" = "fix/dividend-forecast-frequency-all-issuers-2026-11-27" ] || [ "$HEAD_BRANCH" = "fix/dividend-forecast-shifting-two-per-year-2026-11-27" ]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Dividend payouts validation branch: full Room instrumentation suite enabled."
             exit 0
@@ -543,7 +544,7 @@ jobs:
       - name: Verify release APK signing certificate
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/MyCapital-0.4.33.apk"
+          APK="app/build/outputs/apk/release/MyCapital-0.4.34.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
           printf '%s' "$VERIFY_OUTPUT"
