@@ -27,6 +27,7 @@ jobs:
         id: filter
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BRANCH_REF: ${{ github.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
@@ -36,6 +37,12 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "Manual run: full instrumented suite enabled."
+            exit 0
+          fi
+
+          if [ "$BRANCH_REF" = "refs/heads/fix/payouts-all-equities-2026-11-27" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "Dividend payouts validation branch: full Room instrumentation suite enabled."
             exit 0
           fi
 
