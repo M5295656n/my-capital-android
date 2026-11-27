@@ -118,46 +118,51 @@ internal fun calculateHistoricalDividendForecasts(
         }
         month = month.plusMonths(1)
     }
-    // Quarterly issuers may not repeat the same record month in two separate
-    // years. When recent observations show a stable 2–5 month cadence, project
-    // it from the latest confirmed upcoming event or latest historical record.
-    // Use a wider sample: some issuers skip or delay one distribution, so an
-    // 18-month window can contain too few observations or an unusually long gap.
-    // Ignore very short corrections and long annual/special-dividend gaps when
-    // estimating the recurring 2–5 month rhythm.
+    // Month-of-year recurrence catches stable annual payment periods. Cadence
+    // inference supplements it for issuers whose payment dates drift between months
+    // or whose semiannual/quarterly schedule does not repeat a calendar month.
     val cadenceRows = usable
-        .filter { !it.recordDate.isBefore(today.minusMonths(30)) }
+        .filter { !it.recordDate.isBefore(today.minusMonths(42)) }
         .sortedBy { it.recordDate }
-    if (cadenceRows.size >= 3) {
+    val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
+    if (cadenceRows.size >= 2) {
         val intervals = cadenceRows.zipWithNext { first, second ->
             java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
-        }.filter { it in 45.0..180.0 }
-        if (intervals.size >= 2) {
-            val cadenceDays = median(intervals)
-            if (cadenceDays in 60.0..150.0) {
-                val anchor = (cadenceRows.map { it.recordDate } + futureAnchorDates.filter { !it.isBefore(today) })
-                    .maxOrNull() ?: cadenceRows.last().recordDate
-                val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
-                val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
-                val stepDays = Math.round(cadenceDays).coerceAtLeast(1L)
-                var date = anchor.plusDays(stepDays)
-                while (!date.isAfter(endMonth.atEndOfMonth())) {
-                    if (!date.isBefore(today) && amount.isFinite() && amount > 0.0) {
-                        cadenceForecasts += HistoricalDividendForecast(
-                            ticker = normalizedTicker,
-                            amountPerShare = amount,
-                            recordDate = date,
-                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
-                        )
-                    }
-                    date = date.plusDays(stepDays)
+        }.filter { it in 45.0..430.0 }
+        val cadenceDays = intervals.takeIf { it.isNotEmpty() }?.let(::median)
+        val supportedCadence = cadenceDays != null && when {
+            cadenceDays in 60.0..150.0 -> intervals.count { it in 60.0..150.0 } >= 2
+            cadenceDays in 150.0..215.0 -> intervals.count { it in 150.0..215.0 } >= 2
+            // Two consecutive annual observations are enough to estimate next year's period.
+            cadenceDays in 300.0..430.0 -> intervals.count { it in 300.0..430.0 } >= 1
+            else -> false
+        }
+        if (supportedCadence) {
+            val stepDays = Math.round(cadenceDays!!).coerceAtLeast(1L)
+            val anchor = (cadenceRows.map { it.recordDate } + futureAnchorDates.filter { !it.isBefore(today) })
+                .maxOrNull() ?: cadenceRows.last().recordDate
+            val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
+            var date = anchor.plusDays(stepDays)
+            while (!date.isAfter(endMonth.atEndOfMonth())) {
+                if (!date.isBefore(today) && amount.isFinite() && amount > 0.0) {
+                    cadenceForecasts += HistoricalDividendForecast(
+                        ticker = normalizedTicker,
+                        amountPerShare = amount,
+                        recordDate = date,
+                        sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                    )
                 }
-                if (cadenceForecasts.isNotEmpty()) return cadenceForecasts
+                date = date.plusDays(stepDays)
             }
         }
     }
 
-    return forecasts
+    // Keep both independent calendar-month periods and cadence-derived periods.
+    // Returning cadence forecasts alone previously discarded other valid annual
+    // payments from the same issuer.
+    return (forecasts + cadenceForecasts)
+        .distinctBy { it.recordDate }
+        .sortedBy { it.recordDate }
 }
 
 /** Forward dividend yield based on payout records already stored in the portfolio database. */
