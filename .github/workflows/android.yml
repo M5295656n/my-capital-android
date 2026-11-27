@@ -529,10 +529,21 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle assembleRelease
+      - name: Verify APK version and prepare release filename
+        run: |
+          set -euo pipefail
+          SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
+          RELEASE_APK="app/build/outputs/apk/release/MyCapital-0.4.31.apk"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          BADGING="$("$AAPT" dump badging "$SOURCE_APK")"
+          printf '%s\\n' "$BADGING"
+          printf '%s\\n' "$BADGING" | grep -F "versionCode='141' versionName='0.4.31'"
+          cp "$SOURCE_APK" "$RELEASE_APK"
+          test -s "$RELEASE_APK"
       - name: Verify release APK signing certificate
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release.apk"
+          APK="app/build/outputs/apk/release/MyCapital-0.4.31.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
           printf '%s' "$VERIFY_OUTPUT"
@@ -552,6 +563,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: my-capital-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: my-capital-0.4.31-release-apk
+          path: app/build/outputs/apk/release/MyCapital-0.4.31.apk
           if-no-files-found: error
