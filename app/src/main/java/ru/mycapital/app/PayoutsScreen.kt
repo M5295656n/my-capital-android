@@ -151,26 +151,6 @@ internal fun PayoutsScreen(
                 AccountHistoryFilter(accounts, selectedAccountId, onSelect = onAccountSelected)
             }
             item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (!eventSyncMessage.isNullOrBlank()) {
-                        Text(
-                            eventSyncMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onRefreshEvents,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Обновить выплаты")
-                    }
-                }
-            }
-            item {
                 androidx.compose.foundation.lazy.LazyRow(
                     state = periodListState,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
