@@ -381,6 +381,25 @@ internal fun parseSmartlabHistoricalDividends(
     }.sortedBy { it.recordDate }
 }
 
+/**
+ * Select one provider's complete issuer series; never combine dates from two
+ * aggregators because their registry-date conventions may differ.
+ */
+internal fun selectMoreCompleteDividendHistory(
+    dohod: List<HistoricalDividend>?,
+    smartlab: List<HistoricalDividend>?
+): List<HistoricalDividend>? {
+    if (dohod.isNullOrEmpty()) return smartlab
+    if (smartlab.isNullOrEmpty()) return dohod
+    val dohodStart = dohod.minOfOrNull { it.recordDate } ?: LocalDate.MAX
+    val smartlabStart = smartlab.minOfOrNull { it.recordDate } ?: LocalDate.MAX
+    return when {
+        smartlab.size > dohod.size -> smartlab
+        smartlab.size == dohod.size && smartlabStart.isBefore(dohodStart) -> smartlab
+        else -> dohod
+    }
+}
+
 private fun isRecentDividendDataset(scrapedAt: String, today: LocalDate): Boolean {
     val scrapedDate = runCatching { java.time.Instant.parse(scrapedAt).atZone(ZoneId.of("Europe/Moscow")).toLocalDate() }
         .getOrNull() ?: return false
@@ -574,15 +593,7 @@ internal class MoexDividendHistoryClient {
                 .takeIf { it.isNotEmpty() }
         }.getOrNull()
 
-        if (dohod == null) return smartlab
-        if (smartlab == null) return dohod
-        val dohodStart = dohod.minOfOrNull { it.recordDate } ?: LocalDate.MAX
-        val smartlabStart = smartlab.minOfOrNull { it.recordDate } ?: LocalDate.MAX
-        return when {
-            smartlab.size > dohod.size -> smartlab
-            smartlab.size == dohod.size && smartlabStart.isBefore(dohodStart) -> smartlab
-            else -> dohod
-        }
+        return selectMoreCompleteDividendHistory(dohod, smartlab)
     }
 
     private fun requestJson(url: String): JSONObject {
