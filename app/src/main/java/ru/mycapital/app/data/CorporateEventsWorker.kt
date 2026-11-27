@@ -41,7 +41,7 @@ class CorporateEventsWorker(
             if (fetchedEvents.isEmpty()) throw java.io.IOException("Источник вернул 0 предстоящих дивидендов")
             val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
             // Add issuer-confirmed announcements that may not yet be present in the public feed.
-            val events = mergeOfficialDividendAnnouncements(fetchedEvents, today)
+            val events = removeSupersededDividendForecasts(mergeOfficialDividendAnnouncements(fetchedEvents, today))
             providerDividendEvents = events
             feedEvents = events.size
             setProgress(Data.Builder().putString("summary", "Long/Short: получено событий $feedEvents; проверяю совпадения с тикерами портфеля…").build())
@@ -110,21 +110,52 @@ class CorporateEventsWorker(
 
         // Build a separate, clearly labelled estimate from MOEX dividend history.
         // Only equity assets are eligible; funds, currencies and metals are not inferred.
-        val historyEquities = equities.filter {
-            it.assetType.contains("акци", ignoreCase = true) ||
-                normalizeDividendTicker(it.ticker) in setOf("T", "X5")
+        // Every portfolio share is eligible for history-based forecasting.
+        // Do not maintain a hard-coded ticker allowlist: new and existing shares
+        // must follow the same path. Non-equity instruments were excluded above
+        // by isBondInstrument and are additionally gated here by the asset type.
+        val classificationClient = CorporateEventsClient()
+        val historyEquities = equities.filter { asset ->
+            classificationClient.isEquityForDividendHistory(asset.ticker, asset.assetType)
         }
         val historyClient = MoexDividendHistoryClient()
-        for (asset in historyEquities) {
+        for ((index, asset) in historyEquities.withIndex()) {
+            setProgress(Data.Builder()
+                .putString("summary", "Прогнозы дивидендов: проверяю ${asset.ticker} (${index + 1} из ${historyEquities.size})…")
+                .putInt("history_tickers_total", historyEquities.size)
+                .putInt("history_tickers_processed", index)
+                .putInt("history_forecasts", historyForecastsSaved)
+                .build())
             try {
-                val history = historyClient.getHistory(asset.ticker).dividends
+                val historyResult = historyClient.getHistory(asset.ticker)
+                if (!historyResult.annualCoverageVerified) {
+                    throw java.io.IOException(
+                        "MOEX вернул неполную историю для ${asset.ticker}; прежний прогноз сохранён"
+                    )
+                }
+                val history = historyResult.dividends
+                if (history.isEmpty()) {
+                    if (historyResult.allRelatedSecidsVerified) {
+                        // Every current/legacy SECID was checked successfully and no
+                        // dividend rows exist: this is a verified empty history.
+                        database.withTransaction {
+                            dao.deleteUnreceivedMyCapitalHistoryDividendForecastsForTicker(asset.ticker)
+                        }
+                        continue
+                    }
+                    throw java.io.IOException(
+                        "MOEX не вернул полную историю для ${asset.ticker}; прежний прогноз сохранён"
+                    )
+                }
                 val today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/Moscow"))
+                val normalizedTicker = normalizeDividendTicker(asset.ticker)
                 val confirmedFutureDates = providerDividendEvents.asSequence()
-                    .filter { it.ticker.equals(asset.ticker, ignoreCase = true) }
+                    .filter { normalizeDividendTicker(it.ticker) == normalizedTicker }
                     .filter { it.status == "ANNOUNCED" || it.status == "RECOMMENDED" }
-                    .mapNotNull { it.recordDate ?: it.paymentDate }
+                    .mapNotNull { it.recordDate }
                     .map { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
                     .filter { !it.isBefore(today) }
+                    .distinct()
                     .toList()
                 val forecasts = calculateHistoricalDividendForecasts(
                     ticker = asset.ticker,
@@ -132,19 +163,25 @@ class CorporateEventsWorker(
                     today = today,
                     horizonMonths = 24,
                     futureAnchorDates = confirmedFutureDates
-                ).filterNot { forecast ->
-                    val forecastMonth = java.time.YearMonth.from(forecast.recordDate)
-                    providerDividendEvents.any { event ->
-                        if (!event.ticker.equals(asset.ticker, ignoreCase = true)) {
-                            false
-                        } else {
-                            val timestamp = event.recordDate ?: event.paymentDate
-                            timestamp != null && java.time.YearMonth.from(
-                                java.time.Instant.ofEpochMilli(timestamp)
-                                    .atZone(java.time.ZoneOffset.UTC).toLocalDate()
-                            ) == forecastMonth
+                ).let { forecasts ->
+                    removeHistoryForecastsSupersededByProvider(
+                        ticker = asset.ticker,
+                        forecasts = forecasts,
+                        events = providerDividendEvents
+                    )
+                }
+                if (forecasts.isEmpty()) {
+                    if (historyResult.allRelatedSecidsVerified) {
+                        // Complete history has no repeatable annual/semiannual/
+                        // quarterly schedule. Remove obsolete history-only estimates.
+                        database.withTransaction {
+                            dao.deleteUnreceivedMyCapitalHistoryDividendForecastsForTicker(asset.ticker)
                         }
+                        continue
                     }
+                    throw java.io.IOException(
+                        "История MOEX для ${asset.ticker} неполная; прежний прогноз сохранён"
+                    )
                 }
 
                 database.withTransaction {
@@ -160,6 +197,7 @@ class CorporateEventsWorker(
                             quantity = asset.quantity,
                             totalAmount = forecast.amountPerShare * asset.quantity,
                             taxAmount = 0.0,
+                            // Keep the historical estimate on the forecast timeline.
                             expectedDate = estimatedRecordDate,
                             actualDate = null,
                             status = "FORECAST",
@@ -177,8 +215,11 @@ class CorporateEventsWorker(
                     }
                 }
             } catch (error: Exception) {
-                // History-based forecasts are supplemental. Preserve the last good
-                // forecast cache if MOEX is temporarily unavailable for one ticker.
+                // A failed ticker must trigger WorkManager retry. Previously this
+                // error was only logged, so the worker could report SUCCESS while
+                // the portfolio's history forecasts had never been refreshed.
+                // Keep the last good forecast cache for this ticker.
+                transientFailures++
                 if (errors.size < 8) {
                     errors += "Прогноз ${asset.ticker}: история MOEX не обновлена (${error.message ?: error.javaClass.simpleName})"
                 }

@@ -58,6 +58,29 @@ class MoexDividendHistoryClientTest {
     }
 
     @Test
+    fun forwardYieldPrefersCashPaymentDateOverRegistryDate() {
+        val events = listOf(
+            DividendCalendarEvent(
+                ticker = "SBER",
+                amountPerUnit = 25.0,
+                status = "ANNOUNCED",
+                recordDate = LocalDate.of(2027, 11, 1).atStartOfDay(ZoneId.of("Europe/Moscow")).toInstant().toEpochMilli(),
+                paymentDate = LocalDate.of(2026, 12, 1).atStartOfDay(ZoneId.of("Europe/Moscow")).toInstant().toEpochMilli(),
+                sourceKey = "SBER:cash-date"
+            )
+        )
+
+        val yield = calculateForwardDividendYieldPercent(
+            events = events,
+            ticker = "SBER",
+            currentPrice = 250.0,
+            today = LocalDate.of(2026, 11, 14)
+        )
+
+        assertEquals(10.0, yield!!, 0.000001)
+    }
+
+    @Test
     fun forecastsRecurringDividendMonthFromRecentHistoryUsingMedianAmountAndDate() {
         val history = listOf(
             dividend("2023-05-18", 4.0),
@@ -75,8 +98,8 @@ class MoexDividendHistoryClientTest {
         assertEquals(1, forecasts.size)
         assertEquals("T", forecasts.single().ticker)
         assertEquals(4.8, forecasts.single().amountPerShare, 0.000001)
-        assertEquals(LocalDate.of(2027, 5, 20), forecasts.single().recordDate)
-        assertEquals("MYCAPITAL_HISTORY:T:2027-05-20", forecasts.single().sourceKey)
+        assertEquals(LocalDate.of(2027, 5, 24), forecasts.single().recordDate)
+        assertEquals("MYCAPITAL_HISTORY:T:2027-05-24", forecasts.single().sourceKey)
     }
 
     @Test
@@ -95,7 +118,7 @@ class MoexDividendHistoryClientTest {
         )
 
         assertEquals(1, forecasts.size)
-        assertEquals(LocalDate.of(2027, 5, 21), forecasts.single().recordDate)
+        assertEquals(LocalDate.of(2027, 6, 3), forecasts.single().recordDate)
         assertEquals(3.85, forecasts.single().amountPerShare, 0.000001)
     }
 
@@ -124,7 +147,7 @@ class MoexDividendHistoryClientTest {
             today = LocalDate.of(2026, 11, 14),
             horizonMonths = 12
         ).single()
-        assertEquals(LocalDate.of(2027, 5, 21), forecast.recordDate)
+        assertEquals(LocalDate.of(2027, 6, 3), forecast.recordDate)
         assertEquals(3.85, forecast.amountPerShare, 0.000001)
     }
 
@@ -161,8 +184,8 @@ class MoexDividendHistoryClientTest {
             today = LocalDate.of(2026, 11, 14)
         )
 
-        assertEquals(true, forecasts.any { it.recordDate == LocalDate.of(2027, 7, 8) })
-        assertEquals(446.5, forecasts.first { it.recordDate == LocalDate.of(2027, 7, 8) }.amountPerShare, 0.000001)
+        assertEquals(true, forecasts.any { it.recordDate == LocalDate.of(2027, 7, 5) })
+        assertEquals(446.5, forecasts.first { it.recordDate == LocalDate.of(2027, 7, 5) }.amountPerShare, 0.000001)
     }
 
     @Test
@@ -187,6 +210,194 @@ class MoexDividendHistoryClientTest {
         assertEquals(LocalDate.of(2027, 6, 14), forecasts[1].recordDate)
         assertEquals(LocalDate.of(2027, 9, 13), forecasts[2].recordDate)
         assertEquals(4.7, forecasts[0].amountPerShare, 0.000001)
+    }
+
+    @Test
+    fun forecastsFourQuarterlyPaymentsAcrossTheNextYear() {
+        val history = listOf(
+            dividend("2026-01-20", 4.5),
+            dividend("2026-04-20", 4.6),
+            dividend("2026-07-20", 4.7),
+            dividend("2026-10-20", 4.8)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 14),
+            horizonMonths = 12
+        )
+
+        assertEquals(4, forecasts.size)
+        assertEquals(
+            listOf(1, 4, 7, 10),
+            forecasts.map { it.recordDate.monthValue }
+        )
+        assertEquals(
+            listOf(
+                LocalDate.of(2027, 1, 19),
+                LocalDate.of(2027, 4, 20),
+                LocalDate.of(2027, 7, 20),
+                LocalDate.of(2027, 10, 19)
+            ),
+            forecasts.map { it.recordDate }
+        )
+    }
+
+    @Test
+    fun quarterlyCadenceIgnoresOneLongSkippedPeriod() {
+        val history = listOf(
+            dividend("2025-05-10", 10.0),
+            dividend("2025-08-10", 11.0),
+            dividend("2025-11-10", 12.0),
+            dividend("2026-02-10", 13.0),
+            // One delayed/missed distribution must not turn the whole series annual.
+            dividend("2026-10-10", 14.0)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "TATN",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(4, forecasts.size)
+        assertEquals(listOf(1, 4, 7, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun frequentIssuerCadenceProducesThreeOrFourAnnualEstimates() {
+        val history = listOf(
+            dividend("2025-06-01", 0.25),
+            dividend("2025-09-01", 0.26),
+            dividend("2025-12-01", 0.27),
+            dividend("2026-03-01", 0.28),
+            dividend("2026-06-01", 0.29),
+            dividend("2026-09-01", 0.30)
+        ).map { it.copy(secid = "OZPH") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "OZPH",
+            dividends = history,
+            today = LocalDate.of(2026, 10, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(4, forecasts.size)
+    }
+
+    @Test
+    fun doesNotForecastMultipleDividendEventsFromTheSameMonth() {
+        val history = listOf(
+            dividend("2024-05-10", 1.0),
+            dividend("2024-05-25", 2.0),
+            dividend("2025-05-12", 1.2),
+            dividend("2025-05-27", 2.2)
+        ).map { it.copy(secid = "TATN") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "TATN",
+            dividends = history,
+            today = LocalDate.of(2026, 1, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(0, forecasts.size)
+    }
+
+    @Test
+    fun rejectsMonthlyPaymentPatternInsteadOfForecastingAdjacentMonths() {
+        val history = (0..11).map { index ->
+            dividend("2025-${(index + 1).toString().padStart(2, '0')}-15", 1.0 + index)
+                .copy(secid = "T")
+        }
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 1, 1),
+            horizonMonths = 12
+        )
+        assertEquals(0, forecasts.size)
+    }
+
+    @Test
+    fun forecastsAnnualDividendWhenRecordMonthDriftsBetweenYears() {
+        val history = listOf(
+            dividend("2024-04-15", 3.0),
+            dividend("2025-06-15", 4.0),
+            dividend("2026-08-15", 5.0)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 9, 1),
+            horizonMonths = 18
+        )
+
+        assertEquals(1, forecasts.size)
+        assertEquals(LocalDate.of(2027, 10, 15), forecasts.single().recordDate)
+        assertEquals(4.0, forecasts.single().amountPerShare, 0.000001)
+    }
+
+    @Test
+    fun forecastsSemiannualPaymentsForBothPeriodsIn2027() {
+        val history = listOf(
+            dividend("2025-04-15", 3.0),
+            dividend("2025-10-15", 3.2),
+            dividend("2026-04-15", 3.4),
+            dividend("2026-10-15", 3.6)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(2, forecasts.size)
+        assertEquals(listOf(4, 10), forecasts.map { it.recordDate.monthValue })
+        assertEquals(3.4, forecasts[0].amountPerShare, 0.000001)
+        assertEquals(3.4, forecasts[1].amountPerShare, 0.000001)
+    }
+
+    @Test
+    fun mergesMonthRecurrenceAndCadenceWithoutDuplicatingSamePayment() {
+        val history = listOf(
+            dividend("2025-04-15", 3.0),
+            dividend("2025-10-15", 3.2),
+            dividend("2026-04-15", 3.4),
+            dividend("2026-10-15", 3.6)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 1),
+            horizonMonths = 12
+        )
+
+        assertEquals(2, forecasts.size)
+    }
+
+    @Test
+    fun doesNotForecastIrregularOneOffPaymentsWithoutRecurringCadence() {
+        val history = listOf(
+            dividend("2024-02-15", 12.0),
+            dividend("2025-09-20", 18.0),
+            dividend("2026-11-02", 25.0)
+        ).map { it.copy(secid = "T") }
+
+        val forecasts = calculateHistoricalDividendForecasts(
+            ticker = "T",
+            dividends = history,
+            today = LocalDate.of(2026, 11, 14),
+            horizonMonths = 12
+        )
+
+        assertEquals(0, forecasts.size)
     }
 
     @Test
@@ -219,6 +430,33 @@ class MoexDividendHistoryClientTest {
         val yield = calculateForwardDividendYieldPercentFromPayouts(payouts, "T", 300.0, today)
 
         assertEquals((4.8 + 2.0) / 300.0 * 100.0, yield!!, 0.000001)
+    }
+
+    @Test
+    fun forecastsTwoIndependentAnnualDividendPeriods() {
+        val history = listOf(
+            dividend("2024-04-15", 3.0), dividend("2025-04-17", 3.2),
+            dividend("2024-10-15", 4.0), dividend("2025-10-17", 4.2)
+        ).map { it.copy(secid = "T") }
+        val forecasts = calculateHistoricalDividendForecasts(
+            "T", history, LocalDate.of(2026, 1, 1), horizonMonths = 12
+        )
+        assertEquals(2, forecasts.size)
+        assertEquals(listOf(4, 10), forecasts.map { it.recordDate.monthValue })
+    }
+
+    @Test
+    fun forecastsThreeIndependentAnnualDividendPeriods() {
+        val history = listOf(
+            dividend("2024-03-10", 2.0), dividend("2025-03-12", 2.2),
+            dividend("2024-07-10", 3.0), dividend("2025-07-12", 3.2),
+            dividend("2024-11-10", 4.0), dividend("2025-11-12", 4.2)
+        ).map { it.copy(secid = "T") }
+        val forecasts = calculateHistoricalDividendForecasts(
+            "T", history, LocalDate.of(2026, 1, 1), horizonMonths = 12
+        )
+        assertEquals(3, forecasts.size)
+        assertEquals(listOf(3, 7, 11), forecasts.map { it.recordDate.monthValue })
     }
 
     private fun dividend(date: String, amount: Double) =

@@ -6,16 +6,17 @@ concurrency:
 
 on:
   push:
-    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24 ]
+    branches: [ main, fix/broker-zo-test-stable-2026-11-14, fix/dividend-forecast-record-date-2026-11-14, fix/dividend-history-partial-fetch-2026-11-14, feature/analytics-events-news, feature/payouts-sold-assets-analytics, feature/events-bond-rating-display, feature/sold-assets-in-portfolio, feature/issuer-logos-dividend-sector-fixes, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/portfolio-return-match-benchmark-flow, feature/sold-assets-profit-index-periods-logos-2026-11-17, feature/mycapital-app-icon-2026-11-17, feature/target-portfolio-plan-2026-11-18, feature/operations-bottom-nav-redesign-2026-11-18, feature/home-dashboard-full-width-chart-2026-11-18, integration/mycapital-consolidation-2026-11-18, fix/market-history-board-routing-2026-11-18, refactor/codebase-audit-0.4.6-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, fix/analytics-sector-money-decimal-comma-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24, fix/dividend-forecast-dedup-2026-11-24 ]
     paths-ignore: [ 'docs/**' ]
   pull_request:
-    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, feature/imoex-dashboard-chart-2026-11-19 ]
+    branches: [ main, backup/stable-0.3.89-2026-11-14, fix/broker-zo-test-stable-2026-11-14, feature/sector-details-remove-history-chart, fix/index-benchmark-cashflow-comparison, fix/index-benchmark-visual-separation, fix/benchmark-chart-and-return-history, fix/dividend-history-partial-fetch-2026-11-14, integration/mycapital-consolidation-2026-11-18, fix/moex-gold-currency-quotes-2026-11-19, fix/restore-dashboard-gold-quote-2026-11-19, fix/gold-prevprice-fallback-2026-11-19, fix/portfolio-sector-domrf-lsngp-2026-11-19, feature/imoex-dashboard-chart-2026-11-19, feature/local-quote-history-2026-11-24 ]
     paths-ignore: [ 'docs/**' ]
   workflow_dispatch:
 
 jobs:
   instrumented-filter:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     outputs:
       required: ${{ steps.filter.outputs.required }}
     steps:
@@ -124,6 +125,7 @@ jobs:
           import json
           import time
           from urllib.request import Request, urlopen
+          from urllib.parse import quote
           
           BASE = "https://iss.moex.com/iss"
           INSTRUMENTS = {
@@ -330,6 +332,111 @@ jobs:
                   offset += len(rows)
               return by_date
           
+          def verify_dividend_history(ticker):
+              url = f"{BASE}/securities/{ticker}/dividends.json?iss.meta=off"
+              payload = get_json(url)
+              block = payload.get("dividends", {})
+              columns = block.get("columns", [])
+              rows = block.get("data", [])
+              indexes = {name.lower(): i for i, name in enumerate(columns)}
+              date_index = indexes.get("registryclosedate", indexes.get("recorddate"))
+              amount_index = indexes.get("value")
+              currency_index = indexes.get("currencyid")
+              if date_index is None or amount_index is None:
+                  raise RuntimeError(f"{ticker}: MOEX dividend history has unexpected columns: {columns}")
+              valid = []
+              for row in rows:
+                  try:
+                      date = str(row[date_index])[:10]
+                      amount = float(row[amount_index])
+                      currency = str(row[currency_index]).upper() if currency_index is not None and row[currency_index] else "RUB"
+                      if len(date) == 10 and amount > 0 and currency == "RUB":
+                          valid.append((date, amount))
+                  except (TypeError, ValueError, IndexError):
+                      continue
+              if not valid:
+                  raise RuntimeError(f"{ticker}: MOEX dividend endpoint returned no valid positive RUB records; rows={len(rows)}, columns={columns}")
+              valid.sort(key=lambda item: item[0])
+              print(f"{ticker}: MOEX dividend history verified, valid_rub_rows={len(valid)}, range={valid[0][0]}..{valid[-1][0]}")
+              return valid
+
+          # Dividend history is a source-availability diagnostic, not a build
+          # prerequisite. MOEX may return an empty dividends block for an individual
+          # SECID even while quotes/candles and the Android app remain buildable.
+          # The app preserves its last verified forecast cache for such tickers;
+          # keep the per-issuer diagnostics visible without skipping unit tests/APK.
+          dividend_history = {}
+          for ticker in ("TATN", "OZPH", "T", "X5"):
+              try:
+                  dividend_history[ticker] = verify_dividend_history(ticker)
+              except Exception as exc:
+                  # The ticker may have historical aliases. Resolve its ISIN
+                  # and inspect every security ID attached to that same issue.
+                  try:
+                      # Resolve identity from the exact SECID row first. A localized
+                      # description field can contain an ISIN for a related issue
+                      # (notably TATN vs TATNP), so it must only be a fallback.
+                      ticker_search = get_json(f"{BASE}/securities.json?q={quote(ticker, safe='')}&iss.meta=off")
+                      search_block = ticker_search.get("securities", {})
+                      search_columns = search_block.get("columns", [])
+                      search_rows = search_block.get("data", [])
+                      search_indexes = {name.lower(): i for i, name in enumerate(search_columns)}
+                      secid_i = search_indexes.get("secid")
+                      isin_i = search_indexes.get("isin")
+                      isin = None
+                      if secid_i is not None and isin_i is not None:
+                          exact_rows = [row for row in search_rows
+                                        if len(row) > max(secid_i, isin_i)
+                                        and str(row[secid_i]).upper() == ticker.upper()]
+                          isin = next((str(row[isin_i]).replace(" ", "").upper()
+                                       for row in exact_rows
+                                       if row[isin_i] and len(str(row[isin_i]).replace(" ", "")) == 12), None)
+                      if not isin:
+                          description = get_json(f"{BASE}/securities/{ticker}.json?iss.meta=off")
+                          fields = description.get("description", {})
+                          dcols, drows = fields.get("columns", []), fields.get("data", [])
+                          name_i = next((i for i, name in enumerate(dcols)
+                                         if str(name).strip().lower() in ("name", "shortname", "title")), 0)
+                          value_i = next((i for i, name in enumerate(dcols)
+                                          if str(name).strip().lower() in ("value", "valuepr", "description")), len(dcols) - 1)
+                          for row in drows:
+                              if not row:
+                                  continue
+                              labels = " ".join(str(cell) for cell in row if cell is not None).lower()
+                              if "isin" in labels:
+                                  candidates = [str(row[i]).strip() for i in (value_i, len(row)-1, name_i)
+                                                if 0 <= i < len(row) and row[i] is not None]
+                                  isin = next((value.replace(" ", "").upper() for value in candidates
+                                               if len(value.replace(" ", "")) == 12
+                                               and value.replace(" ", "").isalnum()), None)
+                                  if isin:
+                                      break
+                      if not isin:
+                          raise RuntimeError(f"ISIN not found in description columns={dcols}; direct endpoint error: {exc}")
+                      related = get_json(f"{BASE}/securities.json?q={quote(isin, safe='')}&iss.meta=off")
+                      sec_block = related.get("securities", {})
+                      scols, srows = sec_block.get("columns", []), sec_block.get("data", [])
+                      sidx = {name.lower(): i for i, name in enumerate(scols)}
+                      isin_i, secid_i = sidx.get("isin"), sidx.get("secid")
+                      secids = [ticker]
+                      if isin_i is not None and secid_i is not None:
+                          secids += [str(row[secid_i]) for row in srows
+                                     if len(row) > max(isin_i, secid_i) and str(row[isin_i]).upper() == isin.upper()]
+                      merged = {}
+                      for secid in dict.fromkeys(secids):
+                          try:
+                              for date, amount in verify_dividend_history(secid):
+                                  merged[(date, amount)] = (date, amount)
+                          except Exception as alias_error:
+                              print(f"{ticker}: alias {secid} unavailable: {alias_error}")
+                      if not merged:
+                          raise RuntimeError(f"no valid dividend records across aliases; direct endpoint error: {exc}")
+                      dividend_history[ticker] = sorted(merged.values())
+                      print(f"{ticker}: alias-resolved dividend history verified, records={len(merged)}")
+                  except Exception as alias_error:
+                      print(f"WARNING: {ticker}: dividend history unavailable; Android tests/build continue: {alias_error}")
+                      continue
+
           failures = []
           for ticker, (market, fallback_boards) in INSTRUMENTS.items():
               meta_url = f"{BASE}/securities/{ticker}.json?iss.meta=off&iss.only=boards&boards.columns=boardid,is_primary,market"
@@ -384,7 +491,12 @@ jobs:
                       print(f"{ticker}: coupon_schedule_rows={len(coupons)}")
           if failures:
               raise SystemExit("\n".join(failures))
-          print("MOEX live-history smoke check passed for all four instruments.")
+          print("MOEX core live-history smoke check passed (gold, IMOEX, FX, bond/share candles).")
+          verified = sorted(dividend_history)
+          missing = sorted(set(("TATN", "OZPH", "T", "X5")) - set(verified))
+          print(f"Dividend history verified: {verified or 'none'}")
+          if missing:
+              print(f"WARNING: MOEX history unavailable for {missing}; per-ticker diagnostics above. Android tests and APK build will continue.")
           PY
       - uses: actions/setup-java@v4
         with:

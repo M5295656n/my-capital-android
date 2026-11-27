@@ -253,33 +253,50 @@ internal fun PayoutsScreen(
                                         shape = RoundedCornerShape(14.dp)
                                     ) {
                                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
                                                 AssetTypeIcon(
                                                     asset?.assetType ?: if (payout.payoutType.contains("купон", true)) "Облигация" else "Акция",
                                                     payout.ticker
                                                 )
-                                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                                                    Text("${payout.ticker}  ${asset?.name ?: payout.payoutType}",
-                                                        fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                                }
-                                                Column(horizontalAlignment = Alignment.End) {
-                                                    Text("+${money(payoutAmount(payout))} ₽", color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    "${payout.ticker}  ${asset?.name ?: payout.payoutType}",
+                                                    modifier = Modifier.weight(1f).padding(start = 10.dp),
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 2
+                                                )
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text("+${money(payoutAmount(payout))} ₽",
+                                                        color = Color(0xFF55C99A), fontWeight = FontWeight.Bold)
                                                     val yield = if (asset != null && asset.currentPrice > 0.0 && payout.amountPerUnit > 0.0)
                                                         payout.amountPerUnit / asset.currentPrice * 100.0 else null
-                                                    if (yield != null) Text(String.format(java.util.Locale("ru", "RU"), "%.2f%%", yield),
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                                                    Text(
-                                                        when (payout.status) {
-                                                            "RECEIVED" -> "Получено"
-                                                            "ANNOUNCED" -> "Объявлено"
-                                                            "RECOMMENDED" -> "Рекомендовано советом директоров"
-                                                            "FORECAST", "EXPECTED" -> "Прогноз"
-                                                            else -> "Прогноз"
-                                                        },
-                                                        color = Color(0xFF69AFFF),
+                                                    if (yield != null) Text(
+                                                        String.format(java.util.Locale("ru", "RU"), "%.2f%%", yield),
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         style = MaterialTheme.typography.bodySmall
                                                     )
                                                 }
+                                                Text(
+                                                    when (payout.status) {
+                                                        "RECEIVED" -> "Получено"
+                                                        "ANNOUNCED" -> "Объявлено"
+                                                        "RECOMMENDED" -> "Рекомендовано советом директоров"
+                                                        "FORECAST", "EXPECTED" -> "Прогноз"
+                                                        else -> "Прогноз"
+                                                    },
+                                                    modifier = Modifier.weight(1f),
+                                                    color = Color(0xFF69AFFF),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                                    maxLines = 2
+                                                )
                                             }
                                             Text(
                                                 (if (payout.payoutType.contains("Купон", true)) "Купон" else payout.payoutType) +

@@ -18,6 +18,26 @@ class BondInstrumentClassifierTest {
     }
 
     @Test
+    fun parsesMoexShareClassesAndRejectsFundsAndBonds() {
+        val ordinary = """{"description":{"columns":["name","value"],"data":[["TYPENAME","Акция обыкновенная"],["GROUPNAME","Акции"]]}}"""
+        val fund = """{"description":{"columns":["name","value"],"data":[["TYPENAME","Пай инвестиционного фонда"],["GROUPNAME","Паи"]]}}"""
+        val bond = """{"description":{"columns":["name","value"],"data":[["TYPENAME","Облигация"],["GROUPNAME","Облигации"]]}}"""
+        assertTrue(parseMoexEquityClassification(ordinary) == true)
+        assertTrue(parseMoexEquityClassification(fund) == false)
+        assertTrue(parseMoexEquityClassification(bond) == false)
+        assertTrue(parseMoexEquityClassification("{}") == null)
+    }
+    @Test
+    fun genericHoldingsAreNotSilentlySkippedWhenMoexClassificationIsUnavailable() {
+        assertTrue(shouldIncludeInDividendHistory("Другое", null))
+        assertTrue(shouldIncludeInDividendHistory("", null))
+        assertTrue(shouldIncludeInDividendHistory("Акция", false))
+        assertFalse(shouldIncludeInDividendHistory("Другое", false))
+        assertFalse(shouldIncludeInDividendHistory("Облигация", null))
+        assertFalse(shouldIncludeInDividendHistory("Фонд", null))
+    }
+
+    @Test
     fun doesNotClassifyEquitiesAsBonds() {
         assertFalse(isBondInstrument("SBER", "Сбербанк", "Акция"))
         assertFalse(isBondInstrument("X5", "Корп центр ИКС 5", "Другое"))

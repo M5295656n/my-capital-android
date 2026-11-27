@@ -63,6 +63,19 @@ class PayoutForecastCalculationsTest {
     }
 
     @Test
+    fun recordDateWithoutKnownPaymentDateIsNotCountedAsCashReceipt() {
+        val recordDateOnly = payout(null, 250.0).copy(
+            recordDate = today.plusDays(5).atStartOfDay(zone).toInstant().toEpochMilli()
+        )
+
+        val result = calculatePayoutForecast(listOf(recordDateOnly), today, zone)
+
+        assertEquals(0.0, result.next30Days, 0.000001)
+        assertEquals(0.0, result.next90Days, 0.000001)
+        assertTrue(result.monthly.isEmpty())
+    }
+
+    @Test
     fun forecastCalculatesThirtyAndNinetyDayWindows() {
         val result = calculatePayoutForecast(
             listOf(

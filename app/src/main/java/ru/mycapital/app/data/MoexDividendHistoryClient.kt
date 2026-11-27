@@ -56,12 +56,13 @@ internal data class HistoricalDividendForecast(
 )
 
 /**
- * Estimate recurring dividend months from MOEX history only.
+ * Estimate regular dividend events from the issuer's real MOEX payment history.
  *
- * A month is forecast only when it appeared in at least two different years
- * during the last five years. The amount and day are medians of up to the
- * three most recent observations for that month. The result is an estimated
- * record date, not an announced payment date.
+ * Calendar-month recurrence is deliberately not used: a month-of-year match
+ * can invent extra payments and cannot establish the issuer's payment frequency.
+ * We infer a recurring interval from actual consecutive record dates instead.
+ * Monthly/adjacent-month patterns are rejected; supported schedules are
+ * quarterly (75-149 days), semiannual (150-239 days), or annual (300-430 days).
  */
 internal fun calculateHistoricalDividendForecasts(
     ticker: String,
@@ -75,15 +76,27 @@ internal fun calculateHistoricalDividendForecasts(
     if (normalizedTicker.isBlank()) return emptyList()
 
     val historyStart = today.minusYears(5)
-    val usable = dividends.filter {
+    val rawHistory = dividends.filter {
         it.secid.equals(normalizedTicker, ignoreCase = true) &&
             it.currency.equals("RUB", ignoreCase = true) &&
             it.amountPerShare.isFinite() && it.amountPerShare > 0.0 &&
             !it.recordDate.isBefore(historyStart) && !it.recordDate.isAfter(today)
-    }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
+    }.distinctBy {
+        "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}"
+    }
 
-    val recurringByMonth = usable.groupBy { it.recordDate.monthValue }
-        .filterValues { rows -> rows.map { it.recordDate.year }.distinct().size >= 2 }
+    // More than one distinct event in a calendar month is contradictory for
+    // this forecast model. Exclude that month rather than creating two payouts.
+    val usable = rawHistory.groupBy { java.time.YearMonth.from(it.recordDate) }
+        .values
+        .filter { it.map(HistoricalDividend::recordDate).distinct().size == 1 }
+        .map { rows ->
+            val representative = rows.first()
+            representative.copy(amountPerShare = rows.map { it.amountPerShare }.average())
+        }
+        .sortedBy { it.recordDate }
+
+    if (usable.size < 2) return emptyList()
 
     fun median(values: List<Double>): Double {
         val sorted = values.sorted()
@@ -93,67 +106,61 @@ internal fun calculateHistoricalDividendForecasts(
         } else sorted[middle]
     }
 
-    val startMonth = java.time.YearMonth.from(today)
-    val endMonth = startMonth.plusMonths(horizonMonths.toLong())
-    val forecasts = mutableListOf<HistoricalDividendForecast>()
-    var month = startMonth
-    while (!month.isAfter(endMonth)) {
-        val observations = recurringByMonth[month.monthValue]
-        if (observations != null) {
-            val recent = observations.sortedBy { it.recordDate }.takeLast(3)
-            val estimatedDay = median(recent.map { it.recordDate.dayOfMonth.toDouble() })
-                .let { Math.round(it).toInt() }.coerceIn(1, month.lengthOfMonth())
-            val date = month.atDay(estimatedDay)
-            if (!date.isBefore(today)) {
-                val amount = median(recent.map { it.amountPerShare })
-                if (amount.isFinite() && amount > 0.0) {
-                    forecasts += HistoricalDividendForecast(
-                        ticker = normalizedTicker,
-                        amountPerShare = amount,
-                        recordDate = date,
-                        sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
-                    )
-                }
-            }
-        }
-        month = month.plusMonths(1)
+    // Use the recent 42-month cadence window. A missed quarter may create a
+    // long gap, so classify intervals individually and require repeated support.
+    val cadenceRows = usable.filter { !it.recordDate.isBefore(today.minusMonths(42)) }
+    if (cadenceRows.size < 2) return emptyList()
+    val intervals = cadenceRows.zipWithNext { first, second ->
+        java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
     }
-    // Quarterly issuers may not repeat the same record month in two separate
-    // years. When recent observations show a stable 2–5 month cadence, project
-    // it from the latest confirmed upcoming event or latest historical record.
-    val cadenceRows = usable
-        .filter { !it.recordDate.isBefore(today.minusMonths(18)) }
-        .sortedBy { it.recordDate }
-    if (cadenceRows.size >= 3) {
-        val intervals = cadenceRows.zipWithNext { first, second ->
-            java.time.temporal.ChronoUnit.DAYS.between(first.recordDate, second.recordDate).toDouble()
-        }.filter { it > 0.0 }
-        if (intervals.size >= 2) {
-            val cadenceDays = median(intervals)
-            if (cadenceDays in 60.0..150.0) {
-                val anchor = (cadenceRows.map { it.recordDate } + futureAnchorDates.filter { !it.isBefore(today) })
-                    .maxOrNull() ?: cadenceRows.last().recordDate
-                val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
-                val cadenceForecasts = mutableListOf<HistoricalDividendForecast>()
-                val stepDays = Math.round(cadenceDays).coerceAtLeast(1L)
-                var date = anchor.plusDays(stepDays)
-                while (!date.isAfter(endMonth.atEndOfMonth())) {
-                    if (!date.isBefore(today) && amount.isFinite() && amount > 0.0) {
-                        cadenceForecasts += HistoricalDividendForecast(
-                            ticker = normalizedTicker,
-                            amountPerShare = amount,
-                            recordDate = date,
-                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
-                        )
-                    }
-                    date = date.plusDays(stepDays)
-                }
-                if (cadenceForecasts.isNotEmpty()) return cadenceForecasts
-            }
-        }
-    }
+    val quarterly = intervals.filter { it in 75.0..149.0 }
+    val semiannual = intervals.filter { it in 150.0..239.0 }
+    val annual = intervals.filter { it in 300.0..430.0 }
 
-    return forecasts
+    val (supportingIntervals, minSupport) = when {
+        quarterly.size >= 2 -> quarterly to 2
+        semiannual.size >= 2 -> semiannual to 2
+        // One annual interval is enough only when the history contains exactly
+        // two observations. With 3+ observations, require two consecutive annual
+        // intervals so an isolated late payment cannot create a false schedule.
+        annual.isNotEmpty() && (
+            cadenceRows.size == 2 ||
+                intervals.takeLast(2).all { it in 300.0..430.0 }
+            ) -> annual to 1
+        else -> return emptyList()
+    }
+    if (supportingIntervals.size < minSupport) return emptyList()
+
+    val stepDays = Math.round(median(supportingIntervals)).coerceAtLeast(1L)
+    val amount = median(cadenceRows.takeLast(3).map { it.amountPerShare })
+    if (!amount.isFinite() || amount <= 0.0) return emptyList()
+
+    val endDate = java.time.YearMonth.from(today)
+        .plusMonths(horizonMonths.toLong()).atEndOfMonth()
+    val anchor = (cadenceRows.map { it.recordDate } +
+        futureAnchorDates.filter { !it.isBefore(today) }).maxOrNull()
+        ?: cadenceRows.last().recordDate
+
+    val forecasts = mutableListOf<HistoricalDividendForecast>()
+    var date = anchor.plusDays(stepDays)
+    var previousForecastMonth: java.time.YearMonth? = null
+    while (!date.isAfter(endDate)) {
+        val month = java.time.YearMonth.from(date)
+        val lastMonth = previousForecastMonth ?: java.time.YearMonth.from(anchor)
+        val monthGap = java.time.temporal.ChronoUnit.MONTHS.between(lastMonth, month)
+        // A forecast must never land in the same or immediately following month.
+        if (!date.isBefore(today) && monthGap >= 2L) {
+            forecasts += HistoricalDividendForecast(
+                ticker = normalizedTicker,
+                amountPerShare = amount,
+                recordDate = date,
+                sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+            )
+            previousForecastMonth = month
+        }
+        date = date.plusDays(stepDays)
+    }
+    return forecasts.distinctBy { it.recordDate }.sortedBy { it.recordDate }
 }
 
 /** Forward dividend yield based on payout records already stored in the portfolio database. */
@@ -183,9 +190,10 @@ internal fun calculateForwardDividendYieldPercentFromPayouts(
 
 internal data class DividendHistoryFetchResult(
     val dividends: List<HistoricalDividend>,
-    // True when the direct security history endpoint loaded successfully.
-    // In that case, a year with no dividend records is a verified zero, not missing data.
-    val annualCoverageVerified: Boolean
+    // The current portfolio SECID must be available before forecasts are trusted.
+    val annualCoverageVerified: Boolean,
+    // Empty history is authoritative only when every related SECID was checked.
+    val allRelatedSecidsVerified: Boolean = annualCoverageVerified
 )
 
 internal fun calculateForwardDividendYieldPercent(
@@ -200,7 +208,9 @@ internal fun calculateForwardDividendYieldPercent(
         .filter { it.ticker.equals(ticker, true) }
         .filter { it.status in setOf("ANNOUNCED", "RECOMMENDED", "FORECAST") }
         .mapNotNull { event ->
-            val timestamp = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
+            // Forward yield is a cash-flow estimate: prefer payment date.
+            // Fall back to registry date only when the source has not published one.
+            val timestamp = event.paymentDate ?: event.recordDate ?: return@mapNotNull null
             val date = java.time.Instant.ofEpochMilli(timestamp)
                 .atZone(ZoneId.of("Europe/Moscow")).toLocalDate()
             if (!date.isBefore(today) && !date.isAfter(endDate)) event.sourceKey to event.amountPerUnit else null
@@ -248,16 +258,25 @@ internal class MoexDividendHistoryClient {
         val normalized = ticker.trim().uppercase(Locale.ROOT)
         require(normalized.matches(Regex("[A-Z0-9_]+"))) { "Некорректный тикер: $ticker" }
 
-        // Resolve the canonical ISIN from the direct security description first.
-        // The broad securities search endpoint is supplementary: it can omit the
-        // exact ticker row or fail transiently, and must never block direct history.
+        // Historical forecasts require a multi-year record-date series.
+        // Long/Short dividends-ru.csv is a current/upcoming calendar, not a
+        // complete historical archive, so it must never be treated as history.
+        // Keep MOEX history retrieval as the current source until a full,
+        // independently validated historical provider is integrated.
+
+        // Prefer the ISIN attached to the exact SECID row returned by securities search.
+        // Description labels can be localized or ambiguous (for example, TATN/TATNP);
+        // therefore description is only a fallback, never the primary identity source.
         val description = runCatching {
             requestJson("https://iss.moex.com/iss/securities/$normalized.json?iss.meta=off")
         }.getOrNull()
         val descriptionIsin = table(description ?: JSONObject(), "description")
             .firstNotNullOfOrNull { row ->
-                if (row.optString("name").equals("ISIN", ignoreCase = true)) {
-                    row.optString("value").takeIf { it.isNotBlank() && it != "null" }
+                if (row.optString("name").contains("ISIN", ignoreCase = true)) {
+                    row.optString("value")
+                        .replace(" ", "")
+                        .uppercase(Locale.ROOT)
+                        .takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{10}")) }
                 } else null
             }
 
@@ -269,7 +288,7 @@ internal class MoexDividendHistoryClient {
                 it.optString("secid").equals(normalized, ignoreCase = true)
             }?.optString("isin")?.takeIf { it.isNotBlank() && it != "null" }
         }.getOrNull()
-        val isin = descriptionIsin ?: tickerSearchIsin
+        val isin = tickerSearchIsin ?: descriptionIsin
 
         val relatedSecids = linkedSetOf(normalized)
         if (isin != null) {
@@ -284,16 +303,29 @@ internal class MoexDividendHistoryClient {
             }
         }
 
-        var annualCoverageVerified = true
         val result = mutableListOf<HistoricalDividend>()
         var successfulHistoryEndpoints = 0
+        var currentSecidVerified = false
+        var allRelatedSecidsVerified = true
         var lastHistoryError: Exception? = null
         relatedSecids.forEach { secid ->
             try {
                 val payload = requestJson(
                     "https://iss.moex.com/iss/securities/$secid/dividends.json?iss.meta=off"
                 )
+                val dividendBlock = payload.optJSONObject("dividends")
+                    ?: throw IOException("MOEX не вернул блок dividends для SECID $secid")
+                val dividendColumns = dividendBlock.optJSONArray("columns")
+                    ?: throw IOException("MOEX не вернул columns для dividends SECID $secid")
+                val columnNames = (0 until dividendColumns.length())
+                    .map { dividendColumns.optString(it).lowercase(Locale.ROOT) }
+                if ("value" !in columnNames ||
+                    ("registryclosedate" !in columnNames && "recorddate" !in columnNames)
+                ) {
+                    throw IOException("MOEX вернул неполную структуру dividends для SECID $secid: $columnNames")
+                }
                 successfulHistoryEndpoints++
+                if (secid.equals(normalized, ignoreCase = true)) currentSecidVerified = true
                 table(payload, "dividends").forEach rowLoop@{ row ->
                     val dateText = row.optString("registryclosedate")
                         .takeIf { it.isNotBlank() && it != "null" }
@@ -307,14 +339,14 @@ internal class MoexDividendHistoryClient {
                     }
                 }
             } catch (error: Exception) {
-                annualCoverageVerified = false
+                allRelatedSecidsVerified = false
                 lastHistoryError = error
             }
         }
         // A retired SECID can legitimately stop serving history while the current
         // SECID remains available. Keep usable partial history; fail only when none
         // of the candidate security IDs could be queried.
-        if (successfulHistoryEndpoints == 0) {
+        if (successfulHistoryEndpoints == 0 || !currentSecidVerified) {
             throw IOException(
                 "Не удалось получить историю дивидендов MOEX для $normalized: " +
                     (lastHistoryError?.message ?: "нет доступных SECID")
@@ -354,9 +386,11 @@ internal class MoexDividendHistoryClient {
             splitAdjusted.distinctBy {
                 "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}:${it.currency}"
             }.sortedBy { it.recordDate },
-            annualCoverageVerified
+            annualCoverageVerified = currentSecidVerified,
+            allRelatedSecidsVerified = allRelatedSecidsVerified
         )
     }
+
 
     private fun requestJson(url: String): JSONObject {
         val request = Request.Builder().url(url)
