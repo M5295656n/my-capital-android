@@ -79,7 +79,9 @@ class CorporateEventsWorker(
                         quantity = asset.quantity,
                         totalAmount = event.amountPerUnit * asset.quantity,
                         taxAmount = 0.0,
-                        expectedDate = event.paymentDate ?: event.recordDate,
+                        // Only paymentDate is a cash-receipt date. If the issuer/feed
+                        // publishes only the registry date, keep expectedDate null.
+                        expectedDate = event.paymentDate,
                         actualDate = null,
                         status = event.status,
                         sourceKey = event.sourceKey,
