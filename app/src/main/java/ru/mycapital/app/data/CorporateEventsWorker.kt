@@ -157,8 +157,12 @@ class CorporateEventsWorker(
                     today = today,
                     horizonMonths = 24,
                     futureAnchorDates = confirmedFutureDates
-                ).filterNot { forecast ->
-                    hasProviderDividendOnRecordDate(asset.ticker, forecast.recordDate, providerDividendEvents, forecast.amountPerShare)
+                ).let { forecasts ->
+                    removeHistoryForecastsSupersededByProvider(
+                        ticker = asset.ticker,
+                        forecasts = forecasts,
+                        events = providerDividendEvents
+                    )
                 }
                 if (forecasts.isEmpty()) {
                     if (historyResult.allRelatedSecidsVerified) {
