@@ -82,8 +82,22 @@ internal fun calculateHistoricalDividendForecasts(
             !it.recordDate.isBefore(historyStart) && !it.recordDate.isAfter(today)
     }.distinctBy { "${it.recordDate}:${"%.6f".format(Locale.ROOT, it.amountPerShare)}" }
 
-    val recurringByMonth = usable.groupBy { it.recordDate.monthValue }
-        .filterValues { rows -> rows.map { it.recordDate.year }.distinct().size >= 2 }
+    // Preserve separate payout occurrences within the same calendar month.
+    // Align the first, second, ... event in each month across years; a second
+    // payment is forecast only when it has also appeared in at least two years.
+    val recurringByMonthAndOrdinal = usable.groupBy { it.recordDate.monthValue }
+        .flatMap { (monthValue, monthRows) ->
+            val byYear = monthRows.groupBy { it.recordDate.year }
+            val maxOccurrences = byYear.values.maxOfOrNull { it.size } ?: 0
+            (0 until maxOccurrences).mapNotNull { ordinal ->
+                val observations = byYear.values.mapNotNull { rows ->
+                    rows.sortedBy { it.recordDate }.getOrNull(ordinal)
+                }
+                if (observations.map { it.recordDate.year }.distinct().size >= 2) {
+                    (monthValue to ordinal) to observations
+                } else null
+            }
+        }.toMap()
 
     fun median(values: List<Double>): Double {
         val sorted = values.sorted()
@@ -98,24 +112,26 @@ internal fun calculateHistoricalDividendForecasts(
     val forecasts = mutableListOf<HistoricalDividendForecast>()
     var month = startMonth
     while (!month.isAfter(endMonth)) {
-        val observations = recurringByMonth[month.monthValue]
-        if (observations != null) {
-            val recent = observations.sortedBy { it.recordDate }.takeLast(3)
-            val estimatedDay = median(recent.map { it.recordDate.dayOfMonth.toDouble() })
-                .let { Math.round(it).toInt() }.coerceIn(1, month.lengthOfMonth())
-            val date = month.atDay(estimatedDay)
-            if (!date.isBefore(today)) {
-                val amount = median(recent.map { it.amountPerShare })
-                if (amount.isFinite() && amount > 0.0) {
-                    forecasts += HistoricalDividendForecast(
-                        ticker = normalizedTicker,
-                        amountPerShare = amount,
-                        recordDate = date,
-                        sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
-                    )
+        recurringByMonthAndOrdinal.entries
+            .filter { it.key.first == month.monthValue }
+            .sortedBy { it.key.second }
+            .forEach { (_, observations) ->
+                val recent = observations.sortedBy { it.recordDate }.takeLast(3)
+                val estimatedDay = median(recent.map { it.recordDate.dayOfMonth.toDouble() })
+                    .let { Math.round(it).toInt() }.coerceIn(1, month.lengthOfMonth())
+                val date = month.atDay(estimatedDay)
+                if (!date.isBefore(today)) {
+                    val amount = median(recent.map { it.amountPerShare })
+                    if (amount.isFinite() && amount > 0.0) {
+                        forecasts += HistoricalDividendForecast(
+                            ticker = normalizedTicker,
+                            amountPerShare = amount,
+                            recordDate = date,
+                            sourceKey = "MYCAPITAL_HISTORY:$normalizedTicker:$date"
+                        )
+                    }
                 }
             }
-        }
         month = month.plusMonths(1)
     }
     // Month-of-year recurrence catches stable annual payment periods. Cadence
