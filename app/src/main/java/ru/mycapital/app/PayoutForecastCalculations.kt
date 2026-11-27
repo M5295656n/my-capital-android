@@ -32,7 +32,8 @@ internal fun calculatePayoutForecast(
 ): PayoutForecastSummary {
     val datedExpected = payouts.mapNotNull { payout ->
         if (!(payout.status == "EXPECTED" || isUpcomingDividendStatus(payout.status)) || payout.expectedDate == null) return@mapNotNull null
-        val date = Instant.ofEpochMilli(payout.expectedDate).atZone(zoneId).toLocalDate()
+        val timestamp = payout.expectedDate ?: payout.recordDate ?: return@mapNotNull null
+        val date = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
         if (date.isBefore(today)) return@mapNotNull null
         date to payout.totalAmount
     }
