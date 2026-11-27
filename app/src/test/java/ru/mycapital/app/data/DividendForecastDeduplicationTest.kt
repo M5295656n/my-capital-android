@@ -34,6 +34,14 @@ class DividendForecastDeduplicationTest {
         assertEquals(2, removeSupersededDividendForecasts(events).size)
     }
 
+    @Test fun twoHistoricalForecastRowsInSameMonthCollapseEvenWhenAmountsDiffer() {
+        val events = listOf(
+            event("SBER", "FORECAST", "2027-05-10", null, "sber-forecast-a", 35.0),
+            event("SBER", "FORECAST", "2027-05-24", null, "sber-forecast-b", 38.0)
+        )
+        assertEquals(1, removeSupersededDividendForecasts(events).size)
+    }
+
     @Test fun twoConfirmedTatneftPayoutsInSameMonthRemainSeparate() {
         val events = listOf(
             event("TATN", "RECOMMENDED", "2027-01-10", "2027-01-19", "confirmed-a", 31.44),
