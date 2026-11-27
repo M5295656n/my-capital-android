@@ -199,8 +199,8 @@ internal fun calculateHistoricalDividendForecasts(
     // Returning cadence forecasts alone previously discarded other valid annual
     // payments from the same issuer.
     return (forecasts + cadenceForecasts)
-        .distinctBy { it.recordDate }
-        .sortedBy { it.recordDate }
+        .distinctBy { it.sourceKey }
+        .sortedWith(compareBy<HistoricalDividendForecast> { it.recordDate }.thenBy { it.sourceKey })
 }
 
 /** Forward dividend yield based on payout records already stored in the portfolio database. */
