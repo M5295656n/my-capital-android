@@ -204,7 +204,9 @@ internal fun calculateForwardDividendYieldPercent(
         .filter { it.ticker.equals(ticker, true) }
         .filter { it.status in setOf("ANNOUNCED", "RECOMMENDED", "FORECAST") }
         .mapNotNull { event ->
-            val timestamp = event.recordDate ?: event.paymentDate ?: return@mapNotNull null
+            // Forward yield is a cash-flow estimate: prefer payment date.
+            // Fall back to registry date only when the source has not published one.
+            val timestamp = event.paymentDate ?: event.recordDate ?: return@mapNotNull null
             val date = java.time.Instant.ofEpochMilli(timestamp)
                 .atZone(ZoneId.of("Europe/Moscow")).toLocalDate()
             if (!date.isBefore(today) && !date.isAfter(endDate)) event.sourceKey to event.amountPerUnit else null
