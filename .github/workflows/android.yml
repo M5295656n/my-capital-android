@@ -533,17 +533,17 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_APK="app/build/outputs/apk/release/app-release.apk"
-          RELEASE_APK="app/build/outputs/apk/release/MyCapital-0.4.31.apk"
+          RELEASE_APK="app/build/outputs/apk/release/MyCapital-0.4.32.apk"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           BADGING="$("$AAPT" dump badging "$SOURCE_APK")"
           printf '%s\\n' "$BADGING"
-          printf '%s\\n' "$BADGING" | grep -F "versionCode='141' versionName='0.4.31'"
+          printf '%s\\n' "$BADGING" | grep -F "versionCode='142' versionName='0.4.32'"
           cp "$SOURCE_APK" "$RELEASE_APK"
           test -s "$RELEASE_APK"
       - name: Verify release APK signing certificate
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/MyCapital-0.4.31.apk"
+          APK="app/build/outputs/apk/release/MyCapital-0.4.32.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
           printf '%s' "$VERIFY_OUTPUT"
@@ -564,5 +564,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: my-capital-0.4.31-release-apk
-          path: app/build/outputs/apk/release/MyCapital-0.4.31.apk
+          path: app/build/outputs/apk/release/MyCapital-0.4.32.apk
           if-no-files-found: error
