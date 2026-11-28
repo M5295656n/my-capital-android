@@ -84,7 +84,7 @@ interface PortfolioDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertBrokerAccountAssets(snapshots: List<BrokerAccountAssetEntity>)
 
-    @Query("SELECT * FROM operations ORDER BY operationDate DESC")
+    @Query("SELECT * FROM operations ORDER BY operationDate ASC, id ASC")
     fun observeOperations(): Flow<List<OperationEntity>>
 
     @Query("SELECT * FROM operations WHERE accountId = :accountId ORDER BY operationDate ASC, id ASC")
@@ -102,8 +102,8 @@ interface PortfolioDao {
     @Query("SELECT * FROM operations WHERE sourceKey = :sourceKey LIMIT 1")
     suspend fun getOperationBySourceKey(sourceKey: String): OperationEntity?
 
-    @Query("UPDATE operations SET settlementDate = :settlementDate WHERE sourceKey = :sourceKey")
-    suspend fun updateOperationSettlementDate(sourceKey: String, settlementDate: Long)
+    @Query("UPDATE operations SET operationDate = :operationDate, settlementDate = :settlementDate WHERE sourceKey = :sourceKey")
+    suspend fun updateOperationTimestamps(sourceKey: String, operationDate: Long, settlementDate: Long)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertImportedOperation(operation: OperationEntity): Long
