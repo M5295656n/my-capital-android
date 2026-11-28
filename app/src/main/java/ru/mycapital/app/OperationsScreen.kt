@@ -96,7 +96,7 @@ internal fun OperationsScreen(
                 operation.operationType.contains(query, ignoreCase = true) ||
                 operation.note.contains(query, ignoreCase = true)
             matchesAccount && matchesType && matchesQuery
-        }.sortedByDescending { it.operationDate }
+        }.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
     }
     val purchases = visibleOperations.count { it.operationType == "Покупка" }
     val sales = visibleOperations.count { it.operationType == "Продажа" }
