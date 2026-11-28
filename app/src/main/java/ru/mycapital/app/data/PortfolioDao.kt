@@ -102,8 +102,8 @@ interface PortfolioDao {
     @Query("SELECT * FROM operations WHERE sourceKey = :sourceKey LIMIT 1")
     suspend fun getOperationBySourceKey(sourceKey: String): OperationEntity?
 
-    @Query("UPDATE operations SET settlementDate = :settlementDate WHERE sourceKey = :sourceKey")
-    suspend fun updateOperationSettlementDate(sourceKey: String, settlementDate: Long)
+    @Query("UPDATE operations SET operationDate = :operationDate, settlementDate = :settlementDate WHERE sourceKey = :sourceKey")
+    suspend fun updateOperationTimestamps(sourceKey: String, operationDate: Long, settlementDate: Long)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertImportedOperation(operation: OperationEntity): Long

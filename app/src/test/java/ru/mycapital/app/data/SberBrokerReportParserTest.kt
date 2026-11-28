@@ -125,6 +125,7 @@ class SberBrokerReportParserTest {
             assertEquals(1, report.trades.size)
             assertEquals(0.42, report.trades.single().totalFee, 0.001)
             assertEquals("SBER:123456", report.trades.single().sourceKey)
+            assertEquals("10:54:54", report.trades.single().time)
         }
     }
 

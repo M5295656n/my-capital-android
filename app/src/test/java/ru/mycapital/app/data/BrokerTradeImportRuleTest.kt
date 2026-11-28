@@ -2,9 +2,28 @@ package ru.mycapital.app.data
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import java.time.LocalDate
 import org.junit.Test
 
 class BrokerTradeImportRuleTest {
+    @Test
+    fun brokerTradeTimestampPreservesExecutionTimeForChronologicalHistory() {
+        val date = LocalDate.parse("2026-09-15")
+        val depositAtStartOfDay = date.atStartOfDay().toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+        val purchaseAt = brokerTradeTimestamp(date, "10:54:54")
+        assertTrue(purchaseAt > depositAtStartOfDay)
+        assertEquals(10 * 3600 + 54 * 60 + 54, (purchaseAt - depositAtStartOfDay) / 1000)
+    }
+
+    @Test
+    fun brokerTradeTimestampFallsBackSafelyWhenTimeIsMissingOrMalformed() {
+        val date = LocalDate.parse("2026-09-15")
+        val start = date.atStartOfDay().toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+        assertEquals(start, brokerTradeTimestamp(date, ""))
+        assertEquals(start, brokerTradeTimestamp(date, "not-a-time"))
+    }
+
     @Test
     fun importsSettledAndConcludedUnsettledTrades() {
         assertTrue(isImportableBrokerTrade("И"))

@@ -1,6 +1,7 @@
 package ru.mycapital.app.data
 
 import androidx.room.withTransaction
+import java.time.LocalTime
 import java.time.ZoneOffset
 import java.util.Locale
 
@@ -9,6 +10,12 @@ import java.util.Locale
 // a real buy/sell and must be imported; the planned outgoing balances reconcile it.
 internal fun isImportableBrokerTrade(status: String): Boolean =
     status.trim().uppercase(Locale.ROOT) in setOf("И", "ЗИ", "ЗО")
+
+/** Sber cash-flow rows carry a date only; trade rows also carry the execution time. */
+internal fun brokerTradeTimestamp(date: java.time.LocalDate, time: String): Long {
+    val executionTime = runCatching { LocalTime.parse(time.trim()) }.getOrDefault(LocalTime.MIDNIGHT)
+    return date.atTime(executionTime).toInstant(ZoneOffset.UTC).toEpochMilli()
+}
 
 /** Prefer a recognized type from the latest broker security directory over stale local classification. */
 internal fun resolveImportedAssetType(existingType: String, reportedType: String?): String {
@@ -386,7 +393,7 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                     quantity = trade.quantity,
                     price = trade.price,
                     commission = trade.totalFee,
-                    operationDate = trade.tradeDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    operationDate = brokerTradeTimestamp(trade.tradeDate, trade.time),
                     settlementDate = trade.settlementDate.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
                     note = "Импорт из брокерского отчёта; сделка № ${trade.dealNumber}",
                     sourceKey = scopedSourceKey,
@@ -397,12 +404,12 @@ class PortfolioRepository(private val database: PortfolioDatabase) {
                 if (legacyDuplicate != null) {
                     // Upgrade older imports in place: settlementDate was not stored
                     // by previous app versions.
-                    dao.updateOperationSettlementDate(trade.sourceKey, settlementTimestamp)
+                    dao.updateOperationTimestamps(trade.sourceKey, brokerTradeTimestamp(trade.tradeDate, trade.time), settlementTimestamp)
                     duplicates++
                 } else {
                     val id = dao.insertImportedOperation(row)
                     if (id == -1L) {
-                        dao.updateOperationSettlementDate(scopedSourceKey, settlementTimestamp)
+                        dao.updateOperationTimestamps(scopedSourceKey, brokerTradeTimestamp(trade.tradeDate, trade.time), settlementTimestamp)
                         duplicates++
                     } else imported++
                 }
