@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.dp
 import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.BrokerAccountEntity
 
+internal fun sortOperationsChronologically(operations: List<OperationEntity>): List<OperationEntity> =
+    operations .let(::sortOperationsChronologically)
+
 private fun operationMoney(value: Double): String =
     String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
 
