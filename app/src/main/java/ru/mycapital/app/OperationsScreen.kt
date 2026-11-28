@@ -17,7 +17,7 @@ import ru.mycapital.app.data.OperationEntity
 import ru.mycapital.app.data.BrokerAccountEntity
 
 internal fun sortOperationsChronologically(operations: List<OperationEntity>): List<OperationEntity> =
-    operations .let(::sortOperationsChronologically)
+    operations.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
 
 private fun operationMoney(value: Double): String =
     String.format(java.util.Locale("ru", "RU"), "%,.2f", value)
@@ -99,7 +99,7 @@ internal fun OperationsScreen(
                 operation.operationType.contains(query, ignoreCase = true) ||
                 operation.note.contains(query, ignoreCase = true)
             matchesAccount && matchesType && matchesQuery
-        }.sortedWith(compareBy<OperationEntity> { it.operationDate }.thenBy { it.id })
+        }.let(::sortOperationsChronologically)
     }
     val purchases = visibleOperations.count { it.operationType == "Покупка" }
     val sales = visibleOperations.count { it.operationType == "Продажа" }
