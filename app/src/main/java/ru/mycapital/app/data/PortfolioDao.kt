@@ -84,7 +84,7 @@ interface PortfolioDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertBrokerAccountAssets(snapshots: List<BrokerAccountAssetEntity>)
 
-    @Query("SELECT * FROM operations ORDER BY operationDate DESC")
+    @Query("SELECT * FROM operations ORDER BY operationDate ASC, id ASC")
     fun observeOperations(): Flow<List<OperationEntity>>
 
     @Query("SELECT * FROM operations WHERE accountId = :accountId ORDER BY operationDate ASC, id ASC")
